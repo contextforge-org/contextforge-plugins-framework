@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/loader/plugin.py
+"""Location: ./cpex/framework/loader/plugin.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor, Mihai Criveti
@@ -13,11 +13,11 @@ import logging
 from typing import cast, Type
 
 # First-Party
-from mcpgateway.plugins.framework.base import Plugin
-from mcpgateway.plugins.framework.constants import EXTERNAL_PLUGIN_TYPE
-from mcpgateway.plugins.framework.external.mcp.client import ExternalPlugin
-from mcpgateway.plugins.framework.models import PluginConfig
-from mcpgateway.plugins.framework.utils import import_module, parse_class_name
+from cpex.framework.base import Plugin
+from cpex.framework.constants import EXTERNAL_PLUGIN_TYPE
+from cpex.framework.external.mcp.client import ExternalPlugin
+from cpex.framework.models import PluginConfig
+from cpex.framework.utils import import_module, parse_class_name
 
 # Use standard logging to avoid circular imports (plugins -> services -> plugins)
 logger = logging.getLogger(__name__)

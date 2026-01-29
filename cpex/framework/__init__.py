@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/__init__.py
+"""Location: ./cpex/framework/__init__.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Fred Araujo
@@ -18,14 +18,14 @@ import os
 from typing import Optional
 
 # First-Party
-from mcpgateway.plugins.framework.base import Plugin
-from mcpgateway.plugins.framework.errors import PluginError, PluginViolationError
-from mcpgateway.plugins.framework.external.mcp.server import ExternalPluginServer
-from mcpgateway.plugins.framework.hooks.registry import HookRegistry, get_hook_registry
-from mcpgateway.plugins.framework.loader.config import ConfigLoader
-from mcpgateway.plugins.framework.loader.plugin import PluginLoader
-from mcpgateway.plugins.framework.manager import PluginManager
-from mcpgateway.plugins.framework.hooks.http import (
+from cpex.framework.base import Plugin
+from cpex.framework.errors import PluginError, PluginViolationError
+from cpex.framework.external.mcp.server import ExternalPluginServer
+from cpex.framework.hooks.registry import HookRegistry, get_hook_registry
+from cpex.framework.loader.config import ConfigLoader
+from cpex.framework.loader.plugin import PluginLoader
+from cpex.framework.manager import PluginManager
+from cpex.framework.hooks.http import (
     HttpAuthCheckPermissionPayload,
     HttpAuthCheckPermissionResult,
     HttpAuthCheckPermissionResultPayload,
@@ -38,17 +38,17 @@ from mcpgateway.plugins.framework.hooks.http import (
     HttpPreRequestPayload,
     HttpPreRequestResult,
 )
-from mcpgateway.plugins.framework.hooks.agents import AgentHookType, AgentPostInvokePayload, AgentPostInvokeResult, AgentPreInvokePayload, AgentPreInvokeResult
-from mcpgateway.plugins.framework.hooks.resources import ResourceHookType, ResourcePostFetchPayload, ResourcePostFetchResult, ResourcePreFetchPayload, ResourcePreFetchResult
-from mcpgateway.plugins.framework.hooks.prompts import (
+from cpex.framework.hooks.agents import AgentHookType, AgentPostInvokePayload, AgentPostInvokeResult, AgentPreInvokePayload, AgentPreInvokeResult
+from cpex.framework.hooks.resources import ResourceHookType, ResourcePostFetchPayload, ResourcePostFetchResult, ResourcePreFetchPayload, ResourcePreFetchResult
+from cpex.framework.hooks.prompts import (
     PromptHookType,
     PromptPosthookPayload,
     PromptPosthookResult,
     PromptPrehookPayload,
     PromptPrehookResult,
 )
-from mcpgateway.plugins.framework.hooks.tools import ToolHookType, ToolPostInvokePayload, ToolPostInvokeResult, ToolPreInvokeResult, ToolPreInvokePayload
-from mcpgateway.plugins.framework.models import (
+from cpex.framework.hooks.tools import ToolHookType, ToolPostInvokePayload, ToolPostInvokeResult, ToolPreInvokeResult, ToolPreInvokePayload
+from cpex.framework.models import (
     GlobalContext,
     MCPServerConfig,
     PluginCondition,
@@ -61,7 +61,7 @@ from mcpgateway.plugins.framework.models import (
     PluginResult,
     PluginViolation,
 )
-from mcpgateway.plugins.framework.utils import get_attr
+from cpex.framework.utils import get_attr
 
 # Plugin manager singleton (lazy initialization)
 _plugin_manager: Optional[PluginManager] = None
@@ -77,7 +77,7 @@ def get_plugin_manager() -> Optional[PluginManager]:
         PluginManager instance if plugins are enabled, None otherwise.
 
     Examples:
-        >>> from mcpgateway.plugins.framework import get_plugin_manager
+        >>> from cpex.framework import get_plugin_manager
         >>> pm = get_plugin_manager()
         >>> # Returns PluginManager if plugins are enabled, None otherwise
         >>> pm is None or isinstance(pm, PluginManager)

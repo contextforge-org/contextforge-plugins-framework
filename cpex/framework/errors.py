@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/errors.py
+"""Location: ./cpex/framework/errors.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor
@@ -10,7 +10,7 @@ the base plugin layer including configurations, and contexts.
 """
 
 # First-Party
-from mcpgateway.plugins.framework.models import PluginErrorModel, PluginViolation
+from cpex.framework.models import PluginErrorModel, PluginViolation
 
 
 class PluginViolationError(Exception):

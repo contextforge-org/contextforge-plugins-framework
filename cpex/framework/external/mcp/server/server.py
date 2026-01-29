@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/external/mcp/server/server.py
+"""Location: ./cpex/framework/external/mcp/server/server.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Fred Araujo, Teryl Taylor
@@ -70,11 +70,11 @@ from typing import Any, Dict, TypeVar
 from pydantic import BaseModel
 
 # First-Party
-from mcpgateway.plugins.framework.constants import CONTEXT, ERROR, PLUGIN_NAME, RESULT
-from mcpgateway.plugins.framework.errors import convert_exception_to_error, PluginError
-from mcpgateway.plugins.framework.loader.config import ConfigLoader
-from mcpgateway.plugins.framework.manager import PluginManager
-from mcpgateway.plugins.framework.models import MCPServerConfig, PluginContext
+from cpex.framework.constants import CONTEXT, ERROR, PLUGIN_NAME, RESULT
+from cpex.framework.errors import convert_exception_to_error, PluginError
+from cpex.framework.loader.config import ConfigLoader
+from cpex.framework.manager import PluginManager
+from cpex.framework.models import MCPServerConfig, PluginContext
 
 P = TypeVar("P", bound=BaseModel)
 
@@ -192,7 +192,7 @@ class ExternalPluginServer:
             >>> import asyncio
             >>> import os
             >>> os.environ["PYTHONPATH"] = "."
-            >>> from mcpgateway.plugins.framework import GlobalContext, Plugin, PromptHookType, PromptPrehookPayload, PluginContext, PromptPrehookResult, PluginManager
+            >>> from cpex.framework import GlobalContext, Plugin, PromptHookType, PromptPrehookPayload, PluginContext, PromptPrehookResult, PluginManager
             >>> server = ExternalPluginServer(config_path="./tests/unit/mcpgateway/plugins/fixtures/configs/valid_single_plugin.yaml")
             >>> payload = PromptPrehookPayload(prompt_id="123", name="test_prompt", args={"user": "This is a crap app"})
             >>> context = PluginContext(global_context=GlobalContext(request_id="1", server_id="2"))

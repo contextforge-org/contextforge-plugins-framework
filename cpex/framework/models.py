@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/models.py
+"""Location: ./cpex/framework/models.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor, Mihai Criveti
@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field, field_serializer, field_validator, model_
 # First-Party
 from mcpgateway.common.models import TransportType
 from mcpgateway.common.validators import SecurityValidator
-from mcpgateway.plugins.framework.constants import EXTERNAL_PLUGIN_TYPE, IGNORE_CONFIG_EXTERNAL, PYTHON_SUFFIX, SCRIPT, URL
+from cpex.framework.constants import EXTERNAL_PLUGIN_TYPE, IGNORE_CONFIG_EXTERNAL, PYTHON_SUFFIX, SCRIPT, URL
 
 T = TypeVar("T")
 
@@ -757,7 +757,7 @@ class PluginResult(BaseModel, Generic[T]):
         True
         >>> result.metadata
         {}
-        >>> from mcpgateway.plugins.framework import PluginViolation
+        >>> from cpex.framework import PluginViolation
         >>> violation = PluginViolation(
         ...     reason="Test", description="Test desc", code="TEST", details={}
         ... )

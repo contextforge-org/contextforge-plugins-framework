@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/loader/config.py
+"""Location: ./cpex/framework/loader/config.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor, Mihai Criveti
@@ -16,7 +16,7 @@ import jinja2
 import yaml
 
 # First-Party
-from mcpgateway.plugins.framework.models import Config, PluginSettings
+from cpex.framework.models import Config, PluginSettings
 
 
 class ConfigLoader:
@@ -25,7 +25,7 @@ class ConfigLoader:
     Examples:
         >>> import tempfile
         >>> import os
-        >>> from mcpgateway.plugins.framework.models import PluginSettings
+        >>> from cpex.framework.models import PluginSettings
         >>> # Create a temporary config file
         >>> with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
         ...     _ = f.write(\"\"\"

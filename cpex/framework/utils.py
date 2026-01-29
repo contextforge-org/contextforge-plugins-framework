@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/utils.py
+"""Location: ./cpex/framework/utils.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor, Mihai Criveti
@@ -16,7 +16,7 @@ from types import ModuleType
 from typing import Any, Optional
 
 # First-Party
-from mcpgateway.plugins.framework.models import GlobalContext, PluginCondition
+from cpex.framework.models import GlobalContext, PluginCondition
 
 
 @cache  # noqa
@@ -75,7 +75,7 @@ def matches(condition: PluginCondition, context: GlobalContext) -> bool:
         True if the plugin matches criteria.
 
     Examples:
-        >>> from mcpgateway.plugins.framework import GlobalContext, PluginCondition
+        >>> from cpex.framework import GlobalContext, PluginCondition
         >>> cond = PluginCondition(server_ids={"srv1", "srv2"})
         >>> ctx = GlobalContext(request_id="req1", server_id="srv1")
         >>> matches(cond, ctx)
@@ -152,8 +152,8 @@ def get_matchable_value(payload: Any, hook_type: str) -> Optional[str]:
         The matchable value (e.g., tool name, agent ID, resource URI) or None.
 
     Examples:
-        >>> from mcpgateway.plugins.framework import GlobalContext
-        >>> from mcpgateway.plugins.framework.hooks.tools import ToolPreInvokePayload
+        >>> from cpex.framework import GlobalContext
+        >>> from cpex.framework.hooks.tools import ToolPreInvokePayload
         >>> payload = ToolPreInvokePayload(name="calculator", args={})
         >>> get_matchable_value(payload, "tool_pre_invoke")
         'calculator'
@@ -199,8 +199,8 @@ def payload_matches(
         True if the payload matches any condition or if no conditions are specified.
 
     Examples:
-        >>> from mcpgateway.plugins.framework import PluginCondition, GlobalContext
-        >>> from mcpgateway.plugins.framework.hooks.tools import ToolPreInvokePayload
+        >>> from cpex.framework import PluginCondition, GlobalContext
+        >>> from cpex.framework.hooks.tools import ToolPreInvokePayload
         >>> payload = ToolPreInvokePayload(name="calculator", args={})
         >>> cond = PluginCondition(tools={"calculator"})
         >>> ctx = GlobalContext(request_id="req1")

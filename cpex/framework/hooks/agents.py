@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/models/agents.py
+"""Location: ./cpex/framework/hooks/agents.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor
@@ -18,8 +18,8 @@ from pydantic import Field
 
 # First-Party
 from mcpgateway.common.models import Message
-from mcpgateway.plugins.framework.hooks.http import HttpHeaderPayload
-from mcpgateway.plugins.framework.models import PluginPayload, PluginResult
+from cpex.framework.hooks.http import HttpHeaderPayload
+from cpex.framework.models import PluginPayload, PluginResult
 
 
 class AgentHookType(str, Enum):
@@ -130,7 +130,7 @@ def _register_agent_hooks() -> None:
     """
     # Import here to avoid circular dependency at module load time
     # First-Party
-    from mcpgateway.plugins.framework.hooks.registry import get_hook_registry  # pylint: disable=import-outside-toplevel
+    from cpex.framework.hooks.registry import get_hook_registry  # pylint: disable=import-outside-toplevel
 
     registry = get_hook_registry()
 

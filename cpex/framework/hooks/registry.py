@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/hook_registry.py
+"""Location: ./cpex/framework/hooks/registry.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor
@@ -15,7 +15,7 @@ access to the specific plugin implementations.
 from typing import Dict, Optional, Type, Union
 
 # First-Party
-from mcpgateway.plugins.framework.models import PluginPayload, PluginResult
+from cpex.framework.models import PluginPayload, PluginResult
 
 
 class HookRegistry:
@@ -26,13 +26,13 @@ class HookRegistry:
     serialization/deserialization for external plugins.
 
     Examples:
-        >>> from mcpgateway.plugins.framework import PluginPayload, PluginResult
+        >>> from cpex.framework import PluginPayload, PluginResult
         >>> registry = HookRegistry()
         >>> registry.register_hook("test_hook", PluginPayload, PluginResult)
         >>> registry.get_payload_type("test_hook")
         <class 'pydantic.main.BaseModel'>
         >>> registry.get_result_type("test_hook")
-        <class 'mcpgateway.plugins.framework.models.PluginResult'>
+        <class 'cpex.framework.models.PluginResult'>
     """
 
     _instance: Optional["HookRegistry"] = None
@@ -64,7 +64,7 @@ class HookRegistry:
 
         Examples:
             >>> registry = HookRegistry()
-            >>> from mcpgateway.plugins.framework import PluginPayload, PluginResult
+            >>> from cpex.framework import PluginPayload, PluginResult
             >>> registry.register_hook("custom_hook", PluginPayload, PluginResult)
         """
         self._hook_payloads[hook_type] = payload_class
@@ -115,7 +115,7 @@ class HookRegistry:
 
         Examples:
             >>> registry = HookRegistry()
-            >>> from mcpgateway.plugins.framework.hooks.prompts import PromptPrehookPayload, PromptPrehookResult
+            >>> from cpex.framework.hooks.prompts import PromptPrehookPayload, PromptPrehookResult
             >>> registry.register_hook("test", PromptPrehookPayload, PromptPrehookResult)
             >>> payload = registry.json_to_payload("test", {"prompt_id": "123"})
         """
@@ -142,7 +142,7 @@ class HookRegistry:
 
         Examples:
             >>> registry = HookRegistry()
-            >>> from mcpgateway.plugins.framework import PluginPayload, PluginResult
+            >>> from cpex.framework import PluginPayload, PluginResult
             >>> registry.register_hook("test", PluginPayload, PluginResult)
             >>> result = registry.json_to_result("test", '{"continue_processing": true}')
         """

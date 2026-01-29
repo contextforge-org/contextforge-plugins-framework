@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/external/mcp/tls_utils.py
+"""Location: ./cpex/framework/external/mcp/tls_utils.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor
@@ -13,7 +13,7 @@ certificate validation logic that is tested in test_client_certificate_validatio
 Examples:
     Create a basic SSL context with default settings:
 
-    >>> from mcpgateway.plugins.framework.models import MCPClientTLSConfig
+    >>> from cpex.framework.models import MCPClientTLSConfig
     >>> import ssl
     >>> config = MCPClientTLSConfig()
     >>> ctx = create_ssl_context(config, "ExamplePlugin")
@@ -67,8 +67,8 @@ import logging
 import ssl
 
 # First-Party
-from mcpgateway.plugins.framework.errors import PluginError
-from mcpgateway.plugins.framework.models import MCPClientTLSConfig, PluginErrorModel
+from cpex.framework.errors import PluginError
+from cpex.framework.models import MCPClientTLSConfig, PluginErrorModel
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +111,7 @@ def create_ssl_context(tls_config: MCPClientTLSConfig, plugin_name: str) -> ssl.
     Examples:
         Create SSL context with verification enabled (default secure mode):
 
-        >>> from mcpgateway.plugins.framework.models import MCPClientTLSConfig
+        >>> from cpex.framework.models import MCPClientTLSConfig
         >>> tls_config = MCPClientTLSConfig(verify=True)
         >>> ssl_context = create_ssl_context(tls_config, "TestPlugin")
         >>> ssl_context.verify_mode == 2  # ssl.CERT_REQUIRED

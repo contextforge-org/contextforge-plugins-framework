@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/manager.py
+"""Location: ./cpex/framework/manager.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor, Mihai Criveti, Fred Araujo
@@ -20,8 +20,8 @@ Examples:
     >>> # await manager.initialize()  # Called in async context
 
     >>> # Create test payload and context
-    >>> from mcpgateway.plugins.framework.models import GlobalContext
-    >>> from mcpgateway.plugins.framework.hooks.prompts import PromptPrehookPayload
+    >>> from cpex.framework.models import GlobalContext
+    >>> from cpex.framework.hooks.prompts import PromptPrehookPayload
     >>> payload = PromptPrehookPayload(prompt_id="123", name="test", args={"user": "input"})
     >>> context = GlobalContext(request_id="123")
     >>> # result, contexts = await manager.prompt_pre_fetch(payload, context)  # Called in async context
@@ -34,14 +34,14 @@ import threading
 from typing import Any, Optional, Union
 
 # First-Party
-from mcpgateway.plugins.framework.base import HookRef, Plugin
-from mcpgateway.plugins.framework.errors import convert_exception_to_error, PluginError, PluginViolationError
-from mcpgateway.plugins.framework.loader.config import ConfigLoader
-from mcpgateway.plugins.framework.loader.plugin import PluginLoader
-from mcpgateway.plugins.framework.memory import copyonwrite
-from mcpgateway.plugins.framework.models import Config, GlobalContext, PluginContext, PluginContextTable, PluginErrorModel, PluginMode, PluginPayload, PluginResult
-from mcpgateway.plugins.framework.registry import PluginInstanceRegistry
-from mcpgateway.plugins.framework.utils import payload_matches
+from cpex.framework.base import HookRef, Plugin
+from cpex.framework.errors import convert_exception_to_error, PluginError, PluginViolationError
+from cpex.framework.loader.config import ConfigLoader
+from cpex.framework.loader.plugin import PluginLoader
+from cpex.framework.memory import copyonwrite
+from cpex.framework.models import Config, GlobalContext, PluginContext, PluginContextTable, PluginErrorModel, PluginMode, PluginPayload, PluginResult
+from cpex.framework.registry import PluginInstanceRegistry
+from cpex.framework.utils import payload_matches
 
 # Use standard logging to avoid circular imports (plugins -> services -> plugins)
 logger = logging.getLogger(__name__)
@@ -123,7 +123,7 @@ class PluginExecutor:
 
         Examples:
             >>> # Execute plugins with timeout protection
-            >>> from mcpgateway.plugins.framework.hooks.prompts import PromptHookType
+            >>> from cpex.framework.hooks.prompts import PromptHookType
             >>> executor = PluginExecutor(timeout=30)
             >>> # Assuming you have a registry instance:
             >>> # plugins = registry.get_plugins_for_hook(PromptHookType.PROMPT_PRE_FETCH)
@@ -411,8 +411,8 @@ class PluginManager:
         >>> # print(f"Loaded {manager.plugin_count} plugins")
         >>>
         >>> # Execute prompt hooks
-        >>> from mcpgateway.plugins.framework.models import GlobalContext
-        >>> from mcpgateway.plugins.framework.hooks.prompts import PromptPrehookPayload
+        >>> from cpex.framework.models import GlobalContext
+        >>> from cpex.framework.hooks.prompts import PromptPrehookPayload
         >>> payload = PromptPrehookPayload(prompt_id="123", name="test", args={})
         >>> context = GlobalContext(request_id="req-123")
         >>> # In async context:

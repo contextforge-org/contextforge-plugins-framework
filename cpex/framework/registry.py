@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/registry.py
+"""Location: ./cpex/framework/registry.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Mihai Criveti
@@ -14,8 +14,8 @@ import logging
 from typing import Optional
 
 # First-Party
-from mcpgateway.plugins.framework.base import HookRef, Plugin, PluginRef
-from mcpgateway.plugins.framework.external.mcp.client import ExternalHookRef, ExternalPlugin
+from cpex.framework.base import HookRef, Plugin, PluginRef
+from cpex.framework.external.mcp.client import ExternalHookRef, ExternalPlugin
 
 # Use standard logging to avoid circular imports (plugins -> services -> plugins)
 logger = logging.getLogger(__name__)
@@ -25,8 +25,8 @@ class PluginInstanceRegistry:
     """Registry for managing loaded plugins.
 
     Examples:
-        >>> from mcpgateway.plugins.framework import Plugin, PluginConfig
-        >>> from mcpgateway.plugins.framework.hooks.prompts import PromptHookType
+        >>> from cpex.framework import Plugin, PluginConfig
+        >>> from cpex.framework.hooks.prompts import PromptHookType
         >>> registry = PluginInstanceRegistry()
         >>> config = PluginConfig(
         ...     name="test",

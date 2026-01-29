@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/decorator.py
+"""Location: ./cpex/framework/decorator.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor
@@ -44,7 +44,7 @@ from typing import Callable, Optional, Type, TypeVar
 from pydantic import BaseModel
 
 # First-Party
-from mcpgateway.plugins.framework.models import PluginPayload, PluginResult
+from cpex.framework.models import PluginPayload, PluginResult
 
 # Attribute name for storing hook metadata on functions
 _HOOK_METADATA_ATTR = "_plugin_hook_metadata"

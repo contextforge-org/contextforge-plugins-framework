@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/external/mcp/client.py
+"""Location: ./cpex/framework/external/mcp/client.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor
@@ -27,12 +27,12 @@ import orjson
 # First-Party
 from mcpgateway.common.models import TransportType
 from mcpgateway.config import settings
-from mcpgateway.plugins.framework.base import HookRef, Plugin, PluginRef
-from mcpgateway.plugins.framework.constants import CONTEXT, ERROR, GET_PLUGIN_CONFIG, HOOK_TYPE, IGNORE_CONFIG_EXTERNAL, INVOKE_HOOK, NAME, PAYLOAD, PLUGIN_NAME, PYTHON, PYTHON_SUFFIX, RESULT
-from mcpgateway.plugins.framework.errors import convert_exception_to_error, PluginError
-from mcpgateway.plugins.framework.external.mcp.tls_utils import create_ssl_context
-from mcpgateway.plugins.framework.hooks.registry import get_hook_registry
-from mcpgateway.plugins.framework.models import MCPClientTLSConfig, PluginConfig, PluginContext, PluginErrorModel, PluginPayload, PluginResult
+from cpex.framework.base import HookRef, Plugin, PluginRef
+from cpex.framework.constants import CONTEXT, ERROR, GET_PLUGIN_CONFIG, HOOK_TYPE, IGNORE_CONFIG_EXTERNAL, INVOKE_HOOK, NAME, PAYLOAD, PLUGIN_NAME, PYTHON, PYTHON_SUFFIX, RESULT
+from cpex.framework.errors import convert_exception_to_error, PluginError
+from cpex.framework.external.mcp.tls_utils import create_ssl_context
+from cpex.framework.hooks.registry import get_hook_registry
+from cpex.framework.models import MCPClientTLSConfig, PluginConfig, PluginContext, PluginErrorModel, PluginPayload, PluginResult
 
 logger = logging.getLogger(__name__)
 

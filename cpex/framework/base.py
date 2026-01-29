@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/base.py
+"""Location: ./cpex/framework/base.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 -Authors: Teryl Taylor, Mihai Criveti
@@ -14,8 +14,8 @@ from typing import Awaitable, Callable, Optional, Union
 import uuid
 
 # First-Party
-from mcpgateway.plugins.framework.errors import PluginError
-from mcpgateway.plugins.framework.models import PluginCondition, PluginConfig, PluginContext, PluginErrorModel, PluginMode, PluginPayload, PluginResult
+from cpex.framework.errors import PluginError
+from cpex.framework.models import PluginCondition, PluginConfig, PluginContext, PluginErrorModel, PluginMode, PluginPayload, PluginResult
 
 # pylint: disable=import-outside-toplevel
 
@@ -24,13 +24,13 @@ class Plugin(ABC):
     """Base plugin object for pre/post processing of inputs and outputs at various locations throughout the server.
 
     Examples:
-        >>> from mcpgateway.plugins.framework import PluginConfig, PluginMode
-        >>> from mcpgateway.plugins.framework.hooks.prompts import PromptHookType
+        >>> from cpex.framework import PluginConfig, PluginMode
+        >>> from cpex.framework.hooks.prompts import PromptHookType
         >>> config = PluginConfig(
         ...     name="test_plugin",
         ...     description="Test plugin",
         ...     author="test",
-        ...     kind="mcpgateway.plugins.framework.Plugin",
+        ...     kind="cpex.framework.Plugin",
         ...     version="1.0.0",
         ...     hooks=[PromptHookType.PROMPT_PRE_FETCH],
         ...     tags=["test"],
@@ -64,8 +64,8 @@ class Plugin(ABC):
                             Used for external plugins for converting json to pydantic.
 
         Examples:
-            >>> from mcpgateway.plugins.framework import PluginConfig
-            >>> from mcpgateway.plugins.framework.hooks.prompts import PromptHookType
+            >>> from cpex.framework import PluginConfig
+            >>> from cpex.framework.hooks.prompts import PromptHookType
             >>> config = PluginConfig(
             ...     name="simple_plugin",
             ...     description="Simple test",
@@ -175,7 +175,7 @@ class Plugin(ABC):
         # Fall back to global registry
         if not hook_payload_type:
             # First-Party
-            from mcpgateway.plugins.framework.hooks.registry import get_hook_registry
+            from cpex.framework.hooks.registry import get_hook_registry
 
             registry = get_hook_registry()
             hook_payload_type = registry.get_payload_type(hook)
@@ -210,7 +210,7 @@ class Plugin(ABC):
         # Fall back to global registry
         if not hook_result_type:
             # First-Party
-            from mcpgateway.plugins.framework.hooks.registry import get_hook_registry
+            from cpex.framework.hooks.registry import get_hook_registry
 
             registry = get_hook_registry()
             hook_result_type = registry.get_result_type(hook)
@@ -227,8 +227,8 @@ class PluginRef:
     """Plugin reference which contains a uuid.
 
     Examples:
-        >>> from mcpgateway.plugins.framework import PluginConfig, PluginMode
-        >>> from mcpgateway.plugins.framework.hooks.prompts import PromptHookType
+        >>> from cpex.framework import PluginConfig, PluginMode
+        >>> from cpex.framework.hooks.prompts import PromptHookType
         >>> config = PluginConfig(
         ...     name="ref_test",
         ...     description="Reference test",
@@ -261,8 +261,8 @@ class PluginRef:
             plugin: The plugin to reference.
 
         Examples:
-            >>> from mcpgateway.plugins.framework import PluginConfig
-            >>> from mcpgateway.plugins.framework.hooks.prompts import PromptHookType
+            >>> from cpex.framework import PluginConfig
+            >>> from cpex.framework.hooks.prompts import PromptHookType
             >>> config = PluginConfig(
             ...     name="plugin_ref",
             ...     description="Test",
@@ -373,7 +373,7 @@ class HookRef:
             PluginError: If no method is found for the specified hook.
 
         Examples:
-            >>> from mcpgateway.plugins.framework import PluginConfig
+            >>> from cpex.framework import PluginConfig
             >>> config = PluginConfig(name="test", kind="test", version="1.0", author="test", hooks=["tool_pre_invoke"])
             >>> plugin = Plugin(config)
             >>> plugin_ref = PluginRef(plugin)
@@ -383,7 +383,7 @@ class HookRef:
         import inspect
 
         # First-Party
-        from mcpgateway.plugins.framework.decorator import get_hook_metadata
+        from cpex.framework.decorator import get_hook_metadata
 
         self._plugin_ref = plugin_ref
         self._hook = hook
@@ -486,7 +486,7 @@ class HookRef:
         from typing import get_type_hints
 
         # First-Party
-        from mcpgateway.plugins.framework.hooks.registry import get_hook_registry
+        from cpex.framework.hooks.registry import get_hook_registry
 
         # Get expected types from registry
         registry = get_hook_registry()
