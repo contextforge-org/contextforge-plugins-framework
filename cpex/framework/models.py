@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/models.py
+"""Location: ./cpex/framework/models.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor, Mihai Criveti, Fred Araujo
@@ -20,9 +20,9 @@ from typing import Any, Generic, Optional, Self, TypeVar, Union
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator, PrivateAttr, ValidationInfo
 
 # First-Party
-from mcpgateway.plugins.framework.constants import CMD, CWD, ENV, EXTERNAL_PLUGIN_TYPE, IGNORE_CONFIG_EXTERNAL, PYTHON_SUFFIX, SCRIPT, UDS, URL
-from mcpgateway.plugins.framework.settings import get_client_mtls_settings, get_grpc_client_mtls_settings, get_grpc_server_settings, get_mcp_server_settings, get_transport_settings
-from mcpgateway.plugins.framework.validators import validate_plugin_url
+from cpex.framework.constants import CMD, CWD, ENV, EXTERNAL_PLUGIN_TYPE, IGNORE_CONFIG_EXTERNAL, PYTHON_SUFFIX, SCRIPT, UDS, URL
+from cpex.framework.settings import get_client_mtls_settings, get_grpc_client_mtls_settings, get_grpc_server_settings, get_mcp_server_settings, get_transport_settings
+from cpex.framework.validators import validate_plugin_url
 
 T = TypeVar("T")
 
@@ -1334,7 +1334,7 @@ class PluginResult(BaseModel, Generic[T]):
         True
         >>> result.metadata
         {}
-        >>> from mcpgateway.plugins.framework import PluginViolation
+        >>> from cpex.framework import PluginViolation
         >>> violation = PluginViolation(
         ...     reason="Test", description="Test desc", code="TEST", details={}
         ... )

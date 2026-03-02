@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/external/grpc/client.py
+"""Location: ./cpex/framework/external/grpc/client.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor
@@ -20,14 +20,14 @@ from google.protobuf.struct_pb2 import Struct
 import grpc
 
 # First-Party
-from mcpgateway.plugins.framework.base import Plugin
-from mcpgateway.plugins.framework.constants import IGNORE_CONFIG_EXTERNAL
-from mcpgateway.plugins.framework.errors import convert_exception_to_error, PluginError
-from mcpgateway.plugins.framework.external.grpc.proto import plugin_service_pb2, plugin_service_pb2_grpc
-from mcpgateway.plugins.framework.external.grpc.tls_utils import create_insecure_channel, create_secure_channel
-from mcpgateway.plugins.framework.external.proto_convert import pydantic_context_to_proto, update_pydantic_context_from_proto
-from mcpgateway.plugins.framework.hooks.registry import get_hook_registry
-from mcpgateway.plugins.framework.models import GRPCClientTLSConfig, PluginConfig, PluginContext, PluginErrorModel, PluginPayload, PluginResult
+from cpex.framework.base import Plugin
+from cpex.framework.constants import IGNORE_CONFIG_EXTERNAL
+from cpex.framework.errors import convert_exception_to_error, PluginError
+from cpex.framework.external.grpc.proto import plugin_service_pb2, plugin_service_pb2_grpc
+from cpex.framework.external.grpc.tls_utils import create_insecure_channel, create_secure_channel
+from cpex.framework.external.proto_convert import pydantic_context_to_proto, update_pydantic_context_from_proto
+from cpex.framework.hooks.registry import get_hook_registry
+from cpex.framework.models import GRPCClientTLSConfig, PluginConfig, PluginContext, PluginErrorModel, PluginPayload, PluginResult
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class GrpcExternalPlugin(Plugin):
     providing a faster binary protocol alternative to the MCP transport.
 
     Examples:
-        >>> from mcpgateway.plugins.framework.models import PluginConfig, GRPCClientConfig
+        >>> from cpex.framework.models import PluginConfig, GRPCClientConfig
         >>> config = PluginConfig(
         ...     name="MyGrpcPlugin",
         ...     kind="external",

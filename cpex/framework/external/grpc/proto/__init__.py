@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/external/grpc/proto/__init__.py
+"""Location: ./cpex/framework/external/grpc/proto/__init__.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor
@@ -11,8 +11,8 @@ Run `make grpc-proto` to regenerate after modifying plugin_service.proto.
 """
 
 try:
-    from mcpgateway.plugins.framework.external.grpc.proto import plugin_service_pb2
-    from mcpgateway.plugins.framework.external.grpc.proto import plugin_service_pb2_grpc
+    from cpex.framework.external.grpc.proto import plugin_service_pb2
+    from cpex.framework.external.grpc.proto import plugin_service_pb2_grpc
 
     __all__ = ["plugin_service_pb2", "plugin_service_pb2_grpc"]
 except ImportError:

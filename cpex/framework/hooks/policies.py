@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/hooks/policies.py
+"""Location: ./cpex/framework/hooks/policies.py
 Copyright 2026
 SPDX-License-Identifier: Apache-2.0
 Authors: Fred Araujo
@@ -10,7 +10,7 @@ The framework provides the types and utilities for controlled payload
 modification; the gateway defines the actual concrete policies.
 
 Examples:
-    >>> from mcpgateway.plugins.framework.hooks.policies import HookPayloadPolicy, apply_policy
+    >>> from cpex.framework.hooks.policies import HookPayloadPolicy, apply_policy
     >>> policy = HookPayloadPolicy(writable_fields=frozenset({"name", "args"}))
     >>> sorted(policy.writable_fields)
     ['args', 'name']

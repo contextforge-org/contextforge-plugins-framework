@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/observability.py
+"""Location: ./cpex/framework/observability.py
 Copyright 2026
 SPDX-License-Identifier: Apache-2.0
 Authors: Fred Araujo

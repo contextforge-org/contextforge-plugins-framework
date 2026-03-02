@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/external/unix/client.py
+"""Location: ./cpex/framework/external/unix/client.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor
@@ -13,8 +13,8 @@ messages.
 Examples:
     Create and use a Unix socket plugin client:
 
-    >>> from mcpgateway.plugins.framework.external.unix.client import UnixSocketExternalPlugin
-    >>> from mcpgateway.plugins.framework.models import PluginConfig, UnixSocketClientConfig
+    >>> from cpex.framework.external.unix.client import UnixSocketExternalPlugin
+    >>> from cpex.framework.models import PluginConfig, UnixSocketClientConfig
 
     >>> config = PluginConfig(
     ...     name="MyPlugin",
@@ -38,13 +38,13 @@ from google.protobuf import json_format
 from google.protobuf.struct_pb2 import Struct
 
 # First-Party
-from mcpgateway.plugins.framework.base import Plugin
-from mcpgateway.plugins.framework.errors import convert_exception_to_error, PluginError
-from mcpgateway.plugins.framework.external.grpc.proto import plugin_service_pb2
-from mcpgateway.plugins.framework.external.proto_convert import pydantic_context_to_proto, update_pydantic_context_from_proto
-from mcpgateway.plugins.framework.external.unix.protocol import read_message, write_message_async
-from mcpgateway.plugins.framework.hooks.registry import get_hook_registry
-from mcpgateway.plugins.framework.models import PluginConfig, PluginContext, PluginErrorModel, PluginResult
+from cpex.framework.base import Plugin
+from cpex.framework.errors import convert_exception_to_error, PluginError
+from cpex.framework.external.grpc.proto import plugin_service_pb2
+from cpex.framework.external.proto_convert import pydantic_context_to_proto, update_pydantic_context_from_proto
+from cpex.framework.external.unix.protocol import read_message, write_message_async
+from cpex.framework.hooks.registry import get_hook_registry
+from cpex.framework.models import PluginConfig, PluginContext, PluginErrorModel, PluginResult
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ class UnixSocketExternalPlugin(Plugin):
         config: The plugin configuration.
 
     Examples:
-        >>> from mcpgateway.plugins.framework.models import PluginConfig, UnixSocketClientConfig
+        >>> from cpex.framework.models import PluginConfig, UnixSocketClientConfig
         >>> config = PluginConfig(
         ...     name="TestPlugin",
         ...     kind="external",

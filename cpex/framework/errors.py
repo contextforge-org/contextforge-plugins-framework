@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/errors.py
+"""Location: ./cpex/framework/errors.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor
@@ -10,7 +10,7 @@ the base plugin layer including configurations, and contexts.
 """
 
 # First-Party
-from mcpgateway.plugins.framework.models import PluginErrorModel, PluginViolation
+from cpex.framework.models import PluginErrorModel, PluginViolation
 
 
 class PluginViolationError(Exception):
@@ -29,8 +29,8 @@ class PluginViolationError(Exception):
             violation: the plugin violation object details.
 
         Examples:
-            >>> from mcpgateway.plugins.framework.errors import PluginViolationError
-            >>> from mcpgateway.plugins.framework.models import PluginViolation
+            >>> from cpex.framework.errors import PluginViolationError
+            >>> from cpex.framework.models import PluginViolation
             >>> v = PluginViolation(reason="r", description="d", code="c")
             >>> err = PluginViolationError("blocked", violation=v)
             >>> (str(err), err.violation.code)
@@ -55,8 +55,8 @@ class PluginError(Exception):
             error: the plugin error details.
 
         Examples:
-            >>> from mcpgateway.plugins.framework.errors import PluginError
-            >>> from mcpgateway.plugins.framework.models import PluginErrorModel
+            >>> from cpex.framework.errors import PluginError
+            >>> from cpex.framework.models import PluginErrorModel
             >>> pe = PluginError(PluginErrorModel(message="boom", plugin_name="p1"))
             >>> (str(pe), pe.error.plugin_name)
             ('boom', 'p1')
@@ -76,7 +76,7 @@ def convert_exception_to_error(exception: Exception, plugin_name: str) -> Plugin
         A plugin error pydantic object that can be sent over HTTP.
 
     Examples:
-        >>> from mcpgateway.plugins.framework.errors import convert_exception_to_error
+        >>> from cpex.framework.errors import convert_exception_to_error
         >>> err = convert_exception_to_error(ValueError("nope"), plugin_name="p1")
         >>> (err.plugin_name, "ValueError('nope')" in err.message)
         ('p1', True)

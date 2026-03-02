@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/external/unix/protocol.py
+"""Location: ./cpex/framework/external/unix/protocol.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor
@@ -15,7 +15,7 @@ Examples:
     Writing a message:
 
     >>> import asyncio
-    >>> from mcpgateway.plugins.framework.external.unix.protocol import write_message, read_message
+    >>> from cpex.framework.external.unix.protocol import write_message, read_message
 
     Reading and writing work as inverse operations:
 

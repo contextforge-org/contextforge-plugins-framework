@@ -12,7 +12,7 @@
 import grpc
 
 # First-Party
-from mcpgateway.plugins.framework.external.grpc.proto import plugin_service_pb2 as plugin__service__pb2
+from cpex.framework.external.grpc.proto import plugin_service_pb2 as plugin__service__pb2
 
 GRPC_GENERATED_VERSION = "1.76.0"
 GRPC_VERSION = grpc.__version__

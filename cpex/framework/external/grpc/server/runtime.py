@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/external/grpc/server/runtime.py
+"""Location: ./cpex/framework/external/grpc/server/runtime.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor
@@ -11,7 +11,7 @@ plugin functionality. It reuses the ExternalPluginServer for plugin loading
 and wraps it with gRPC servicers.
 
 Usage:
-    python -m mcpgateway.plugins.framework.external.grpc.server.runtime \\
+    python -m cpex.framework.external.grpc.server.runtime \\
         --config plugins/config.yaml \\
         --host 0.0.0.0 \\
         --port 50051
@@ -41,12 +41,12 @@ from typing import Optional
 import grpc
 
 # First-Party
-from mcpgateway.plugins.framework.external.grpc.proto import plugin_service_pb2_grpc
-from mcpgateway.plugins.framework.external.grpc.server.server import GrpcHealthServicer, GrpcPluginServicer
-from mcpgateway.plugins.framework.external.grpc.tls_utils import create_server_credentials
-from mcpgateway.plugins.framework.external.mcp.server.server import ExternalPluginServer
-from mcpgateway.plugins.framework.models import GRPCServerConfig
-from mcpgateway.plugins.framework.settings import get_settings
+from cpex.framework.external.grpc.proto import plugin_service_pb2_grpc
+from cpex.framework.external.grpc.server.server import GrpcHealthServicer, GrpcPluginServicer
+from cpex.framework.external.grpc.tls_utils import create_server_credentials
+from cpex.framework.external.mcp.server.server import ExternalPluginServer
+from cpex.framework.models import GRPCServerConfig
+from cpex.framework.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -242,10 +242,10 @@ def main() -> None:
         epilog="""
 Examples:
     # Start with default settings
-    python -m mcpgateway.plugins.framework.external.grpc.server.runtime
+    python -m cpex.framework.external.grpc.server.runtime
 
     # Start with custom config and port
-    python -m mcpgateway.plugins.framework.external.grpc.server.runtime \\
+    python -m cpex.framework.external.grpc.server.runtime \\
         --config plugins/config.yaml --port 50051
 
     # Start with TLS enabled (configure via environment variables)
@@ -253,7 +253,7 @@ Examples:
     PLUGINS_GRPC_SERVER_SSL_CERTFILE=/path/to/server.pem \\
     PLUGINS_GRPC_SERVER_SSL_KEYFILE=/path/to/server-key.pem \\
     PLUGINS_GRPC_SERVER_SSL_CA_CERTS=/path/to/ca.pem \\
-    python -m mcpgateway.plugins.framework.external.grpc.server.runtime
+    python -m cpex.framework.external.grpc.server.runtime
         """,
     )
 

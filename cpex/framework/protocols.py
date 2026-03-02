@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/protocols.py
+"""Location: ./cpex/framework/protocols.py
 Copyright 2026
 SPDX-License-Identifier: Apache-2.0
 Authors: Fred Araujo
@@ -11,10 +11,10 @@ mcpgateway.common.models, allowing the framework to express structural
 contracts without creating a dependency on the outer package.
 
 Examples:
-    >>> from mcpgateway.plugins.framework.protocols import MessageLike, PromptResultLike
+    >>> from cpex.framework.protocols import MessageLike, PromptResultLike
     >>> import typing
     >>> typing.runtime_checkable(MessageLike)  # Already decorated
-    <class 'mcpgateway.plugins.framework.protocols.MessageLike'>
+    <class 'cpex.framework.protocols.MessageLike'>
 """
 
 # Standard

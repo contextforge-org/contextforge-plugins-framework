@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/external/mcp/server/runtime.py
+"""Location: ./cpex/framework/external/mcp/server/runtime.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Fred Araujo, Teryl Taylor
@@ -17,7 +17,7 @@ This runtime does the following:
 Examples:
     Create an SSL-capable FastMCP server:
 
-    >>> from mcpgateway.plugins.framework.models import MCPServerConfig
+    >>> from cpex.framework.models import MCPServerConfig
     >>> config = MCPServerConfig(host="localhost", port=8000)
     >>> server = SSLCapableFastMCP(server_config=config, name="TestServer")
     >>> server.settings.host
@@ -27,7 +27,7 @@ Examples:
 
     Check SSL configuration returns empty dict when TLS is not configured:
 
-    >>> from mcpgateway.plugins.framework.models import MCPServerConfig
+    >>> from cpex.framework.models import MCPServerConfig
     >>> config = MCPServerConfig(host="127.0.0.1", port=8000, tls=None)
     >>> server = SSLCapableFastMCP(server_config=config, name="NoTLSServer")
     >>> ssl_config = server._get_ssl_config()
@@ -36,7 +36,7 @@ Examples:
 
     Verify server configuration is accessible:
 
-    >>> from mcpgateway.plugins.framework.models import MCPServerConfig
+    >>> from cpex.framework.models import MCPServerConfig
     >>> config = MCPServerConfig(host="localhost", port=9000)
     >>> server = SSLCapableFastMCP(server_config=config, name="ConfigTest")
     >>> server.server_config.host
@@ -46,7 +46,7 @@ Examples:
 
     Settings are properly passed to FastMCP:
 
-    >>> from mcpgateway.plugins.framework.models import MCPServerConfig
+    >>> from cpex.framework.models import MCPServerConfig
     >>> config = MCPServerConfig(host="0.0.0.0", port=8080)
     >>> server = SSLCapableFastMCP(server_config=config, name="SettingsTest")
     >>> server.settings.host
@@ -70,9 +70,9 @@ from prometheus_client import Gauge, generate_latest, REGISTRY
 import uvicorn
 
 # First-Party
-from mcpgateway.plugins.framework import ExternalPluginServer, MCPServerConfig
-from mcpgateway.plugins.framework.constants import GET_PLUGIN_CONFIG, GET_PLUGIN_CONFIGS, INVOKE_HOOK, MCP_SERVER_INSTRUCTIONS, MCP_SERVER_NAME
-from mcpgateway.plugins.framework.settings import get_transport_settings
+from cpex.framework import ExternalPluginServer, MCPServerConfig
+from cpex.framework.constants import GET_PLUGIN_CONFIG, GET_PLUGIN_CONFIGS, INVOKE_HOOK, MCP_SERVER_INSTRUCTIONS, MCP_SERVER_NAME
+from cpex.framework.settings import get_transport_settings
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +173,7 @@ class SSLCapableFastMCP(FastMCP):
     Examples:
         Create an SSL-capable FastMCP server:
 
-        >>> from mcpgateway.plugins.framework.models import MCPServerConfig
+        >>> from cpex.framework.models import MCPServerConfig
         >>> config = MCPServerConfig(host="127.0.0.1", port=8000)
         >>> server = SSLCapableFastMCP(server_config=config, name="TestServer")
         >>> server.settings.host
@@ -191,7 +191,7 @@ class SSLCapableFastMCP(FastMCP):
             **kwargs: Additional keyword arguments passed to FastMCP.
 
         Examples:
-            >>> from mcpgateway.plugins.framework.models import MCPServerConfig
+            >>> from cpex.framework.models import MCPServerConfig
             >>> config = MCPServerConfig(host="0.0.0.0", port=9000)
             >>> server = SSLCapableFastMCP(server_config=config, name="PluginServer")
             >>> server.server_config.host
@@ -237,7 +237,7 @@ class SSLCapableFastMCP(FastMCP):
             Dictionary of SSL configuration parameters for uvicorn.
 
         Examples:
-            >>> from mcpgateway.plugins.framework.models import MCPServerConfig
+            >>> from cpex.framework.models import MCPServerConfig
             >>> config = MCPServerConfig(host="127.0.0.1", port=8000, tls=None)
             >>> server = SSLCapableFastMCP(server_config=config, name="TestServer")
             >>> ssl_config = server._get_ssl_config()
@@ -299,7 +299,7 @@ class SSLCapableFastMCP(FastMCP):
         from starlette.routing import Route  # pylint: disable=import-outside-toplevel
 
         # First-Party
-        from mcpgateway.plugins.framework.utils import ORJSONResponse  # pylint: disable=import-outside-toplevel
+        from cpex.framework.utils import ORJSONResponse  # pylint: disable=import-outside-toplevel
 
         async def health_check(_request: Request):
             """Health check endpoint for container orchestration.
@@ -355,7 +355,7 @@ class SSLCapableFastMCP(FastMCP):
         Examples:
             Server uses configured host and port:
 
-            >>> from mcpgateway.plugins.framework.models import MCPServerConfig
+            >>> from cpex.framework.models import MCPServerConfig
             >>> config = MCPServerConfig(host="0.0.0.0", port=9000)
             >>> server = SSLCapableFastMCP(server_config=config, name="HTTPServer")
             >>> server.settings.host
@@ -371,7 +371,7 @@ class SSLCapableFastMCP(FastMCP):
         from starlette.routing import Route  # pylint: disable=import-outside-toplevel
 
         # First-Party
-        from mcpgateway.plugins.framework.utils import ORJSONResponse  # pylint: disable=import-outside-toplevel
+        from cpex.framework.utils import ORJSONResponse  # pylint: disable=import-outside-toplevel
 
         async def health_check(_request: Request):
             """Health check endpoint for container orchestration.
@@ -467,7 +467,7 @@ async def run() -> None:
 
         FastMCP server names are defined as constants:
 
-        >>> from mcpgateway.plugins.framework.constants import MCP_SERVER_NAME
+        >>> from cpex.framework.constants import MCP_SERVER_NAME
         >>> isinstance(MCP_SERVER_NAME, str)
         True
         >>> len(MCP_SERVER_NAME) > 0

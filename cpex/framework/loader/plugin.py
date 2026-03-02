@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/loader/plugin.py
+"""Location: ./cpex/framework/loader/plugin.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor, Mihai Criveti
@@ -13,11 +13,11 @@ import logging
 from typing import cast, Type
 
 # First-Party
-from mcpgateway.plugins.framework.base import Plugin
-from mcpgateway.plugins.framework.constants import EXTERNAL_PLUGIN_TYPE
-from mcpgateway.plugins.framework.external.mcp.client import ExternalPlugin
-from mcpgateway.plugins.framework.models import PluginConfig
-from mcpgateway.plugins.framework.utils import import_module, parse_class_name
+from cpex.framework.base import Plugin
+from cpex.framework.constants import EXTERNAL_PLUGIN_TYPE
+from cpex.framework.external.mcp.client import ExternalPlugin
+from cpex.framework.models import PluginConfig
+from cpex.framework.utils import import_module, parse_class_name
 
 # Use standard logging to avoid circular imports (plugins -> services -> plugins)
 logger = logging.getLogger(__name__)
@@ -104,14 +104,14 @@ class PluginLoader:
                 # Use gRPC transport
                 # Import here to avoid circular dependency and to make grpc optional
                 # First-Party
-                from mcpgateway.plugins.framework.external.grpc.client import GrpcExternalPlugin  # pylint: disable=import-outside-toplevel
+                from cpex.framework.external.grpc.client import GrpcExternalPlugin  # pylint: disable=import-outside-toplevel
 
                 plugin = GrpcExternalPlugin(config)
                 logger.info("Loading external plugin '%s' with gRPC transport", config.name)
             elif config.unix_socket:
                 # Use raw Unix socket transport (high-performance local IPC)
                 # First-Party
-                from mcpgateway.plugins.framework.external.unix.client import UnixSocketExternalPlugin  # pylint: disable=import-outside-toplevel
+                from cpex.framework.external.unix.client import UnixSocketExternalPlugin  # pylint: disable=import-outside-toplevel
 
                 plugin = UnixSocketExternalPlugin(config)
                 logger.info("Loading external plugin '%s' with Unix socket transport", config.name)

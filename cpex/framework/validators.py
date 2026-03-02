@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/validators.py
+"""Location: ./cpex/framework/validators.py
 Copyright 2026
 SPDX-License-Identifier: Apache-2.0
 Authors: Fred Araujo
@@ -23,7 +23,7 @@ from re import Pattern
 from urllib.parse import urlparse
 
 # First-Party
-from mcpgateway.plugins.framework.settings import get_ssrf_settings
+from cpex.framework.settings import get_ssrf_settings
 
 logger = logging.getLogger(__name__)
 

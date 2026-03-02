@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/external/grpc/tls_utils.py
+"""Location: ./cpex/framework/external/grpc/tls_utils.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor
@@ -18,7 +18,7 @@ from typing import Optional
 import grpc
 
 # First-Party
-from mcpgateway.plugins.framework.models import GRPCClientTLSConfig, GRPCServerTLSConfig
+from cpex.framework.models import GRPCClientTLSConfig, GRPCServerTLSConfig
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ def create_client_credentials(tls_config: GRPCClientTLSConfig, plugin_name: str 
         ValueError: If TLS configuration is invalid.
 
     Examples:
-        >>> from mcpgateway.plugins.framework.models import GRPCClientTLSConfig
+        >>> from cpex.framework.models import GRPCClientTLSConfig
         >>> config = GRPCClientTLSConfig(  # doctest: +SKIP
         ...     ca_bundle="/path/to/ca.pem",
         ...     certfile="/path/to/client.pem",
@@ -124,7 +124,7 @@ def create_server_credentials(tls_config: GRPCServerTLSConfig) -> grpc.ServerCre
         ValueError: If required certificates are not provided.
 
     Examples:
-        >>> from mcpgateway.plugins.framework.models import GRPCServerTLSConfig
+        >>> from cpex.framework.models import GRPCServerTLSConfig
         >>> config = GRPCServerTLSConfig(  # doctest: +SKIP
         ...     certfile="/path/to/server.pem",
         ...     keyfile="/path/to/server-key.pem",

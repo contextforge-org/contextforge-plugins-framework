@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/external/unix/server/runtime.py
+"""Location: ./cpex/framework/external/unix/server/runtime.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor
@@ -7,7 +7,7 @@ Authors: Teryl Taylor
 Entry point for running the Unix socket plugin server.
 
 Usage:
-    python -m mcpgateway.plugins.framework.external.unix.server.runtime
+    python -m cpex.framework.external.unix.server.runtime
 
 Environment variables:
     PLUGINS_CONFIG_PATH: Path to plugin configuration file
@@ -16,11 +16,11 @@ Environment variables:
 Examples:
     Run with default settings:
 
-    $ PLUGINS_CONFIG_PATH=plugins/config.yaml python -m mcpgateway.plugins.framework.external.unix.server.runtime
+    $ PLUGINS_CONFIG_PATH=plugins/config.yaml python -m cpex.framework.external.unix.server.runtime
 
     Run with custom socket path:
 
-    $ PLUGINS_UNIX_SOCKET_PATH=/tmp/my-plugins.sock python -m mcpgateway.plugins.framework.external.unix.server.runtime
+    $ PLUGINS_UNIX_SOCKET_PATH=/tmp/my-plugins.sock python -m cpex.framework.external.unix.server.runtime
 """
 
 # Standard
@@ -30,8 +30,8 @@ import os
 import sys
 
 # First-Party
-from mcpgateway.plugins.framework.external.unix.server.server import run_server
-from mcpgateway.plugins.framework.settings import get_settings
+from cpex.framework.external.unix.server.server import run_server
+from cpex.framework.settings import get_settings
 
 # Configure logging
 logging.basicConfig(

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/tools/cli.py
+"""Location: ./cpex/tools/cli.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Fred Araujo
@@ -8,7 +8,7 @@ mcpplugins CLI ─ command line tools for authoring and packaging plugins
 This module is exposed as a **console-script** via:
 
     [project.scripts]
-    mcpplugins = "mcpgateway.plugins.tools.cli:main"
+    mcpplugins = "cpex.tools.cli:main"
 
 so that a user can simply type `mcpplugins ...` to use the CLI.
 
@@ -36,7 +36,7 @@ import typer
 from typing_extensions import Annotated
 
 # First-Party
-from mcpgateway.plugins.framework.settings import settings
+from cpex.framework.settings import settings
 
 logger = logging.getLogger(__name__)
 

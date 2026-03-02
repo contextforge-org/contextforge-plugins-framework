@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/hooks/prompts.py
+"""Location: ./cpex/framework/hooks/prompts.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor, Fred Araujo
@@ -17,9 +17,9 @@ from typing import Any, Optional
 from pydantic import Field, field_validator
 
 # First-Party
-from mcpgateway.plugins.framework.models import PluginPayload, PluginResult
-from mcpgateway.plugins.framework.protocols import PromptResultLike  # noqa: F401  # pylint: disable=unused-import
-from mcpgateway.plugins.framework.utils import coerce_nested
+from cpex.framework.models import PluginPayload, PluginResult
+from cpex.framework.protocols import PromptResultLike  # noqa: F401  # pylint: disable=unused-import
+from cpex.framework.utils import coerce_nested
 
 
 class PromptHookType(str, Enum):
@@ -100,7 +100,7 @@ class PromptPosthookPayload(PluginPayload):
 
         When deserializing from JSON (external server flows), ``result``
         arrives as a plain dict.  This validator converts it to a
-        :class:`~mcpgateway.plugins.framework.utils.StructuredData` so
+        :class:`~cpex.framework.utils.StructuredData` so
         that plugin code like ``payload.result.messages[0].content.text``
         works regardless of the transport.
 
@@ -126,7 +126,7 @@ def _register_prompt_hooks() -> None:
     """
     # Import here to avoid circular dependency at module load time
     # First-Party
-    from mcpgateway.plugins.framework.hooks.registry import get_hook_registry  # pylint: disable=import-outside-toplevel
+    from cpex.framework.hooks.registry import get_hook_registry  # pylint: disable=import-outside-toplevel
 
     registry = get_hook_registry()
 

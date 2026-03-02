@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/external/__init__.py
+"""Location: ./cpex/framework/external/__init__.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor
@@ -33,13 +33,13 @@ Usage:
 """
 
 # MCP transport exports (always available)
-from mcpgateway.plugins.framework.external.mcp.client import ExternalHookRef, ExternalPlugin
+from cpex.framework.external.mcp.client import ExternalHookRef, ExternalPlugin
 
 __all__ = ["ExternalPlugin", "ExternalHookRef"]
 
 # gRPC transport exports (optional - requires grpc extras)
 try:
-    from mcpgateway.plugins.framework.external.grpc import GrpcExternalPlugin  # noqa: E402, F401
+    from cpex.framework.external.grpc import GrpcExternalPlugin  # noqa: E402, F401
 
     __all__.extend(["GrpcExternalPlugin"])
 except ImportError:

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/settings.py
+"""Location: ./cpex/framework/settings.py
 
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0

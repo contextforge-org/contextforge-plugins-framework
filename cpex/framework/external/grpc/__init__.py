@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/external/grpc/__init__.py
+"""Location: ./cpex/framework/external/grpc/__init__.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor
@@ -30,7 +30,7 @@ Usage:
         Run the gRPC server to expose your plugins:
 
         ```bash
-        python -m mcpgateway.plugins.framework.external.grpc.server.runtime \\
+        python -m cpex.framework.external.grpc.server.runtime \\
             --config plugins/config.yaml \\
             --port 50051
         ```
@@ -47,8 +47,8 @@ Note:
     both transports share the same invoke_hook() interface.
 """
 
-from mcpgateway.plugins.framework.external.grpc.client import GrpcExternalPlugin
-from mcpgateway.plugins.framework.external.grpc.tls_utils import create_client_credentials, create_server_credentials
+from cpex.framework.external.grpc.client import GrpcExternalPlugin
+from cpex.framework.external.grpc.tls_utils import create_client_credentials, create_server_credentials
 
 __all__ = [
     "GrpcExternalPlugin",
@@ -58,6 +58,6 @@ __all__ = [
 
 # Server exports are imported lazily to avoid circular imports
 # Import here after client to ensure proper initialization order
-from mcpgateway.plugins.framework.external.grpc.server import GrpcHealthServicer, GrpcPluginServicer  # noqa: E402, F401
+from cpex.framework.external.grpc.server import GrpcHealthServicer, GrpcPluginServicer  # noqa: E402, F401
 
 __all__.extend(["GrpcPluginServicer", "GrpcHealthServicer"])

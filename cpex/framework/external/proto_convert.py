@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/external/proto_convert.py
+"""Location: ./cpex/framework/external/proto_convert.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor
@@ -17,13 +17,13 @@ messages where possible, falling back to Struct for dynamic fields.
 from google.protobuf import json_format
 
 # First-Party
-from mcpgateway.plugins.framework.external.grpc.proto import plugin_service_pb2
-from mcpgateway.plugins.framework.models import (
+from cpex.framework.external.grpc.proto import plugin_service_pb2
+from cpex.framework.models import (
     PluginResult,
 )
-from mcpgateway.plugins.framework.models import GlobalContext as PydanticGlobalContext
-from mcpgateway.plugins.framework.models import PluginContext as PydanticPluginContext
-from mcpgateway.plugins.framework.models import PluginViolation as PydanticPluginViolation
+from cpex.framework.models import GlobalContext as PydanticGlobalContext
+from cpex.framework.models import PluginContext as PydanticPluginContext
+from cpex.framework.models import PluginViolation as PydanticPluginViolation
 
 
 def pydantic_global_context_to_proto(ctx: PydanticGlobalContext) -> plugin_service_pb2.GlobalContext:

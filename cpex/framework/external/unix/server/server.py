@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/external/unix/server/server.py
+"""Location: ./cpex/framework/external/unix/server/server.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor
@@ -13,7 +13,7 @@ Examples:
     Run the server:
 
     >>> import asyncio
-    >>> from mcpgateway.plugins.framework.external.unix.server.server import UnixSocketPluginServer
+    >>> from cpex.framework.external.unix.server.server import UnixSocketPluginServer
 
     >>> async def main():
     ...     server = UnixSocketPluginServer(
@@ -40,14 +40,14 @@ from google.protobuf import json_format
 from google.protobuf.struct_pb2 import Struct
 
 # First-Party
-from mcpgateway.plugins.framework.external.grpc.proto import plugin_service_pb2
-from mcpgateway.plugins.framework.external.mcp.server.server import ExternalPluginServer
-from mcpgateway.plugins.framework.external.proto_convert import (
+from cpex.framework.external.grpc.proto import plugin_service_pb2
+from cpex.framework.external.mcp.server.server import ExternalPluginServer
+from cpex.framework.external.proto_convert import (
     proto_context_to_pydantic,
     pydantic_context_to_proto,
 )
-from mcpgateway.plugins.framework.external.unix.protocol import ProtocolError, read_message, write_message_async
-from mcpgateway.plugins.framework.models import PluginContext
+from cpex.framework.external.unix.protocol import ProtocolError, read_message, write_message_async
+from cpex.framework.models import PluginContext
 
 logger = logging.getLogger(__name__)
 

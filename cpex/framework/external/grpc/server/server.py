@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./mcpgateway/plugins/framework/external/grpc/server/server.py
+"""Location: ./cpex/framework/external/grpc/server/server.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Teryl Taylor
@@ -21,13 +21,13 @@ from google.protobuf.struct_pb2 import Struct
 import grpc
 
 # First-Party
-from mcpgateway.plugins.framework.external.grpc.proto import plugin_service_pb2, plugin_service_pb2_grpc
-from mcpgateway.plugins.framework.external.mcp.server.server import ExternalPluginServer
-from mcpgateway.plugins.framework.external.proto_convert import (
+from cpex.framework.external.grpc.proto import plugin_service_pb2, plugin_service_pb2_grpc
+from cpex.framework.external.mcp.server.server import ExternalPluginServer
+from cpex.framework.external.proto_convert import (
     proto_context_to_pydantic,
     pydantic_context_to_proto,
 )
-from mcpgateway.plugins.framework.models import PluginContext
+from cpex.framework.models import PluginContext
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class GrpcPluginServicer(plugin_service_pb2_grpc.PluginServiceServicer):
     by the plugin framework.
 
     Examples:
-        >>> from mcpgateway.plugins.framework.external.mcp.server.server import ExternalPluginServer
+        >>> from cpex.framework.external.mcp.server.server import ExternalPluginServer
         >>> plugin_server = ExternalPluginServer(config_path="plugins/config.yaml")
         >>> servicer = GrpcPluginServicer(plugin_server)
     """
