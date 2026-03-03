@@ -7,7 +7,7 @@ plugins:
     author: "ContextForge Team"
     hooks: ["tool_pre_invoke"]
     tags: ["plugin", "headers"]
-    mode: "enforce"  # enforce | permissive | disabled
+    mode: "concurrent"  # enforce | permissive | disabled
     priority: 150
     conditions:
       # Apply to specific tools/servers

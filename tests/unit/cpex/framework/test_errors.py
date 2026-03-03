@@ -11,7 +11,15 @@ Tests for errors module.
 import pytest
 import re
 from cpex.framework.errors import convert_exception_to_error
-from cpex.framework import GlobalContext, PluginError, PluginMode, PluginManager, PromptHookType, PromptPrehookPayload
+from cpex.framework import (
+    GlobalContext,
+    OnError,
+    PluginError,
+    PluginMode,
+    PluginManager,
+    PromptHookType,
+    PromptPrehookPayload,
+)
 
 
 @pytest.mark.asyncio
@@ -51,7 +59,8 @@ async def test_error_plugin_raise_error_false():
     # assert not result.modified_payload
 
     await plugin_manager.shutdown()
-    plugin_manager.config.plugins[0].mode = PluginMode.ENFORCE_IGNORE_ERROR
+    plugin_manager.config.plugins[0].mode = PluginMode.CONCURRENT
+    plugin_manager.config.plugins[0].on_error = OnError.IGNORE
     await plugin_manager.initialize()
     result, _ = await plugin_manager.invoke_hook(PromptHookType.PROMPT_PRE_FETCH, payload, global_context)
     assert result.continue_processing

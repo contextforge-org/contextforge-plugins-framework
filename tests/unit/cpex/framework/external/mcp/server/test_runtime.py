@@ -31,6 +31,12 @@ from cpex.framework import (
 )
 from cpex.framework.external.mcp.server import ExternalPluginServer
 import cpex.framework.external.mcp.server.runtime as runtime
+from tests.unit.cpex.fixtures.common.models import (
+    Message,
+    PromptResult,
+    Role,
+    TextContent,
+)
 
 
 @pytest.fixture
@@ -79,8 +85,8 @@ async def test_prompt_pre_fetch(monkeypatch, server):
 @pytest.mark.asyncio
 async def test_prompt_post_fetch(monkeypatch, server):
     monkeypatch.setattr(runtime, "SERVER", server)
-    message = SimpleNamespace(content=SimpleNamespace(type="text", text="crap prompt"), role="user")
-    prompt_result = SimpleNamespace(messages=[message])
+    message = Message(content=TextContent(type="text", text="crap prompt"), role=Role.USER)
+    prompt_result = PromptResult(messages=[message])
     payload = PromptPosthookPayload(prompt_id="123", result=prompt_result)
     context = PluginContext(global_context=GlobalContext(request_id="1", server_id="2"))
     result = await runtime.invoke_hook(

@@ -87,7 +87,7 @@ install: venv
 .PHONY: install-dev
 install-dev: venv
 	@echo "📦 Installing package with dev dependencies..."
-	@$(VENV_BIN)/pip install -e ".[dev]"
+	@$(VENV_BIN)/pip install -e ".[dev,grpc,cli]"
 	@echo "✅  Package installed in editable mode with dev dependencies"
 
 .PHONY: install-docs

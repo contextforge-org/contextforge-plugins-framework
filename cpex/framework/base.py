@@ -16,6 +16,7 @@ import uuid
 # First-Party
 from cpex.framework.errors import PluginError
 from cpex.framework.models import (
+    OnError,
     PluginCondition,
     PluginConfig,
     PluginContext,
@@ -42,7 +43,7 @@ class Plugin(ABC):
         ...     version="1.0.0",
         ...     hooks=[PromptHookType.PROMPT_PRE_FETCH],
         ...     tags=["test"],
-        ...     mode=PluginMode.ENFORCE,
+        ...     mode=PluginMode.CONCURRENT,
         ...     priority=50
         ... )
         >>> plugin = Plugin(config)
@@ -51,7 +52,7 @@ class Plugin(ABC):
         >>> plugin.priority
         50
         >>> plugin.mode
-        <PluginMode.ENFORCE: 'enforce'>
+        <PluginMode.CONCURRENT: 'concurrent'>
         >>> PromptHookType.PROMPT_PRE_FETCH in plugin.hooks
         True
     """
@@ -365,6 +366,15 @@ class PluginRef:
             Plugin's mode.
         """
         return self.plugin.mode
+
+    @property
+    def on_error(self) -> OnError:
+        """Return the plugin's on_error behavior.
+
+        Returns:
+            Plugin's on_error behavior.
+        """
+        return self.plugin.config.on_error
 
 
 class HookRef:

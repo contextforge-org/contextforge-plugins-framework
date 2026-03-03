@@ -24,6 +24,7 @@ from cpex.framework.base import HookRef
 from cpex.framework.models import Config
 from cpex.framework import (
     GlobalContext,
+    OnError,
     PluginCondition,
     PluginConfig,
     PluginContext,
@@ -68,7 +69,7 @@ def test_manager_module_import_does_not_parse_plugin_settings(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_manager_timeout_handling():
-    """Test plugin timeout handling in both enforce and permissive modes."""
+    """Test plugin timeout handling in both concurrent and permissive modes."""
 
     # Create a plugin that times out
     class TimeoutPlugin(Plugin):
@@ -76,7 +77,7 @@ async def test_manager_timeout_handling():
             await asyncio.sleep(10)  # Longer than timeout
             return PluginResult(continue_processing=True)
 
-    # Test with enforce mode
+    # Test with concurrent mode
     manager = PluginManager("./tests/unit/cpex/fixtures/configs/valid_no_plugin.yaml")
     await manager.initialize()
     manager._executor.timeout = 0.01  # Set very short timeout
@@ -89,7 +90,7 @@ async def test_manager_timeout_handling():
         version="1.0",
         tags=["test"],
         kind="TimeoutPlugin",
-        mode=PluginMode.ENFORCE,
+        mode=PluginMode.CONCURRENT,
         hooks=["prompt_pre_fetch"],
         config={},
     )
@@ -114,15 +115,16 @@ async def test_manager_timeout_handling():
         # assert result.violation.code == "PLUGIN_TIMEOUT"
         # assert "timeout" in result.violation.description.lower()
 
-    # Test with permissive mode
+    # Test with permissive mode + on_error=IGNORE (errors are logged and ignored)
     plugin_config.mode = PluginMode.PERMISSIVE
+    plugin_config.on_error = OnError.IGNORE
     with patch.object(manager._registry, "get_hook_refs_for_hook") as mock_get:
         hook_ref = HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(timeout_plugin))
         mock_get.return_value = [hook_ref]
 
         result, _ = await manager.invoke_hook(PromptHookType.PROMPT_PRE_FETCH, prompt, global_context=global_context)
 
-        # Should continue in permissive mode
+        # Should continue in permissive mode with on_error=IGNORE
         assert result.continue_processing
         assert result.violation is None
 
@@ -131,7 +133,7 @@ async def test_manager_timeout_handling():
 
 @pytest.mark.asyncio
 async def test_manager_exception_handling():
-    """Test plugin exception handling in both enforce and permissive modes."""
+    """Test plugin exception handling in both concurrent and permissive modes."""
 
     # Create a plugin that raises an exception
     class ErrorPlugin(Plugin):
@@ -148,13 +150,13 @@ async def test_manager_exception_handling():
         version="1.0",
         tags=["test"],
         kind="ErrorPlugin",
-        mode=PluginMode.ENFORCE,
+        mode=PluginMode.CONCURRENT,
         hooks=["prompt_pre_fetch"],
         config={},
     )
     error_plugin = ErrorPlugin(plugin_config)
 
-    # Test with enforce mode
+    # Test with concurrent mode
     with patch.object(manager._registry, "get_hook_refs_for_hook") as mock_get:
         hook_ref = HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(error_plugin))
         mock_get.return_value = [hook_ref]
@@ -168,54 +170,58 @@ async def test_manager_exception_handling():
                 PromptHookType.PROMPT_PRE_FETCH, prompt, global_context=global_context
             )
 
-        # Should block in enforce mode
+        # Should block in concurrent mode
         # assert result.continue_processing
         # assert result.violation is not None
         # assert result.violation.code == "PLUGIN_ERROR"
         # assert "error" in result.violation.description.lower()
 
-    # Test with permissive mode
+    # Test with permissive mode + on_error=IGNORE (errors are logged and ignored)
     plugin_config.mode = PluginMode.PERMISSIVE
+    plugin_config.on_error = OnError.IGNORE
     with patch.object(manager._registry, "get_hook_refs_for_hook") as mock_get:
         hook_ref = HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(error_plugin))
         mock_get.return_value = [hook_ref]
 
         result, _ = await manager.invoke_hook(PromptHookType.PROMPT_PRE_FETCH, prompt, global_context=global_context)
 
-        # Should continue in permissive mode
+        # Should continue in permissive mode with on_error=IGNORE
         assert result.continue_processing
         assert result.violation is None
 
-    plugin_config.mode = PluginMode.ENFORCE_IGNORE_ERROR
+    plugin_config.mode = PluginMode.CONCURRENT
+    plugin_config.on_error = OnError.IGNORE
     with patch.object(manager._registry, "get_hook_refs_for_hook") as mock_get:
         hook_ref = HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(error_plugin))
         mock_get.return_value = [hook_ref]
 
         result, _ = await manager.invoke_hook(PromptHookType.PROMPT_PRE_FETCH, prompt, global_context=global_context)
 
-        # Should continue in enforce_ignore_error mode
+        # Should continue with on_error=ignore
         assert result.continue_processing
         assert result.violation is None
 
-    plugin_config.mode = PluginMode.ENFORCE_IGNORE_ERROR
+    plugin_config.mode = PluginMode.CONCURRENT
+    plugin_config.on_error = OnError.IGNORE
     with patch.object(manager._registry, "get_hook_refs_for_hook") as mock_get:
         hook_ref = HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(error_plugin))
         mock_get.return_value = [hook_ref]
 
         result, _ = await manager.invoke_hook(PromptHookType.PROMPT_PRE_FETCH, prompt, global_context=global_context)
 
-        # Should continue in enforce_ignore_error mode
+        # Should continue with on_error=ignore
         assert result.continue_processing
         assert result.violation is None
 
-    plugin_config.mode = PluginMode.ENFORCE_IGNORE_ERROR
+    plugin_config.mode = PluginMode.CONCURRENT
+    plugin_config.on_error = OnError.IGNORE
     with patch.object(manager._registry, "get_hook_refs_for_hook") as mock_get:
         hook_ref = HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(error_plugin))
         mock_get.return_value = [hook_ref]
 
         result, _ = await manager.invoke_hook(PromptHookType.PROMPT_PRE_FETCH, prompt, global_context=global_context)
 
-        # Should continue in enforce_ignore_error mode
+        # Should continue with on_error=ignore
         assert result.continue_processing
         assert result.violation is None
 
@@ -637,7 +643,7 @@ async def test_manager_local_context_persistence():
 
 @pytest.mark.asyncio
 async def test_manager_plugin_blocking():
-    """Test plugin blocking behavior in enforce mode."""
+    """Test plugin blocking behavior in concurrent mode."""
 
     class BlockingPlugin(Plugin):
         async def prompt_pre_fetch(self, payload, context):
@@ -659,7 +665,7 @@ async def test_manager_plugin_blocking():
         version="1.0",
         tags=["test"],
         kind="BlockingPlugin",
-        mode=PluginMode.ENFORCE,
+        mode=PluginMode.CONCURRENT,
         hooks=["prompt_pre_fetch"],
         config={},
     )
@@ -718,7 +724,7 @@ async def test_manager_plugin_permissive_blocking():
     )
     plugin = BlockingPlugin(config)
 
-    # Test permissive mode blocking (covers lines 194-195)
+    # Test permissive mode blocking
     with patch.object(manager._registry, "get_hook_refs_for_hook") as mock_get:
         hook_ref = HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(plugin))
         mock_get.return_value = [hook_ref]
@@ -728,10 +734,10 @@ async def test_manager_plugin_permissive_blocking():
 
         result, _ = await manager.invoke_hook(PromptHookType.PROMPT_PRE_FETCH, prompt, global_context=global_context)
 
-        # Should continue in permissive mode - the permissive logic continues without blocking
+        # Should continue
         assert result.continue_processing
-        # Violation not returned in permissive mode
-        assert result.violation is None
+        # No violation returned
+        assert not result.violation
 
     await manager.shutdown()
 
@@ -808,7 +814,7 @@ async def test_manager_initialization_edge_cases():
 
     # Test plugin instantiation failure (covers lines 495-501)
     # First-Party
-    from cpex.framework.models import PluginConfig, PluginMode, PluginSettings
+    from cpex.framework.models import PluginConfig, PluginMode
 
     manager2 = PluginManager()
     manager2._config = Config(
@@ -820,12 +826,11 @@ async def test_manager_initialization_edge_cases():
                 version="1.0",
                 tags=["test"],
                 kind="nonexistent.Plugin",
-                mode=PluginMode.ENFORCE,
+                mode=PluginMode.CONCURRENT,
                 hooks=[PromptHookType.PROMPT_PRE_FETCH],
                 config={},
             )
         ],
-        plugin_settings=PluginSettings(),
     )
 
     # Mock the loader to return None (covers lines 495-496)
@@ -849,7 +854,6 @@ async def test_manager_initialization_edge_cases():
                 config={},
             )
         ],
-        plugin_settings=PluginSettings(),
     )
 
     await manager3.shutdown()
@@ -895,7 +899,7 @@ async def test_base_plugin_coverage():
     assert plugin_ref.tags == ["test", "coverage"]
 
     # Test PluginRef mode property (covers line 344)
-    assert plugin_ref.mode == PluginMode.ENFORCE  # Default mode
+    assert plugin_ref.mode == PluginMode.CONCURRENT  # Default mode
 
     # Test NotImplementedError for prompt_pre_fetch (covers lines 151-155)
     context = PluginContext(global_context=GlobalContext(request_id="test"))

@@ -435,7 +435,7 @@ class TestExecutorPolicyEnforcement:
 
     @pytest.mark.asyncio
     async def test_enforce_early_return_uses_policy_filtered_payload(self):
-        """When an ENFORCE plugin short-circuits after a prior plugin made
+        """When a CONCURRENT plugin short-circuits after a prior plugin made
         policy-approved modifications, the early return must carry those
         filtered modifications via current_payload — not the raw result."""
         from cpex.framework.base import HookRef, Plugin, PluginRef
@@ -457,7 +457,7 @@ class TestExecutorPolicyEnforcement:
         modify_hook = HookRef("test_hook", modify_ref)
 
         block_config = PluginConfig(
-            name="blocker", kind="test.Plugin", version="1.0", hooks=["test_hook"], mode=PluginMode.ENFORCE
+            name="blocker", kind="test.Plugin", version="1.0", hooks=["test_hook"], mode=PluginMode.CONCURRENT
         )
         block_plugin = BlockingPlugin(block_config)
         block_ref = PluginRef(block_plugin)
@@ -505,7 +505,7 @@ class TestExecutorPolicyEnforcement:
         meta_hook = HookRef("test_hook", meta_ref)
 
         block_config = PluginConfig(
-            name="blocker", kind="test.Plugin", version="1.0", hooks=["test_hook"], mode=PluginMode.ENFORCE
+            name="blocker", kind="test.Plugin", version="1.0", hooks=["test_hook"], mode=PluginMode.CONCURRENT
         )
         block_plugin = BlockingPlugin(block_config)
         block_ref = PluginRef(block_plugin)
@@ -528,7 +528,7 @@ class TestExecutorPolicyEnforcement:
 
     @pytest.mark.asyncio
     async def test_enforce_early_return_deny_default_rejects_all(self):
-        """When default=deny and an ENFORCE plugin short-circuits with modifications,
+        """When default=deny and a CONCURRENT plugin short-circuits with modifications,
         all modifications must be rejected (modified_payload=None)."""
         from cpex.framework.base import HookRef, Plugin, PluginRef
         from cpex.framework.manager import PluginExecutor
@@ -540,7 +540,7 @@ class TestExecutorPolicyEnforcement:
                 return PluginResult(continue_processing=False, modified_payload=modified)
 
         config = PluginConfig(
-            name="blocker", kind="test.Plugin", version="1.0", hooks=["test_hook"], mode=PluginMode.ENFORCE
+            name="blocker", kind="test.Plugin", version="1.0", hooks=["test_hook"], mode=PluginMode.CONCURRENT
         )
         plugin = BlockingPlugin(config)
         ref = PluginRef(plugin)
@@ -1008,7 +1008,7 @@ async def test_http_auth_permission_provenance_uses_actual_decider_in_multi_plug
 
 @pytest.mark.asyncio
 async def test_http_auth_permission_enforce_short_circuit_records_decision_plugin():
-    """ENFORCE short-circuit path should still persist authoritative decision provenance."""
+    """CONCURRENT short-circuit path should still persist authoritative decision provenance."""
     from cpex.framework.base import HookRef, Plugin, PluginRef
     from cpex.framework.hooks.http import HttpAuthCheckPermissionPayload, HttpAuthCheckPermissionResultPayload
     from cpex.framework.manager import PluginExecutor
@@ -1034,7 +1034,7 @@ async def test_http_auth_permission_enforce_short_circuit_records_decision_plugi
         kind="test.Plugin",
         version="1.0",
         hooks=["http_auth_check_permission"],
-        mode=PluginMode.ENFORCE,
+        mode=PluginMode.CONCURRENT,
     )
     hook_refs = [
         HookRef("http_auth_check_permission", PluginRef(DecisionPlugin(decision_config))),

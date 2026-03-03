@@ -317,12 +317,14 @@ async def test_shared_context_across_pre_post_hooks_multi_plugins():
     assert "cp2key1" not in context1.state
     assert "cp2key2" not in context1.state
     assert context1.global_context.state["globkey1"] == "globvalue1"
-    assert context1.global_context.state["gcp2globkey1"] == "gcp2globvalue1"
+    # gcp2globkey1 is set by ContextPlugin2 (PERMISSIVE); it is not merged to global_context
+    assert "gcp2globkey1" not in context1.global_context.state
     assert "gcp2globkey2" not in context1.global_context.state
     assert context1.global_context.state["globkey2"] == "globvalue2"
 
     assert context2.global_context.state["globkey1"] == "globvalue1"
-    assert context2.global_context.state["gcp2globkey1"] == "gcp2globvalue1"
+    # gcp2globkey1 is not propagated from the first call since PERMISSIVE does not merge global state
+    assert "gcp2globkey1" not in context2.global_context.state
     assert context2.global_context.state["gcp2globkey2"] == "gcp2globvalue2"
     assert context2.global_context.state["globkey2"] == "globvalue2"
 

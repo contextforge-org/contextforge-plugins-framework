@@ -47,6 +47,7 @@ from cpex.framework.memory import copyonwrite, wrap_payload_for_isolation
 from cpex.framework.models import (
     Config,
     GlobalContext,
+    OnError,
     PluginContext,
     PluginContextTable,
     PluginErrorModel,
@@ -121,6 +122,7 @@ class PluginExecutor:
         self.observability = observability
         self.hook_policies: dict[str, HookPayloadPolicy] = hook_policies or {}
         self.default_hook_policy = DefaultHookPolicy(settings.default_hook_policy)
+        self._runtime_disabled: set[str] = set()
 
     async def execute(
         self,
@@ -180,19 +182,19 @@ class PluginExecutor:
         current_payload: PluginPayload | None = None
         decision_plugin_name: Optional[str] = None
 
-        for hook_ref in hook_refs:
-            # Skip disabled plugins
-            if hook_ref.plugin_ref.mode == PluginMode.DISABLED:
-                continue
+        sequential_refs, permissive_refs, concurrent_refs, fire_and_forget_refs = self._group_by_mode(
+            hook_refs, payload, hook_type, global_context, policy
+        )
 
-            # Check if plugin conditions match current context
-            if hook_ref.plugin_ref.conditions and not payload_matches(
-                payload, hook_type, hook_ref.plugin_ref.conditions, global_context
-            ):
-                logger.debug("Skipping plugin %s - conditions not met", hook_ref.plugin_ref.name)
-                continue
+        # Independent semaphores prevent one mode from starving the other
+        pool = int(settings.execution_pool) if settings.execution_pool else None
+        fire_and_forget_semaphore = asyncio.Semaphore(pool) if pool else None
+        concurrent_semaphore = asyncio.Semaphore(pool) if pool else None
 
-            tmp_global_context = GlobalContext(
+        # SEQUENTIAL: sequential, chained execution — can halt pipeline
+        for hook_ref in sequential_refs:
+            local_context_key = global_context.request_id + hook_ref.plugin_ref.uuid
+            tmp_gc = GlobalContext(
                 request_id=global_context.request_id,
                 user=global_context.user,
                 tenant_id=global_context.tenant_id,
@@ -200,38 +202,27 @@ class PluginExecutor:
                 state={} if not global_context.state else copyonwrite(global_context.state),
                 metadata={} if not global_context.metadata else copyonwrite(global_context.metadata),
             )
-            # Get or create local context for this plugin
-            local_context_key = global_context.request_id + hook_ref.plugin_ref.uuid
             if local_contexts and local_context_key in local_contexts:
                 local_context = local_contexts[local_context_key]
-                local_context.global_context = tmp_global_context
+                local_context.global_context = tmp_gc
             else:
-                local_context = PluginContext(global_context=tmp_global_context)
+                local_context = PluginContext(global_context=tmp_gc)
             res_local_contexts[local_context_key] = local_context
 
-            # When a policy exists or default=deny is active, deep-copy the
-            # payload before handing it to the plugin.  The plugin operates on
-            # the copy, so in-place nested mutations (e.g. payload.args[k]=v)
-            # cannot pollute the live chain.  model_copy(deep=True) is used
-            # for Pydantic models; copy.deepcopy handles plain dicts that
-            # arrive via cross-type hooks (e.g. http_auth_resolve_user).
             effective_payload = current_payload if current_payload is not None else payload
-            # RootModel subclasses (e.g. HttpHeaderPayload) wrap mutable containers
-            # that bypass the frozen=True constraint via __setitem__, so they must
-            # always be deep-copied to prevent in-place corruption of the live chain.
             needs_isolation = (
                 policy or self.default_hook_policy == DefaultHookPolicy.DENY or isinstance(effective_payload, RootModel)
             )
-            if needs_isolation:
-                plugin_input = (
+            plugin_input = (
+                (
                     wrap_payload_for_isolation(effective_payload)
                     if isinstance(effective_payload, BaseModel)
                     else copy.deepcopy(effective_payload)
                 )
-            else:
-                plugin_input = effective_payload
+                if needs_isolation
+                else effective_payload
+            )
 
-            # Execute plugin with timeout protection
             result = await self.execute_plugin(
                 hook_ref,
                 plugin_input,
@@ -241,64 +232,15 @@ class PluginExecutor:
                 combined_metadata,
             )
 
-            # Apply policy-based controlled merge (per-plugin)
             if result.modified_payload is not None:
-                if policy:
-                    if isinstance(result.modified_payload, type(effective_payload)) and isinstance(
-                        effective_payload, BaseModel
-                    ):
-                        # Same-type BaseModel payload — apply field-level policy filtering
-                        filtered = apply_policy(
-                            effective_payload,
-                            result.modified_payload,
-                            policy,
-                        )
-                        if filtered is not None:
-                            current_payload = filtered
-                            decision_plugin_name = hook_ref.plugin_ref.name
-                    else:
-                        # Cross-type payload (e.g. HTTP hooks returning a different
-                        # result type than the input).  Field-level filtering is not
-                        # applicable; the policy's presence authorises the hook.
-                        # Guard: only accept PluginPayload subtypes or dict (used
-                        # by http_auth_resolve_user and similar hooks).
-                        if isinstance(result.modified_payload, (PluginPayload, dict)):
-                            logger.debug(
-                                "Plugin %s returned cross-type payload (%s -> %s) on hook %s; accepting without field filtering",
-                                hook_ref.plugin_ref.name,
-                                type(effective_payload).__name__,
-                                type(result.modified_payload).__name__,
-                                hook_type,
-                            )
-                            current_payload = result.modified_payload
-                            decision_plugin_name = hook_ref.plugin_ref.name
-                        else:
-                            logger.warning(
-                                "Plugin %s returned unexpected type %s on hook %s; ignoring modification",
-                                hook_ref.plugin_ref.name,
-                                type(result.modified_payload).__name__,
-                                hook_type,
-                            )
-                elif self.default_hook_policy == DefaultHookPolicy.ALLOW:
-                    # No explicit policy + default=allow -- accept all modifications
-                    current_payload = result.modified_payload
-                    decision_plugin_name = hook_ref.plugin_ref.name
-                else:
-                    # No explicit policy + default=deny -- reject all modifications
-                    logger.warning(
-                        "Plugin %s attempted payload modification on hook %s but no policy is defined and default is deny",
-                        hook_ref.plugin_ref.name,
-                        hook_type,
-                    )
+                current_payload, decision_plugin_name = self._apply_payload_modification(
+                    hook_ref, result, effective_payload, policy, hook_type, current_payload, decision_plugin_name
+                )
 
-            # Both ENFORCE and ENFORCE_IGNORE_ERROR honour continue_processing=False
-            # and halt the chain.  They differ only in error handling: ENFORCE raises
-            # on plugin errors/timeouts, while ENFORCE_IGNORE_ERROR swallows them and
-            # lets the chain continue (see execute_plugin exception handlers).
-            if not result.continue_processing and hook_ref.plugin_ref.mode in (
-                PluginMode.ENFORCE,
-                PluginMode.ENFORCE_IGNORE_ERROR,
-            ):
+            if not result.continue_processing:
+                self._fire_and_forget_tasks(
+                    fire_and_forget_refs, payload, global_context, res_local_contexts, fire_and_forget_semaphore
+                )
                 if hook_type == HTTP_AUTH_CHECK_PERMISSION_HOOK and decision_plugin_name:
                     combined_metadata[DECISION_PLUGIN_METADATA_KEY] = decision_plugin_name
                 return (
@@ -311,6 +253,147 @@ class PluginExecutor:
                     res_local_contexts,
                 )
 
+        # PERMISSIVE: sequential, chained execution — cannot halt pipeline
+        for hook_ref in permissive_refs:
+            local_context_key = global_context.request_id + hook_ref.plugin_ref.uuid
+            tmp_gc = GlobalContext(
+                request_id=global_context.request_id,
+                user=global_context.user,
+                tenant_id=global_context.tenant_id,
+                server_id=global_context.server_id,
+                state={} if not global_context.state else copyonwrite(global_context.state),
+                metadata={} if not global_context.metadata else copyonwrite(global_context.metadata),
+            )
+            if local_contexts and local_context_key in local_contexts:
+                local_context = local_contexts[local_context_key]
+                local_context.global_context = tmp_gc
+            else:
+                local_context = PluginContext(global_context=tmp_gc)
+            res_local_contexts[local_context_key] = local_context
+
+            effective_payload = current_payload if current_payload is not None else payload
+            needs_isolation = (
+                policy or self.default_hook_policy == DefaultHookPolicy.DENY or isinstance(effective_payload, RootModel)
+            )
+            plugin_input = (
+                (
+                    wrap_payload_for_isolation(effective_payload)
+                    if isinstance(effective_payload, BaseModel)
+                    else copy.deepcopy(effective_payload)
+                )
+                if needs_isolation
+                else effective_payload
+            )
+
+            result = await self.execute_plugin(
+                hook_ref,
+                plugin_input,
+                local_context,
+                violations_as_exceptions,
+                global_context,
+                combined_metadata,
+            )
+
+            if result.modified_payload is not None:
+                current_payload, decision_plugin_name = self._apply_payload_modification(
+                    hook_ref, result, effective_payload, policy, hook_type, current_payload, decision_plugin_name
+                )
+
+            if not result.continue_processing:
+                if hook_type == HTTP_AUTH_CHECK_PERMISSION_HOOK and decision_plugin_name:
+                    combined_metadata[DECISION_PLUGIN_METADATA_KEY] = decision_plugin_name
+                return (
+                    PluginResult(
+                        continue_processing=False,
+                        modified_payload=current_payload,
+                        violation=result.violation,
+                        metadata=combined_metadata,
+                    ),
+                    res_local_contexts,
+                )
+
+        # CONCURRENT: parallel execution with fail-fast on first blocking result
+        if concurrent_refs:
+            concurrent_ctx_list: list[tuple[HookRef, PluginContext, PluginPayload]] = []
+            concurrent_tasks: list[asyncio.Task] = []
+            effective_payload = current_payload if current_payload is not None else payload
+            for ref in concurrent_refs:
+                # RootModel subclasses must always be deep-copied to prevent in-place corruption.
+                needs_isolation = (
+                    policy
+                    or self.default_hook_policy == DefaultHookPolicy.DENY
+                    or isinstance(effective_payload, RootModel)
+                )
+                plugin_input = (
+                    (
+                        wrap_payload_for_isolation(effective_payload)
+                        if isinstance(effective_payload, BaseModel)
+                        else copy.deepcopy(effective_payload)
+                    )
+                    if needs_isolation
+                    else effective_payload
+                )
+                tmp_gc = GlobalContext(
+                    request_id=global_context.request_id,
+                    user=global_context.user,
+                    tenant_id=global_context.tenant_id,
+                    server_id=global_context.server_id,
+                    state={} if not global_context.state else copyonwrite(global_context.state),
+                    metadata={} if not global_context.metadata else copyonwrite(global_context.metadata),
+                )
+                local_context_key = global_context.request_id + ref.plugin_ref.uuid
+                if local_contexts and local_context_key in local_contexts:
+                    local_context = local_contexts[local_context_key]
+                    local_context.global_context = tmp_gc
+                else:
+                    local_context = PluginContext(global_context=tmp_gc)
+                res_local_contexts[local_context_key] = local_context
+                idx = len(concurrent_ctx_list)
+                concurrent_ctx_list.append((ref, local_context, effective_payload))
+                coro = self.execute_plugin(
+                    ref,
+                    plugin_input,
+                    local_context,
+                    violations_as_exceptions,
+                    global_context,
+                    combined_metadata,
+                )
+                if concurrent_semaphore:
+                    coro = self._with_semaphore(concurrent_semaphore, coro)
+                concurrent_tasks.append(asyncio.create_task(self._tagged(coro, idx)))
+
+            for completed_coro in asyncio.as_completed(concurrent_tasks):
+                result, idx = await completed_coro
+                ref, _lc, eff_payload = concurrent_ctx_list[idx]
+                if result.modified_payload is not None:
+                    current_payload, decision_plugin_name = self._apply_payload_modification(
+                        ref, result, eff_payload, policy, hook_type, current_payload, decision_plugin_name
+                    )
+                if not result.continue_processing:
+                    for task in concurrent_tasks:
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.gather(*concurrent_tasks, return_exceptions=True)
+                    self._fire_and_forget_tasks(
+                        fire_and_forget_refs, payload, global_context, res_local_contexts, fire_and_forget_semaphore
+                    )
+                    if hook_type == HTTP_AUTH_CHECK_PERMISSION_HOOK and decision_plugin_name:
+                        combined_metadata[DECISION_PLUGIN_METADATA_KEY] = decision_plugin_name
+                    return (
+                        PluginResult(
+                            continue_processing=False,
+                            modified_payload=current_payload,
+                            violation=result.violation,
+                            metadata=combined_metadata,
+                        ),
+                        res_local_contexts,
+                    )
+
+        # FIRE_AND_FORGET: fire-and-forget background tasks (fires last with final payload snapshot)
+        self._fire_and_forget_tasks(
+            fire_and_forget_refs, payload, global_context, res_local_contexts, fire_and_forget_semaphore
+        )
+
         if hook_type == HTTP_AUTH_CHECK_PERMISSION_HOOK and decision_plugin_name:
             combined_metadata[DECISION_PLUGIN_METADATA_KEY] = decision_plugin_name
 
@@ -320,6 +403,184 @@ class PluginExecutor:
             ),
             res_local_contexts,
         )
+
+    def _group_by_mode(
+        self,
+        hook_refs: list[HookRef],
+        payload: PluginPayload,
+        hook_type: str,
+        global_context: GlobalContext,
+        policy: Any,
+    ) -> tuple[list[HookRef], list[HookRef], list[HookRef], list[HookRef]]:
+        """Group hook references by mode, filtering disabled and condition-unmatched plugins.
+
+        Args:
+            hook_refs: All hook references to evaluate.
+            payload: The current payload (used for condition matching).
+            hook_type: The hook type identifier.
+            global_context: Shared context for condition evaluation.
+            policy: The hook payload policy (unused here but kept for future use).
+
+        Returns:
+            A tuple of (sequential_refs, permissive_refs, concurrent_refs, fire_and_forget_refs),
+            each sorted by priority.
+        """
+        sequential_refs: list[HookRef] = []
+        permissive_refs: list[HookRef] = []
+        concurrent_refs: list[HookRef] = []
+        fire_and_forget_refs: list[HookRef] = []
+
+        for ref in hook_refs:
+            # Skip statically disabled plugins
+            if ref.plugin_ref.mode == PluginMode.DISABLED:
+                continue
+            # Skip runtime-disabled plugins
+            if ref.plugin_ref.name in self._runtime_disabled:
+                continue
+            # Check conditions
+            if ref.plugin_ref.conditions and not payload_matches(
+                payload, hook_type, ref.plugin_ref.conditions, global_context
+            ):
+                logger.debug("Skipping plugin %s - conditions not met", ref.plugin_ref.name)
+                continue
+            # Bucket by mode
+            if ref.plugin_ref.mode == PluginMode.SEQUENTIAL:
+                sequential_refs.append(ref)
+            elif ref.plugin_ref.mode == PluginMode.PERMISSIVE:
+                permissive_refs.append(ref)
+            elif ref.plugin_ref.mode == PluginMode.CONCURRENT:
+                concurrent_refs.append(ref)
+            elif ref.plugin_ref.mode == PluginMode.FIRE_AND_FORGET:
+                fire_and_forget_refs.append(ref)
+
+        sequential_refs.sort(key=lambda r: r.plugin_ref.priority)
+        permissive_refs.sort(key=lambda r: r.plugin_ref.priority)
+        concurrent_refs.sort(key=lambda r: r.plugin_ref.priority)
+        fire_and_forget_refs.sort(key=lambda r: r.plugin_ref.priority)
+
+        return sequential_refs, permissive_refs, concurrent_refs, fire_and_forget_refs
+
+    def _apply_payload_modification(
+        self,
+        hook_ref: HookRef,
+        result: PluginResult,
+        effective_payload: PluginPayload,
+        policy: Any,
+        hook_type: str,
+        current_payload: Optional[PluginPayload],
+        decision_plugin_name: Optional[str],
+    ) -> tuple[Optional[PluginPayload], Optional[str]]:
+        """Apply a plugin's payload modification, respecting the hook policy.
+
+        Returns:
+            Updated (current_payload, decision_plugin_name) tuple.
+        """
+        if policy:
+            if isinstance(result.modified_payload, type(effective_payload)) and isinstance(
+                effective_payload, BaseModel
+            ):
+                # Same-type BaseModel payload — apply field-level policy filtering
+                filtered = apply_policy(effective_payload, result.modified_payload, policy)
+                if filtered is not None:
+                    return filtered, hook_ref.plugin_ref.name
+            else:
+                # Cross-type payload — guard: only accept PluginPayload subtypes or dict
+                if isinstance(result.modified_payload, (PluginPayload, dict)):
+                    logger.debug(
+                        "Plugin %s returned cross-type payload (%s -> %s) on hook %s; accepting without field filtering",
+                        hook_ref.plugin_ref.name,
+                        type(effective_payload).__name__,
+                        type(result.modified_payload).__name__,
+                        hook_type,
+                    )
+                    return result.modified_payload, hook_ref.plugin_ref.name
+                else:
+                    logger.warning(
+                        "Plugin %s returned unexpected type %s on hook %s; ignoring modification",
+                        hook_ref.plugin_ref.name,
+                        type(result.modified_payload).__name__,
+                        hook_type,
+                    )
+        elif self.default_hook_policy == DefaultHookPolicy.ALLOW:
+            # No explicit policy + default=allow -- accept all modifications
+            return result.modified_payload, hook_ref.plugin_ref.name
+        else:
+            # No explicit policy + default=deny -- reject all modifications
+            logger.warning(
+                "Plugin %s attempted payload modification on hook %s but no policy is defined and default is deny",
+                hook_ref.plugin_ref.name,
+                hook_type,
+            )
+        return current_payload, decision_plugin_name
+
+    @staticmethod
+    async def _with_semaphore(semaphore: asyncio.Semaphore, coro: Any) -> Any:
+        """Await *coro* while holding *semaphore*, bounding concurrent CONCURRENT tasks."""
+        async with semaphore:
+            return await coro
+
+    @staticmethod
+    async def _tagged(coro: Any, tag: Any) -> tuple[Any, Any]:
+        """Await *coro* and pair the result with *tag* for use with as_completed."""
+        result = await coro
+        return result, tag
+
+    def _fire_and_forget_tasks(
+        self,
+        fire_and_forget_refs: list[HookRef],
+        payload: PluginPayload,
+        global_context: GlobalContext,
+        res_local_contexts: dict,
+        semaphore: Optional[asyncio.Semaphore],
+    ) -> None:
+        """Schedule all FIRE_AND_FORGET plugins as fire-and-forget background tasks.
+
+        May be called from an early-exit path or from the normal completion path.
+        Each FIRE_AND_FORGET plugin receives an isolated snapshot of the payload at call time.
+        """
+        for ref in fire_and_forget_refs:
+            local_context_key = global_context.request_id + ref.plugin_ref.uuid
+            if local_context_key in res_local_contexts:
+                # Already scheduled — skip to avoid double-scheduling
+                continue
+            task_input = (
+                wrap_payload_for_isolation(payload) if isinstance(payload, BaseModel) else copy.deepcopy(payload)
+            )
+            tmp_gc = GlobalContext(
+                request_id=global_context.request_id,
+                user=global_context.user,
+                tenant_id=global_context.tenant_id,
+                server_id=global_context.server_id,
+                state={} if not global_context.state else copyonwrite(global_context.state),
+                metadata={} if not global_context.metadata else copyonwrite(global_context.metadata),
+            )
+            local_context = PluginContext(global_context=tmp_gc)
+            res_local_contexts[local_context_key] = local_context
+            asyncio.create_task(self._run_fire_and_forget_task(ref, task_input, local_context, semaphore))
+
+    async def _run_fire_and_forget_task(
+        self,
+        hook_ref: HookRef,
+        payload: PluginPayload,
+        local_context: PluginContext,
+        semaphore: Optional[asyncio.Semaphore],
+    ) -> None:
+        """Execute a plugin as a fire-and-forget background task.
+
+        Errors are logged but never propagated — background tasks cannot halt the pipeline.
+        If on_error=DISABLE, the plugin is added to the runtime-disabled set.
+        """
+        try:
+            if semaphore:
+                async with semaphore:
+                    await self._execute_with_timeout(hook_ref, payload, local_context)
+            else:
+                await self._execute_with_timeout(hook_ref, payload, local_context)
+        except Exception:
+            logger.error("Plugin %s failed in fire-and-forget mode (ignored)", hook_ref.plugin_ref.name)
+            if hook_ref.plugin_ref.on_error == OnError.DISABLE:
+                self._runtime_disabled.add(hook_ref.plugin_ref.name)
+            # FAIL and IGNORE both just log for FIRE_AND_FORGET mode (background can't halt pipeline)
 
     async def execute_plugin(
         self,
@@ -353,12 +614,16 @@ class PluginExecutor:
         try:
             # Execute plugin with timeout protection
             result = await self._execute_with_timeout(hook_ref, payload, local_context)
-            # Only merge global state for enforce modes; permissive plugins
-            # operate on copy-on-write snapshots and should not mutate shared state.
+            # Only merge global state for CONCURRENT and SEQUENTIAL modes; FIRE_AND_FORGET and PERMISSIVE
+            # plugins operate on copy-on-write snapshots and should not mutate shared state.
             if (
                 local_context.global_context
                 and global_context
-                and hook_ref.plugin_ref.mode in (PluginMode.ENFORCE, PluginMode.ENFORCE_IGNORE_ERROR)
+                and hook_ref.plugin_ref.mode
+                in (
+                    PluginMode.CONCURRENT,
+                    PluginMode.SEQUENTIAL,
+                )
             ):
                 global_context.state.update(local_context.global_context.state)
                 global_context.metadata.update(local_context.global_context.metadata)
@@ -368,18 +633,15 @@ class PluginExecutor:
                     {k: v for k, v in result.metadata.items() if k not in RESERVED_INTERNAL_METADATA_KEYS}
                 )
 
-            # Track payload modifications
-            # if result.modified_payload is not None:
-            #    current_payload = result.modified_payload
-
             # Set plugin name in violation if present
             if result.violation:
                 result.violation.plugin_name = hook_ref.plugin_ref.plugin.name
 
             # Handle plugin blocking the request
             if not result.continue_processing:
-                if hook_ref.plugin_ref.mode == PluginMode.ENFORCE:
-                    logger.warning("Plugin %s blocked request in enforce mode", hook_ref.plugin_ref.plugin.name)
+                if hook_ref.plugin_ref.mode in (PluginMode.CONCURRENT, PluginMode.SEQUENTIAL):
+                    mode = hook_ref.plugin_ref.mode.value
+                    logger.warning("Plugin %s blocked request in %s mode", hook_ref.plugin_ref.plugin.name, mode)
                     if violations_as_exceptions:
                         if result.violation:
                             plugin_name = result.violation.plugin_name
@@ -403,34 +665,41 @@ class PluginExecutor:
                         hook_ref.plugin_ref.plugin.name,
                         result.violation.description if result.violation else "No description",
                     )
+                    return PluginResult(
+                        continue_processing=True,
+                        modified_payload=result.modified_payload,
+                        violation=None,
+                        metadata=combined_metadata,
+                    )
             return result
         except asyncio.TimeoutError as exc:
+            on_error = hook_ref.plugin_ref.on_error
             logger.error("Plugin %s timed out after %ds", hook_ref.plugin_ref.name, self.timeout)
-            if (
-                self.config and self.config.plugin_settings.fail_on_plugin_error
-            ) or hook_ref.plugin_ref.mode == PluginMode.ENFORCE:
+            if on_error == OnError.FAIL:
                 raise PluginError(
                     error=PluginErrorModel(
                         message=f"Plugin {hook_ref.plugin_ref.name} exceeded {self.timeout}s timeout",
                         plugin_name=hook_ref.plugin_ref.name,
                     )
                 ) from exc
-            # In permissive or enforce_ignore_error mode, continue with next plugin
+            if on_error == OnError.DISABLE:
+                self._runtime_disabled.add(hook_ref.plugin_ref.name)
         except PluginViolationError:
             raise
         except PluginError as pe:
+            on_error = hook_ref.plugin_ref.on_error
             logger.error("Plugin %s failed with error: %s", hook_ref.plugin_ref.name, str(pe))
-            if (
-                self.config and self.config.plugin_settings.fail_on_plugin_error
-            ) or hook_ref.plugin_ref.mode == PluginMode.ENFORCE:
+            if on_error == OnError.FAIL:
                 raise
+            if on_error == OnError.DISABLE:
+                self._runtime_disabled.add(hook_ref.plugin_ref.name)
         except Exception as e:
+            on_error = hook_ref.plugin_ref.on_error
             logger.error("Plugin %s failed with error: %s", hook_ref.plugin_ref.name, str(e))
-            if (
-                self.config and self.config.plugin_settings.fail_on_plugin_error
-            ) or hook_ref.plugin_ref.mode == PluginMode.ENFORCE:
+            if on_error == OnError.FAIL:
                 raise PluginError(error=convert_exception_to_error(e, hook_ref.plugin_ref.name)) from e
-            # In permissive or enforce_ignore_error mode, continue with next plugin
+            if on_error == OnError.DISABLE:
+                self._runtime_disabled.add(hook_ref.plugin_ref.name)
         # Return a result indicating processing should continue despite the error
         return PluginResult(continue_processing=True)
 

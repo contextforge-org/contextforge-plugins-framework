@@ -27,7 +27,7 @@ def _make_config(**overrides) -> PluginConfig:
         version="1.0.0",
         hooks=["tool_pre_invoke"],
         tags=["tag1", "tag2"],
-        mode=PluginMode.ENFORCE,
+        mode=PluginMode.CONCURRENT,
         priority=42,
         conditions=[PluginCondition(server_ids={"s1"})],
     )

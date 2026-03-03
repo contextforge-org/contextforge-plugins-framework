@@ -13,7 +13,6 @@ import os
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
-from types import SimpleNamespace
 
 # Third-Party
 import pytest
@@ -38,6 +37,13 @@ from cpex.framework import (
     PluginError,
 )
 from cpex.framework.external.mcp.client import ExternalPlugin
+from tests.unit.cpex.fixtures.common.models import (
+    Message,
+    ResourceContent,
+    PromptResult,
+    Role,
+    TextContent,
+)
 
 
 @pytest.mark.asyncio
@@ -159,8 +165,8 @@ async def test_hook_methods_empty_content():
         await plugin.invoke_hook(PromptHookType.PROMPT_PRE_FETCH, payload, context)
 
     # Test prompt_post_fetch with empty content - should raise PluginError
-    message = SimpleNamespace(content=SimpleNamespace(type="text", text="test"), role="user")
-    prompt_result = SimpleNamespace(messages=[message])
+    message = Message(content=TextContent(type="text", text="test"), role=Role.USER)
+    prompt_result = PromptResult(messages=[message])
     payload = PromptPosthookPayload(prompt_id="1", result=prompt_result)
     with pytest.raises(PluginError):
         await plugin.invoke_hook(PromptHookType.PROMPT_POST_FETCH, payload, context)
@@ -181,7 +187,7 @@ async def test_hook_methods_empty_content():
         await plugin.invoke_hook(ResourceHookType.RESOURCE_PRE_FETCH, payload, context)
 
     # Test resource_post_fetch with empty content - should raise PluginError
-    resource_content = SimpleNamespace(type="resource", id="123", uri="file://test.txt", text="content")
+    resource_content = ResourceContent(type="resource", id="123", uri="file://test.txt", text="content")
     payload = ResourcePostFetchPayload(uri="file://test.txt", content=resource_content)
     with pytest.raises(PluginError):
         await plugin.invoke_hook(ResourceHookType.RESOURCE_POST_FETCH, payload, context)

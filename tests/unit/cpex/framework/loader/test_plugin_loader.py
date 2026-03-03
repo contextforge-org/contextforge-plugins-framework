@@ -54,7 +54,7 @@ async def test_plugin_loader_load(monkeypatch):
     plugin = await loader.load_and_instantiate_plugin(config.plugins[0])
     assert type(plugin).__name__ == "SearchReplacePlugin"
     assert plugin.name == "ReplaceBadWordsPlugin"
-    assert plugin.mode == PluginMode.ENFORCE
+    assert plugin.mode == PluginMode.CONCURRENT
     assert plugin.priority == 150
     assert "test_prompt" in plugin.conditions[0].prompts
     assert plugin.hooks[0] == "prompt_pre_fetch"
