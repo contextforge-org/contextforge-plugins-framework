@@ -1,11 +1,11 @@
 
 ## ContextForge Plugin Framework
 
-The <u>C</u>ontextForge <u>P</u>lugin <u>Ex</u>tensibility (Cpex) framework allows applications to define extension points (hooks) and register plugins that are automatically invoked before and after critical execution points. It provides a robust mechanism for managing plugin lifecycles, enforcing execution timeouts, and handling plugin violations in a controlled and predictable way.
+The <u>C</u>ontextForge <u>P</u>lugin <u>Ex</u>tensibility (CPEX) framework allows applications to define extension points (hooks) and register plugins that are automatically invoked before and after critical execution points. It provides a robust mechanism for managing plugin lifecycles, enforcing execution timeouts, and handling plugin violations in a controlled and predictable way.
 
 ## Overview
 
-Cpex introduces a lightweight, stack-agnostic hook system that intercepts execution points such as prompt handling, tool invocation, and data transformation, allowing plugins to observe, enforce, or modify behavior while remaining minimally invasive to host runtimes and application logic.
+CPEX introduces a lightweight, stack-agnostic hook system that intercepts execution points such as prompt handling, tool invocation, and data transformation, allowing plugins to observe, enforce, or modify behavior while remaining minimally invasive to host runtimes and application logic.
 
 The framework enables you to:
 
@@ -412,7 +412,7 @@ plugins:
 
 ```python
 import pytest
-from Cpex.framework.models import PluginConfig, GlobalContext, PluginContext
+from cpex.framework.models import PluginConfig, GlobalContext, PluginContext
 from my_app.plugins.validation import ValidationPlugin
 from my_app.plugins.models import MyHookPayload
 
