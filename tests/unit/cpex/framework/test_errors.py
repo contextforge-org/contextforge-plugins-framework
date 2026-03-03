@@ -39,6 +39,7 @@ async def test_error_plugin():
     await plugin_manager.shutdown()
 
 
+@pytest.mark.asyncio
 async def test_error_plugin_raise_error_false():
     plugin_manager = PluginManager(config="tests/unit/cpex/fixtures/configs/error_plugin_raise_error_false.yaml")
     await plugin_manager.initialize()

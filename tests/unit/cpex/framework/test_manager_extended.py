@@ -15,7 +15,6 @@ import sys
 from unittest.mock import patch
 import re
 import uuid
-from types import SimpleNamespace
 
 # Third-Party
 import pytest
@@ -43,6 +42,8 @@ from cpex.framework import (
     ToolPreInvokePayload,
 )
 from cpex.framework.registry import PluginRef
+
+from tests.unit.cpex.fixtures.common.models import Message, PromptResult, Role, TextContent
 
 
 def test_manager_module_import_does_not_parse_plugin_settings(monkeypatch):
@@ -618,8 +619,8 @@ async def test_manager_local_context_persistence():
         assert result_pre.continue_processing
 
         # Call to post_fetch with same contexts
-        message = SimpleNamespace(content=SimpleNamespace(type="text", text="Original"), role="user")
-        prompt_result = SimpleNamespace(messages=[message])
+        message = Message(content=TextContent(type="text", text="Original"), role=Role.USER)
+        prompt_result = PromptResult(messages=[message])
         post_payload = PromptPosthookPayload(prompt_id="test", result=prompt_result)
 
         result_post, _ = await manager.invoke_hook(
@@ -780,8 +781,8 @@ async def test_manager_payload_size_validation():
 
     # Test large result payload (covers line 258)
     large_text = "y" * (MAX_PAYLOAD_SIZE + 1)
-    message = SimpleNamespace(role="user", content=SimpleNamespace(type="text", text=large_text))
-    large_result = SimpleNamespace(messages=[message])
+    message = Message(role="user", content=TextContent(type="text", text=large_text))
+    large_result = PromptResult(messages=[message])
     large_post_payload = PromptPosthookPayload(prompt_id="test", result=large_result)
 
     # Should raise PayloadSizeError for large result
@@ -904,8 +905,8 @@ async def test_base_plugin_coverage():
         await plugin.prompt_pre_fetch(payload, context)
 
     # Test NotImplementedError for prompt_post_fetch (covers lines 167-171)
-    message = SimpleNamespace(role="user", content=SimpleNamespace(type="text", text="test"))
-    result = SimpleNamespace(messages=[message])
+    message = Message(role="user", content=TextContent(type="text", text="test"))
+    result = PromptResult(messages=[message])
     post_payload = PromptPosthookPayload(prompt_id="test", result=result)
 
     with pytest.raises(AttributeError, match="'Plugin' object has no attribute 'prompt_post_fetch'"):

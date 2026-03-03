@@ -15,8 +15,6 @@ import subprocess
 import sys
 import time
 
-from types import SimpleNamespace
-
 # Third-Party
 import pytest
 
@@ -30,6 +28,8 @@ from cpex.framework import (
     PromptPosthookPayload,
     PromptPrehookPayload,
 )
+
+from tests.unit.cpex.fixtures.common.models import Message, TextContent, Role, PromptResult
 
 
 def _wait_for_port(host: str, port: int, timeout: float = 10.0, proc: subprocess.Popen | None = None) -> None:
@@ -98,7 +98,7 @@ def server_proc():
     # Start the server as a subprocess
     try:
         with subprocess.Popen(
-            [sys.executable, "mcpgateway/plugins/framework/external/mcp/server/runtime.py"],
+            [sys.executable, "cpex/framework/external/mcp/server/runtime.py"],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             env=current_env,
@@ -132,8 +132,8 @@ async def test_client_load_streamable_http(server_proc):
         assert config.description == "A plugin for finding and replacing words."
         assert config.priority == 150
         assert config.kind == "external"
-        message = SimpleNamespace(content=SimpleNamespace(type="text", text="What the crud?"), role="user")
-        prompt_result = SimpleNamespace(messages=[message])
+        message = Message(content=TextContent(type="text", text="What the crud?"), role=Role.USER)
+        prompt_result = PromptResult(messages=[message])
 
         payload_result = PromptPosthookPayload(prompt_id="test_prompt", result=prompt_result)
 
@@ -157,7 +157,7 @@ def server_proc1():
     # Start the server as a subprocess
     try:
         with subprocess.Popen(
-            [sys.executable, "mcpgateway/plugins/framework/external/mcp/server/runtime.py"],
+            [sys.executable, "cpex/framework/external/mcp/server/runtime.py"],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             env=current_env,
@@ -216,7 +216,7 @@ def server_proc2():
     # Start the server as a subprocess
     try:
         with subprocess.Popen(
-            [sys.executable, "mcpgateway/plugins/framework/external/mcp/server/runtime.py"],
+            [sys.executable, "cpex/framework/external/mcp/server/runtime.py"],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             env=current_env,
@@ -246,7 +246,7 @@ def server_proc_uds():
     current_env["PLUGINS_SERVER_UDS"] = uds_path
     try:
         with subprocess.Popen(
-            [sys.executable, "mcpgateway/plugins/framework/external/mcp/server/runtime.py"],
+            [sys.executable, "cpex/framework/external/mcp/server/runtime.py"],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             env=current_env,
@@ -297,8 +297,8 @@ async def test_client_load_strhttp_post_prompt(server_proc2):
         assert config.priority == 150
         assert config.kind == "external"
 
-        message = SimpleNamespace(content=SimpleNamespace(type="text", text="What the crud?"), role="user")
-        prompt_result = SimpleNamespace(messages=[message])
+        message = Message(content=TextContent(type="text", text="What the crud?"), role=Role.USER)
+        prompt_result = PromptResult(messages=[message])
 
         payload_result = PromptPosthookPayload(prompt_id="test_prompt", result=prompt_result)
 

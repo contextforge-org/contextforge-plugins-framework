@@ -5,12 +5,12 @@ plugins:
     kind: "external"
     mcp:
       proto: STDIO
-      script: mcpgateway/plugins/framework/external/mcp/server/runtime.py
+      script: cpex/framework/external/mcp/server/runtime.py
   - name: "ContextPlugin2"
     kind: "external"
     mcp:
       proto: STDIO
-      script: mcpgateway/plugins/framework/external/mcp/server/runtime.py
+      script: cpex/framework/external/mcp/server/runtime.py
 
 # Plugin directories to scan
 plugin_dirs:

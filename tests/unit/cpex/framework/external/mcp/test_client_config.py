@@ -89,7 +89,7 @@ async def test_resolve_stdio_command_from_script_py():
     plugin_config = config.plugins[0]
     plugin = ExternalPlugin(plugin_config)
 
-    script_path = "mcpgateway/plugins/framework/external/mcp/server/runtime.py"
+    script_path = "cpex/framework/external/mcp/server/runtime.py"
     command, args = plugin._ExternalPlugin__resolve_stdio_command(script_path, None, None)
     assert command == sys.executable
     assert len(args) == 1
@@ -258,7 +258,7 @@ def test_mcp_config_env_accepts_stdio():
     """STDIO env overrides are accepted for STDIO transports."""
     cfg = MCPClientConfig(
         proto=TransportType.STDIO,
-        script="mcpgateway/plugins/framework/external/mcp/server/runtime.py",
+        script="cpex/framework/external/mcp/server/runtime.py",
         env={"PLUGINS_CONFIG_PATH": "plugins/config.yaml"},
     )
     assert cfg.env is not None
@@ -269,7 +269,7 @@ def test_mcp_config_cwd_invalid():
     with pytest.raises(ValueError, match="MCP stdio cwd"):
         MCPClientConfig(
             proto=TransportType.STDIO,
-            script="mcpgateway/plugins/framework/external/mcp/server/runtime.py",
+            script="cpex/framework/external/mcp/server/runtime.py",
             cwd="/path/to/nowhere",
         )
 
@@ -278,7 +278,7 @@ def test_mcp_config_cwd_valid():
     """STDIO cwd accepts existing directories and returns canonical path."""
     cfg = MCPClientConfig(
         proto=TransportType.STDIO,
-        script="mcpgateway/plugins/framework/external/mcp/server/runtime.py",
+        script="cpex/framework/external/mcp/server/runtime.py",
         cwd=".",
     )
     # cwd is resolved to canonical absolute path
@@ -292,7 +292,7 @@ def test_mcp_config_uds_invalid_transport(tmp_path):
     with pytest.raises(ValueError, match="uds is only valid for STREAMABLEHTTP transport"):
         MCPClientConfig(
             proto=TransportType.STDIO,
-            script="mcpgateway/plugins/framework/external/mcp/server/runtime.py",
+            script="cpex/framework/external/mcp/server/runtime.py",
             uds=uds_path,
         )
 

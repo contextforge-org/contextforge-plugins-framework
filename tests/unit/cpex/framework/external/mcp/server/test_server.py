@@ -14,6 +14,7 @@ from types import SimpleNamespace
 
 # Third-Party
 import pytest
+import pytest_asyncio
 
 # First-Party
 from cpex.framework import (
@@ -30,13 +31,13 @@ from cpex.framework.external.mcp.server.server import ExternalPluginServer
 from cpex.framework.models import MCPServerConfig, PluginErrorModel
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 def server_with_plugins():
     """Create a server with valid plugin configuration."""
     return ExternalPluginServer(config_path="./tests/unit/cpex/fixtures/configs/valid_multiple_plugins_filter.yaml")
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def initialized_server(server_with_plugins):
     """Create and initialize a server."""
     await server_with_plugins.initialize()

@@ -9,7 +9,6 @@ Tests for hook payload policies.
 
 # Standard
 from unittest.mock import patch
-from types import SimpleNamespace
 
 # Third-Party
 import pytest
@@ -18,6 +17,8 @@ from pydantic import BaseModel, Field, ValidationError
 # First-Party
 from cpex.framework.hooks.policies import apply_policy, DefaultHookPolicy, HookPayloadPolicy
 from cpex.framework.models import PluginPayload
+
+from tests.unit.cpex.fixtures.common.models import Message, PromptResult, Role, TextContent
 
 
 class SamplePayload(PluginPayload):
@@ -217,7 +218,7 @@ class TestAgentMessageCoercion:
     def test_real_message_objects_pass_through(self):
         from cpex.framework.hooks.agents import AgentPreInvokePayload
 
-        msg = SimpleNamespace(role="user", content=SimpleNamespace(type="text", text="hi"))
+        msg = Message(role="user", content=TextContent(type="text", text="hi"))
         payload = AgentPreInvokePayload(agent_id="agent-1", messages=[msg])
         assert payload.messages[0] is msg
 
@@ -234,24 +235,23 @@ class TestProtocolConformance:
     def test_message_satisfies_message_like(self):
         from cpex.framework.protocols import MessageLike
 
-        msg = SimpleNamespace(role="user", content=SimpleNamespace(type="text", text="hello"))
+        msg = Message(role="user", content=TextContent(type="text", text="hello"))
         assert isinstance(msg, MessageLike)
 
     def test_prompt_result_satisfies_prompt_result_like(self):
         from cpex.framework.protocols import PromptResultLike
 
-        result = SimpleNamespace(
-            messages=[SimpleNamespace(role="user", content=SimpleNamespace(type="text", text="hi"))],
+        result = PromptResult(
+            messages=[Message(role="user", content=TextContent(type="text", text="hi"))],
             description="test",
         )
         assert isinstance(result, PromptResultLike)
 
     def test_simple_namespace_satisfies_message_like(self):
+        from cpex.framework.protocols import MessageLike
         from types import SimpleNamespace
 
-        from cpex.framework.protocols import MessageLike
-
-        msg = SimpleNamespace(role="user", content="hello")
+        msg = SimpleNamespace(role=Role.USER, content="hello")
         assert isinstance(msg, MessageLike)
 
 
@@ -270,11 +270,9 @@ class TestPromptPosthookCoercion:
         assert payload.result.messages[0].content.text == "hi"
 
     def test_non_dict_result_passthrough(self):
-        from types import SimpleNamespace
-
         from cpex.framework.hooks.prompts import PromptPosthookPayload
 
-        ns = SimpleNamespace(messages=[], description=None)
+        ns = PromptResult(messages=[], description=None)
         payload = PromptPosthookPayload(prompt_id="test", result=ns)
         assert payload.result is ns
 
@@ -664,6 +662,7 @@ class TestBorgPolicyBackfill:
         """Verify get_plugin_manager() always injects hook policies."""
         import cpex.framework as fw
         from cpex.framework.settings import settings as plugin_settings
+        from tests.unit.cpex.fixtures.common.policy import HOOK_PAYLOAD_POLICIES
 
         config_file = tmp_path / "plugins.yaml"
         config_file.write_text("plugin_settings:\n  plugin_timeout: 30\nplugin_dirs: []\nplugins: []\n")
@@ -676,7 +675,7 @@ class TestBorgPolicyBackfill:
         fw._plugin_manager = None
         plugin_settings.cache_clear()
 
-        pm = fw.get_plugin_manager()
+        pm = fw.get_plugin_manager(hook_policies=HOOK_PAYLOAD_POLICIES)
         assert pm is not None
         assert pm._executor.hook_policies, "get_plugin_manager() should inject hook policies"
 
@@ -688,6 +687,7 @@ class TestBorgPolicyBackfill:
         """Verify that services using get_plugin_manager() get policies regardless of creation order."""
         import cpex.framework as fw
         from cpex.framework.settings import settings as plugin_settings
+        from tests.unit.cpex.fixtures.common.policy import HOOK_PAYLOAD_POLICIES
 
         config_file = tmp_path / "plugins.yaml"
         config_file.write_text("plugin_settings:\n  plugin_timeout: 30\nplugin_dirs: []\nplugins: []\n")
@@ -701,10 +701,10 @@ class TestBorgPolicyBackfill:
         plugin_settings.cache_clear()
 
         # Simulate service creating manager via get_plugin_manager
-        pm1 = fw.get_plugin_manager()
+        pm1 = fw.get_plugin_manager(hook_policies=HOOK_PAYLOAD_POLICIES)
 
         # Simulate another access (e.g. from another service)
-        pm2 = fw.get_plugin_manager()
+        pm2 = fw.get_plugin_manager(hook_policies=HOOK_PAYLOAD_POLICIES)
 
         # Both should share the same executor with policies
         assert pm1 is pm2

@@ -9,7 +9,6 @@ Unit tests for config and plugin loaders.
 
 # Standard
 from unittest.mock import patch
-from types import SimpleNamespace
 
 # Third-Party
 from pydantic import ValidationError
@@ -23,7 +22,7 @@ from cpex.framework.constants import EXTERNAL_PLUGIN_TYPE
 from cpex.framework.external.mcp.client import ExternalPlugin
 from cpex.framework.models import PluginConfig
 from tests.unit.cpex.fixtures.plugins.search_replace import SearchReplaceConfig, SearchReplacePlugin
-
+from tests.unit.cpex.fixtures.common.models import Message, PromptResult, Role, TextContent
 
 def test_config_loader_load():
     """pytest for testing the config loader."""
@@ -31,7 +30,7 @@ def test_config_loader_load():
     assert config
     assert len(config.plugins) == 1
     assert config.plugins[0].name == "ReplaceBadWordsPlugin"
-    assert config.plugins[0].kind == "plugins.regex_filter.search_replace.SearchReplacePlugin"
+    assert config.plugins[0].kind == "plugins.search_replace.SearchReplacePlugin"
     assert config.plugins[0].description == "A plugin for finding and replacing words."
     assert config.plugins[0].version == "0.1"
     assert config.plugins[0].author == "ContextForge Team"
@@ -64,8 +63,8 @@ async def test_plugin_loader_load():
     assert len(result.modified_payload.args) == 1
     assert result.modified_payload.args["user"] == "What a yikesshow!"
 
-    message = SimpleNamespace(content=SimpleNamespace(type="text", text="What the crud?"), role="user")
-    prompt_result = SimpleNamespace(messages=[message])
+    message = Message(content=TextContent(type="text", text="What the crud?"), role=Role.USER)
+    prompt_result = PromptResult(messages=[message])
 
     payload_result = PromptPosthookPayload(prompt_id="test_prompt", result=prompt_result)
 
@@ -213,7 +212,7 @@ async def test_plugin_loader_registration_branch_coverage():
         author="Test Author",
         version="1.0",
         tags=["test"],
-        kind="plugins.regex_filter.search_replace.SearchReplacePlugin",
+        kind="plugins.search_replace.SearchReplacePlugin",
         hooks=["prompt_pre_fetch"],
         config={"words": [{"search": "test", "replace": "example"}]},
     )

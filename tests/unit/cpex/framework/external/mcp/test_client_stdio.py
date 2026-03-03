@@ -15,8 +15,6 @@ import re
 import sys
 from typing import Optional
 
-from types import SimpleNamespace
-
 # Third-Party
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -42,6 +40,7 @@ from cpex.framework import (
     ToolPreInvokePayload,
 )
 from tests.unit.cpex.fixtures.plugins.search_replace import SearchReplaceConfig
+from tests.unit.cpex.fixtures.common.models import Message, TextContent, Role, PromptResult, ResourceContent
 
 
 @pytest.mark.asyncio
@@ -72,7 +71,6 @@ async def test_client_load_stdio():
     del os.environ["PYTHONPATH"]
 
 
-@pytest.mark.slow  # Spawns real stdio subprocess - inherently slow
 @pytest.mark.asyncio
 async def test_client_load_stdio_overrides():
     os.environ["PLUGINS_CONFIG_PATH"] = "tests/unit/cpex/fixtures/configs/valid_multiple_plugins_filter.yaml"
@@ -121,8 +119,8 @@ async def test_client_load_stdio_post_prompt():
     assert config.priority == 150
     assert config.kind == "external"
 
-    message = SimpleNamespace(content=SimpleNamespace(type="text", text="What the crud?"), role="user")
-    prompt_result = SimpleNamespace(messages=[message])
+    message = Message(content=TextContent(type="text", text="What the crud?"), role=Role.USER)
+    prompt_result = PromptResult(messages=[message])
 
     payload_result = PromptPosthookPayload(prompt_id="test_prompt", result=prompt_result)
 
@@ -143,7 +141,7 @@ async def test_client_get_plugin_configs():
     current_env["PLUGINS_CONFIG_PATH"] = "tests/unit/cpex/fixtures/configs/valid_multiple_plugins.yaml"
     current_env["PYTHONPATH"] = "."
     server_params = StdioServerParameters(
-        command=sys.executable, args=["mcpgateway/plugins/framework/external/mcp/server/runtime.py"], env=current_env
+        command=sys.executable, args=["cpex/framework/external/mcp/server/runtime.py"], env=current_env
     )
 
     stdio_transport = await exit_stack.enter_async_context(stdio_client(server_params))
@@ -166,7 +164,7 @@ async def test_client_get_plugin_configs():
                 all_configs.append(PluginConfig.model_validate(c))
     await exit_stack.aclose()
     assert all_configs[0].name == "SynonymsPlugin"
-    assert all_configs[0].kind == "plugins.regex_filter.search_replace.SearchReplacePlugin"
+    assert all_configs[0].kind == "plugins.search_replace.SearchReplacePlugin"
     assert all_configs[0].description == "A plugin for finding and replacing synonyms."
     assert all_configs[0].version == "0.1"
     assert all_configs[0].author == "ContextForge Team"
@@ -178,7 +176,7 @@ async def test_client_get_plugin_configs():
     assert srconfig.words[0].search == "happy"
     assert srconfig.words[0].replace == "gleeful"
     assert all_configs[1].name == "ReplaceBadWordsPlugin"
-    assert all_configs[1].kind == "plugins.regex_filter.search_replace.SearchReplacePlugin"
+    assert all_configs[1].kind == "plugins.search_replace.SearchReplacePlugin"
     assert all_configs[1].description == "A plugin for finding and replacing words."
     assert all_configs[1].version == "0.1"
     assert all_configs[1].author == "ContextForge Team"
@@ -211,8 +209,8 @@ async def test_hooks():
     assert result.continue_processing
     """Test prompt post hook across all registered plugins."""
     # Customize payload for testing
-    message = SimpleNamespace(content=SimpleNamespace(type="text", text="prompt"), role="user")
-    prompt_result = SimpleNamespace(messages=[message])
+    message = Message(content=TextContent(type="text", text="prompt"), role=Role.USER)
+    prompt_result = PromptResult(messages=[message])
     payload = PromptPosthookPayload(prompt_id="test_prompt", result=prompt_result)
     result, _ = await plugin_manager.invoke_hook(PromptHookType.PROMPT_POST_FETCH, payload, global_context)
     # Assert expected behaviors
@@ -235,7 +233,7 @@ async def test_hooks():
     # Assert expected behaviors
     assert result.continue_processing
 
-    content = SimpleNamespace(type="resource", id="123", uri="file:///data.txt", text="Hello World")
+    content = ResourceContent(type="resource", id="123", uri="file:///data.txt", text="Hello World")
     payload = ResourcePostFetchPayload(uri="file:///data.txt", content=content)
     result, _ = await plugin_manager.invoke_hook(ResourceHookType.RESOURCE_POST_FETCH, payload, global_context)
     # Assert expected behaviors
@@ -243,7 +241,6 @@ async def test_hooks():
     await plugin_manager.shutdown()
 
 
-@pytest.mark.slow  # Spawns real stdio subprocess - inherently slow
 @pytest.mark.asyncio
 async def test_errors():
     os.environ["PLUGINS_CONFIG_PATH"] = "tests/unit/cpex/fixtures/configs/error_plugin.yaml"
@@ -261,7 +258,6 @@ async def test_errors():
     await plugin_manager.shutdown()
 
 
-@pytest.mark.slow  # Spawns real stdio subprocesses - inherently slow
 @pytest.mark.asyncio
 async def test_shared_context_across_pre_post_hooks_multi_plugins():
     os.environ["PLUGINS_CONFIG_PATH"] = "tests/unit/cpex/fixtures/configs/context_multiplugins.yaml"

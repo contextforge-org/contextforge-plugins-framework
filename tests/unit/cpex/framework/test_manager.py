@@ -7,8 +7,6 @@ Authors: Teryl Taylor, Fred Araujo
 Unit tests for plugin manager.
 """
 
-from types import SimpleNamespace
-
 # Third-Party
 import pytest
 
@@ -24,6 +22,7 @@ from cpex.framework import (
     ToolPreInvokePayload,
 )
 from tests.unit.cpex.fixtures.plugins.search_replace import SearchReplaceConfig
+from tests.unit.cpex.fixtures.common.models import Message, PromptResult, Role, TextContent
 
 
 @pytest.mark.asyncio
@@ -31,7 +30,7 @@ async def test_manager_single_transformer_prompt_plugin():
     manager = PluginManager("./tests/unit/cpex/fixtures/configs/valid_single_plugin.yaml")
     await manager.initialize()
     assert manager.config.plugins[0].name == "ReplaceBadWordsPlugin"
-    assert manager.config.plugins[0].kind == "tests.unit.cpex.fixtures.plugins.search_replace.SearchReplacePlugin"
+    assert manager.config.plugins[0].kind == "plugins.search_replace.SearchReplacePlugin"
     assert manager.config.plugins[0].description == "A plugin for finding and replacing words."
     assert manager.config.plugins[0].version == "0.1"
     assert manager.config.plugins[0].author == "ContextForge Team"
@@ -48,11 +47,9 @@ async def test_manager_single_transformer_prompt_plugin():
     assert len(result.modified_payload.args) == 1
     assert result.modified_payload.args["user"] == "What a yikesshow!"
 
-    message = SimpleNamespace(
-        content=SimpleNamespace(type="text", text=result.modified_payload.args["user"]), role="user"
-    )
+    message = Message(content=TextContent(type="text", text=result.modified_payload.args["user"]), role=Role.USER)
 
-    prompt_result = SimpleNamespace(messages=[message])
+    prompt_result = PromptResult(messages=[message])
 
     payload_result = PromptPosthookPayload(prompt_id="test_prompt", result=prompt_result)
 
@@ -70,7 +67,7 @@ async def test_manager_multiple_transformer_preprompt_plugin():
     await manager.initialize()
     assert manager.initialized
     assert manager.config.plugins[0].name == "SynonymsPlugin"
-    assert manager.config.plugins[0].kind == "tests.unit.cpex.fixtures.plugins.search_replace.SearchReplacePlugin"
+    assert manager.config.plugins[0].kind == "plugins.search_replace.SearchReplacePlugin"
     assert manager.config.plugins[0].description == "A plugin for finding and replacing synonyms."
     assert manager.config.plugins[0].version == "0.1"
     assert manager.config.plugins[0].author == "ContextForge Team"
@@ -82,7 +79,7 @@ async def test_manager_multiple_transformer_preprompt_plugin():
     assert srconfig.words[0].search == "happy"
     assert srconfig.words[0].replace == "gleeful"
     assert manager.config.plugins[1].name == "ReplaceBadWordsPlugin"
-    assert manager.config.plugins[1].kind == "tests.unit.cpex.fixtures.plugins.search_replace.SearchReplacePlugin"
+    assert manager.config.plugins[1].kind == "plugins.search_replace.SearchReplacePlugin"
     assert manager.config.plugins[1].description == "A plugin for finding and replacing words."
     assert manager.config.plugins[1].version == "0.1"
     assert manager.config.plugins[1].author == "ContextForge Team"
@@ -100,9 +97,9 @@ async def test_manager_multiple_transformer_preprompt_plugin():
     assert len(result.modified_payload.args) == 1
     assert result.modified_payload.args["user"] == "It's always gleeful at the yikesshow."
 
-    message = SimpleNamespace(content=SimpleNamespace(type="text", text="It's sad at the crud bakery."), role="user")
+    message = Message(content=TextContent(type="text", text="It's sad at the crud bakery."), role=Role.USER)
 
-    prompt_result = SimpleNamespace(messages=[message])
+    prompt_result = PromptResult(messages=[message])
 
     payload_result = PromptPosthookPayload(prompt_id="test_prompt", result=prompt_result)
 
