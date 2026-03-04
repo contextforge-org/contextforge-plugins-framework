@@ -238,6 +238,13 @@ class PluginExecutor:
                 )
 
             if not result.continue_processing:
+                violation_detail = f": [{result.violation.code}] {result.violation.reason}" if result.violation else ""
+                logger.warning(
+                    "Pipeline halted by SEQUENTIAL plugin %s on hook %s%s; scheduling fire-and-forget tasks",
+                    hook_ref.plugin_ref.name,
+                    hook_type,
+                    violation_detail,
+                )
                 self._fire_and_forget_tasks(
                     fire_and_forget_refs, payload, global_context, res_local_contexts, fire_and_forget_semaphore
                 )
@@ -299,17 +306,16 @@ class PluginExecutor:
                     hook_ref, result, effective_payload, policy, hook_type, current_payload, decision_plugin_name
                 )
 
+            # PERMISSIVE plugins never halt the pipeline; execute_plugin() guarantees
+            # continue_processing=True for this mode; guard defensively.
             if not result.continue_processing:
-                if hook_type == HTTP_AUTH_CHECK_PERMISSION_HOOK and decision_plugin_name:
-                    combined_metadata[DECISION_PLUGIN_METADATA_KEY] = decision_plugin_name
-                return (
-                    PluginResult(
-                        continue_processing=False,
-                        modified_payload=current_payload,
-                        violation=result.violation,
-                        metadata=combined_metadata,
-                    ),
-                    res_local_contexts,
+                violation_detail = f": [{result.violation.code}] {result.violation.reason}" if result.violation else ""
+                logger.warning(
+                    "PERMISSIVE plugin %s returned continue_processing=False on hook %s%s; "
+                    "pipeline continues (violation suppressed)",
+                    hook_ref.plugin_ref.name,
+                    hook_type,
+                    violation_detail,
                 )
 
         # CONCURRENT: parallel execution with fail-fast on first blocking result
@@ -370,6 +376,17 @@ class PluginExecutor:
                         ref, result, eff_payload, policy, hook_type, current_payload, decision_plugin_name
                     )
                 if not result.continue_processing:
+                    pending = sum(1 for t in concurrent_tasks if not t.done())
+                    violation_detail = (
+                        f": [{result.violation.code}] {result.violation.reason}" if result.violation else ""
+                    )
+                    logger.warning(
+                        "Pipeline halted by CONCURRENT plugin %s on hook %s%s; cancelling %d pending task(s)",
+                        ref.plugin_ref.name,
+                        hook_type,
+                        violation_detail,
+                        pending,
+                    )
                     for task in concurrent_tasks:
                         if not task.done():
                             task.cancel()
@@ -433,9 +450,11 @@ class PluginExecutor:
         for ref in hook_refs:
             # Skip statically disabled plugins
             if ref.plugin_ref.mode == PluginMode.DISABLED:
+                logger.debug("Skipping plugin %s — statically disabled", ref.plugin_ref.name)
                 continue
             # Skip runtime-disabled plugins
             if ref.plugin_ref.name in self._runtime_disabled:
+                logger.debug("Skipping plugin %s — runtime-disabled after previous error", ref.plugin_ref.name)
                 continue
             # Check conditions
             if ref.plugin_ref.conditions and not payload_matches(
@@ -641,7 +660,21 @@ class PluginExecutor:
             if not result.continue_processing:
                 if hook_ref.plugin_ref.mode in (PluginMode.CONCURRENT, PluginMode.SEQUENTIAL):
                     mode = hook_ref.plugin_ref.mode.value
-                    logger.warning("Plugin %s blocked request in %s mode", hook_ref.plugin_ref.plugin.name, mode)
+                    if result.violation:
+                        logger.warning(
+                            "Plugin %s blocked request in %s mode — violation [%s] %s: %s",
+                            hook_ref.plugin_ref.plugin.name,
+                            mode,
+                            result.violation.code,
+                            result.violation.reason,
+                            result.violation.description,
+                        )
+                    else:
+                        logger.warning(
+                            "Plugin %s blocked request in %s mode (no violation details)",
+                            hook_ref.plugin_ref.plugin.name,
+                            mode,
+                        )
                     if violations_as_exceptions:
                         if result.violation:
                             plugin_name = result.violation.plugin_name
@@ -660,11 +693,21 @@ class PluginExecutor:
                         metadata=combined_metadata,
                     )
                 if hook_ref.plugin_ref.mode == PluginMode.PERMISSIVE:
-                    logger.warning(
-                        "Plugin %s would block (permissive mode): %s",
-                        hook_ref.plugin_ref.plugin.name,
-                        result.violation.description if result.violation else "No description",
-                    )
+                    if result.violation:
+                        logger.warning(
+                            "Plugin %s (permissive) raised violation — pipeline continues: [%s] %s — %s",
+                            hook_ref.plugin_ref.plugin.name,
+                            result.violation.code,
+                            result.violation.reason,
+                            result.violation.description,
+                        )
+                    else:
+                        logger.warning(
+                            "Plugin %s (permissive) returned continue_processing=False without a violation "
+                            "— pipeline continues",
+                            hook_ref.plugin_ref.plugin.name,
+                        )
+                    # Violations are logged but not propagated; PERMISSIVE plugins cannot halt the pipeline
                     return PluginResult(
                         continue_processing=True,
                         modified_payload=result.modified_payload,
