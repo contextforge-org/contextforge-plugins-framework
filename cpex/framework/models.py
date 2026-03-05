@@ -1545,3 +1545,206 @@ class PluginPayload(BaseModel):
     """
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
+class PluginPackageInfo(BaseModel):
+    """Plugin package information.
+
+    Defines how to install a plugin:
+    - `pypi_package`: Install from PyPI (e.g., "apex-pii-filter")
+    - `git_repository`: Install from Git (e.g., "https://github.com/example/plugin.git")
+    - `git_branch/tag/commit`: Specify which version to clone
+    - `version_constraint`: Semantic version constraints (e.g., ">=1.0.0,<2.0.0")
+
+    Examples:
+        >>> PluginPackageInfo(pypi_package="test", git_repository="test", git_branch_tag_commit="test", version_constraint="test")
+        PluginPackageInfo(pypi_package='test', git_repository='test', git_branch_tag_commit='test', version_constraint='test')
+    """
+    pypi_package: Optional[str] = None
+    git_repository: Optional[str] = None
+    git_branch_tag_commit: Optional[str] = None
+    version_constraint: Optional[str] = None
+
+    @field_validator("pypi_package", mode="after")
+    @classmethod
+    def validate_pypi_package(cls, pypi_package: str | None) -> str | None:
+        """Validate PyPI package name format.
+
+        Args:
+            pypi_package: The PyPI package name to validate.
+
+        Returns:
+            The validated package name or None if none is set.
+
+        Raises:
+            ValueError: If the package name is invalid.
+        """
+        if pypi_package is not None and pypi_package != "":
+            # PyPI package names must contain only ASCII letters, numbers, hyphens, underscores, and periods
+            # They cannot start or end with hyphens or periods
+            if not pypi_package.strip():
+                raise ValueError("PyPI package name cannot be empty or whitespace")
+            
+            # Check for valid characters
+            import re
+            if not re.match(r"^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$", pypi_package):
+                raise ValueError(
+                    f"Invalid PyPI package name '{pypi_package}'. "
+                    "Package names must start and end with a letter or number, "
+                    "and can only contain ASCII letters, numbers, hyphens, underscores, and periods."
+                )
+            
+            # Check length (PyPI has a 214 character limit for package names)
+            if len(pypi_package) > 214:
+                raise ValueError(f"PyPI package name '{pypi_package}' exceeds maximum length of 214 characters")
+        
+        return pypi_package if pypi_package != "" else None
+
+    @field_validator("git_repository", mode="after")
+    @classmethod
+    def validate_git_repository(cls, git_repository: str | None) -> str | None:
+        """Validate Git repository URL format.
+
+        Args:
+            git_repository: The Git repository URL to validate.
+
+        Returns:
+            The validated repository URL or None if none is set.
+
+        Raises:
+            ValueError: If the repository URL is invalid.
+        """
+        if git_repository is not None and git_repository != "":
+            if not git_repository.strip():
+                raise ValueError("Git repository URL cannot be empty or whitespace")
+            
+            # Support common Git URL formats: https://, git://, ssh://, git@
+            import re
+            git_url_pattern = re.compile(
+                r"^(https?://|git://|git@)"
+                r"[a-zA-Z0-9._-]+"
+                r"(/|:)"
+                r"[a-zA-Z0-9._/-]+"
+                r"(\.git)?$"
+            )
+            
+            if not git_url_pattern.match(git_repository):
+                raise ValueError(
+                    f"Invalid Git repository URL '{git_repository}'. "
+                    "Must be a valid Git URL (e.g., https://github.com/user/repo.git, "
+                    "git@github.com:user/repo.git)"
+                )
+            
+            # Additional validation for https/http URLs using existing validator
+            if git_repository.startswith(("http://", "https://")):
+                validate_plugin_url(git_repository, "Git repository URL")
+        
+        return git_repository if git_repository != "" else None
+
+    @field_validator("git_branch_tag_commit", mode="after")
+    @classmethod
+    def validate_git_branch_tag_commit(cls, git_branch_tag_commit: str | None) -> str | None:
+        """Validate Git branch, tag, or commit reference.
+
+        Args:
+            git_branch_tag_commit: The Git reference to validate.
+
+        Returns:
+            The validated reference or None if none is set.
+
+        Raises:
+            ValueError: If the reference is invalid.
+        """
+        if git_branch_tag_commit is not None and git_branch_tag_commit != "":
+            if not git_branch_tag_commit.strip():
+                raise ValueError("Git branch/tag/commit cannot be empty or whitespace")
+            
+            # Git refs can contain alphanumeric characters, hyphens, underscores, slashes, and periods
+            # Commit hashes are typically 7-40 hex characters
+            import re
+            if not re.match(r"^[a-zA-Z0-9._/-]+$", git_branch_tag_commit):
+                raise ValueError(
+                    f"Invalid Git branch/tag/commit '{git_branch_tag_commit}'. "
+                    "Must contain only alphanumeric characters, hyphens, underscores, slashes, and periods."
+                )
+            
+            # Check for common invalid patterns
+            if git_branch_tag_commit.startswith(("/", ".", "-")) or git_branch_tag_commit.endswith(("/", ".")):
+                raise ValueError(
+                    f"Invalid Git branch/tag/commit '{git_branch_tag_commit}'. "
+                    "Cannot start with /, ., or - or end with / or ."
+                )
+            
+            if len(git_branch_tag_commit) > 255:
+                raise ValueError(f"Git branch/tag/commit '{git_branch_tag_commit}' exceeds maximum length of 255 characters")
+        
+        return git_branch_tag_commit if git_branch_tag_commit != "" else None
+
+    @field_validator("version_constraint", mode="after")
+    @classmethod
+    def validate_version_constraint(cls, version_constraint: str | None) -> str | None:
+        """Validate semantic version constraint format.
+
+        Args:
+            version_constraint: The version constraint to validate.
+
+        Returns:
+            The validated version constraint or None if none is set.
+
+        Raises:
+            ValueError: If the version constraint is invalid.
+        """
+        if version_constraint is not None and version_constraint != "":
+            if not version_constraint.strip():
+                raise ValueError("Version constraint cannot be empty or whitespace")
+            
+            # Validate semantic version constraint format (e.g., ">=1.0.0,<2.0.0", "~=1.2.3", "==1.0.0")
+            import re
+            # Pattern for version specifiers: operator + optional space + version number
+            version_pattern = re.compile(
+                r"^(==|!=|<=|>=|<|>|~=|===)\s*"
+                r"\d+(\.\d+)*"
+                r"([a-zA-Z0-9._-]*)?$"
+            )
+            
+            # Split by comma for multiple constraints
+            constraints = [c.strip() for c in version_constraint.split(",")]
+            
+            for constraint in constraints:
+                if not constraint:
+                    raise ValueError("Version constraint cannot contain empty parts")
+                
+                if not version_pattern.match(constraint):
+                    raise ValueError(
+                        f"Invalid version constraint '{constraint}'. "
+                        "Must follow PEP 440 format (e.g., '>=1.0.0', '~=1.2.3', '==1.0.0,<2.0.0')"
+                    )
+            
+            if len(version_constraint) > 255:
+                raise ValueError(f"Version constraint '{version_constraint}' exceeds maximum length of 255 characters")
+        
+        return version_constraint if version_constraint != "" else None
+
+    @model_validator(mode="after")
+    def validate_installation_method(self) -> Self:
+        """Validate that at least one installation method is specified.
+
+        Returns:
+            The validated model instance.
+
+        Raises:
+            ValueError: If neither PyPI package nor Git repository is specified.
+        """
+        if not self.pypi_package and not self.git_repository:
+            raise ValueError(
+                "At least one installation method must be specified: "
+                "either 'pypi_package' or 'git_repository'"
+            )
+        
+        # If git_branch_tag_commit is specified, git_repository must also be specified
+        if self.git_branch_tag_commit and not self.git_repository:
+            raise ValueError(
+                "'git_branch_tag_commit' can only be specified when 'git_repository' is provided"
+            )
+        
+        return self
+    
