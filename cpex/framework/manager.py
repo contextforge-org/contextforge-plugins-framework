@@ -182,7 +182,7 @@ class PluginExecutor:
         current_payload: PluginPayload | None = None
         decision_plugin_name: Optional[str] = None
 
-        sequential_refs, permissive_refs, concurrent_refs, fire_and_forget_refs = self._group_by_mode(
+        sequential_refs, audit_refs, concurrent_refs, fire_and_forget_refs = self._group_by_mode(
             hook_refs, payload, hook_type, global_context, policy
         )
 
@@ -260,8 +260,8 @@ class PluginExecutor:
                     res_local_contexts,
                 )
 
-        # PERMISSIVE: sequential, chained execution — cannot halt pipeline
-        for hook_ref in permissive_refs:
+        # AUDIT: sequential, chained execution — cannot halt pipeline
+        for hook_ref in audit_refs:
             local_context_key = global_context.request_id + hook_ref.plugin_ref.uuid
             tmp_gc = GlobalContext(
                 request_id=global_context.request_id,
@@ -306,12 +306,12 @@ class PluginExecutor:
                     hook_ref, result, effective_payload, policy, hook_type, current_payload, decision_plugin_name
                 )
 
-            # PERMISSIVE plugins never halt the pipeline; execute_plugin() guarantees
+            # AUDIT plugins never halt the pipeline; execute_plugin() guarantees
             # continue_processing=True for this mode; guard defensively.
             if not result.continue_processing:
                 violation_detail = f": [{result.violation.code}] {result.violation.reason}" if result.violation else ""
                 logger.warning(
-                    "PERMISSIVE plugin %s returned continue_processing=False on hook %s%s; "
+                    "AUDIT plugin %s returned continue_processing=False on hook %s%s; "
                     "pipeline continues (violation suppressed)",
                     hook_ref.plugin_ref.name,
                     hook_type,
@@ -439,11 +439,11 @@ class PluginExecutor:
             policy: The hook payload policy (unused here but kept for future use).
 
         Returns:
-            A tuple of (sequential_refs, permissive_refs, concurrent_refs, fire_and_forget_refs),
+            A tuple of (sequential_refs, audit_refs, concurrent_refs, fire_and_forget_refs),
             each sorted by priority.
         """
         sequential_refs: list[HookRef] = []
-        permissive_refs: list[HookRef] = []
+        audit_refs: list[HookRef] = []
         concurrent_refs: list[HookRef] = []
         fire_and_forget_refs: list[HookRef] = []
 
@@ -465,19 +465,19 @@ class PluginExecutor:
             # Bucket by mode
             if ref.plugin_ref.mode == PluginMode.SEQUENTIAL:
                 sequential_refs.append(ref)
-            elif ref.plugin_ref.mode == PluginMode.PERMISSIVE:
-                permissive_refs.append(ref)
+            elif ref.plugin_ref.mode == PluginMode.AUDIT:
+                audit_refs.append(ref)
             elif ref.plugin_ref.mode == PluginMode.CONCURRENT:
                 concurrent_refs.append(ref)
             elif ref.plugin_ref.mode == PluginMode.FIRE_AND_FORGET:
                 fire_and_forget_refs.append(ref)
 
         sequential_refs.sort(key=lambda r: r.plugin_ref.priority)
-        permissive_refs.sort(key=lambda r: r.plugin_ref.priority)
+        audit_refs.sort(key=lambda r: r.plugin_ref.priority)
         concurrent_refs.sort(key=lambda r: r.plugin_ref.priority)
         fire_and_forget_refs.sort(key=lambda r: r.plugin_ref.priority)
 
-        return sequential_refs, permissive_refs, concurrent_refs, fire_and_forget_refs
+        return sequential_refs, audit_refs, concurrent_refs, fire_and_forget_refs
 
     def _apply_payload_modification(
         self,
@@ -633,7 +633,7 @@ class PluginExecutor:
         try:
             # Execute plugin with timeout protection
             result = await self._execute_with_timeout(hook_ref, payload, local_context)
-            # Only merge global state for CONCURRENT and SEQUENTIAL modes; FIRE_AND_FORGET and PERMISSIVE
+            # Only merge global state for CONCURRENT and SEQUENTIAL modes; FIRE_AND_FORGET and AUDIT
             # plugins operate on copy-on-write snapshots and should not mutate shared state.
             if (
                 local_context.global_context
@@ -692,10 +692,10 @@ class PluginExecutor:
                         violation=result.violation,
                         metadata=combined_metadata,
                     )
-                if hook_ref.plugin_ref.mode == PluginMode.PERMISSIVE:
+                if hook_ref.plugin_ref.mode == PluginMode.AUDIT:
                     if result.violation:
                         logger.warning(
-                            "Plugin %s (permissive) raised violation — pipeline continues: [%s] %s — %s",
+                            "Plugin %s (audit) raised violation — pipeline continues: [%s] %s — %s",
                             hook_ref.plugin_ref.plugin.name,
                             result.violation.code,
                             result.violation.reason,
@@ -703,11 +703,11 @@ class PluginExecutor:
                         )
                     else:
                         logger.warning(
-                            "Plugin %s (permissive) returned continue_processing=False without a violation "
+                            "Plugin %s (audit) returned continue_processing=False without a violation "
                             "— pipeline continues",
                             hook_ref.plugin_ref.plugin.name,
                         )
-                    # Violations are logged but not propagated; PERMISSIVE plugins cannot halt the pipeline
+                    # Violations are logged but not propagated; AUDIT plugins cannot halt the pipeline
                     return PluginResult(
                         continue_processing=True,
                         modified_payload=result.modified_payload,

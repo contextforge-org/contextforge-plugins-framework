@@ -11,7 +11,7 @@ The framework enables you to:
 
 - **Define custom hook points** throughout your application (these are the extension points to which plugins are registered)
 - **Create plugins** that execute at these hook points
-- **Control execution** with priorities, conditions, and modes (e.g., enforce, permissive)
+- **Control execution** with priorities, conditions, and modes (e.g., enforce, audit)
 - **Manage plugin lifecycle** with initialization and shutdown hooks
 - **Handle errors gracefully** with timeout protection and error isolation
 - **Deploy plugins** natively with the application or as an external service
@@ -30,7 +30,7 @@ The framework enables you to:
 
 - **ENFORCE**: Plugin violations block execution (production mode)
 - **ENFORCE_IGNORE_ERROR**: Violations block, but errors are ignored
-- **PERMISSIVE**: Plugin runs but violations don't block (audit mode)
+- **AUDIT**: Plugin runs but violations don't block (logs only)
 - **DISABLED**: Plugin is not loaded or executed
 
 ## Configuration
@@ -78,7 +78,7 @@ plugins:
 - **version**: Semantic version
 - **hooks**: List of hook types where plugin executes
 - **tags**: Categorization tags
-- **mode**: Execution mode (enforce/permissive/disabled)
+- **mode**: Execution mode (enforce/audit/disabled)
 - **priority**: Execution order (lower = higher priority)
 - **config**: Plugin-specific configuration dictionary
 
@@ -452,7 +452,7 @@ async def test_validation_plugin():
 1. **Use descriptive names** for plugins and hooks
 2. **Set appropriate priorities** (10-20 for validation, 50 for transformation, 90 for logging)
 3. **Use ENFORCE mode** in production for critical plugins
-4. **Use PERMISSIVE mode** during development and testing
+4. **Use AUDIT mode** during development and testing
 5. **Keep plugins focused** on a single responsibility
 6. **Document plugin behavior** in configuration and docstrings
 7. **Handle errors gracefully** and provide clear violation messages

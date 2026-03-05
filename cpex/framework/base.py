@@ -250,7 +250,7 @@ class PluginRef:
         ...     version="1.0.0",
         ...     hooks=[PromptHookType.PROMPT_PRE_FETCH],
         ...     tags=["ref", "test"],
-        ...     mode=PluginMode.PERMISSIVE,
+        ...     mode=PluginMode.AUDIT,
         ...     priority=100
         ... )
         >>> plugin = Plugin(config)
@@ -260,7 +260,7 @@ class PluginRef:
         >>> ref.priority
         100
         >>> ref.mode
-        <PluginMode.PERMISSIVE: 'permissive'>
+        <PluginMode.AUDIT: 'audit'>
         >>> len(ref.uuid)  # UUID is a 32-character hex string
         32
         >>> ref.tags

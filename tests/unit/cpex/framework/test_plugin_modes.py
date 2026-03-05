@@ -8,10 +8,10 @@ Tests for PluginMode / OnError refactor:
   - OnError.IGNORE / DISABLE / FAIL behaviors
   - CONCURRENT parallel execution
   - SEQUENTIAL chained execution
-  - PERMISSIVE sequential execution (cannot halt)
-  - Phase ordering: SEQUENTIAL → PERMISSIVE → CONCURRENT → FIRE_AND_FORGET
+  - AUDIT sequential execution (cannot halt)
+  - Phase ordering: SEQUENTIAL → AUDIT → CONCURRENT → FIRE_AND_FORGET
   - execution_pool semaphore for FIRE_AND_FORGET tasks
-  - Backward-compat migration: enforce / enforce_ignore_error → SEQUENTIAL
+  - Backward-compat migration: enforce / enforce_ignore_error → SEQUENTIAL, permissive → AUDIT
 """
 
 # Standard
@@ -274,13 +274,13 @@ async def test_concurrent_parallel_execution():
 
 
 # ---------------------------------------------------------------------------
-# PERMISSIVE sequential execution
+# AUDIT sequential execution
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_permissive_sequential_execution():
-    """PERMISSIVE plugins execute in priority order sequentially."""
+async def test_audit_sequential_execution():
+    """AUDIT plugins execute in priority order sequentially."""
 
     call_order: list[str] = []
 
@@ -290,8 +290,8 @@ async def test_permissive_sequential_execution():
             return PluginResult(continue_processing=True)
 
     manager = await _make_manager()
-    cfg1 = make_plugin_config("PermP1", PluginMode.PERMISSIVE, priority=1)
-    cfg2 = make_plugin_config("PermP2", PluginMode.PERMISSIVE, priority=2)
+    cfg1 = make_plugin_config("PermP1", PluginMode.AUDIT, priority=1)
+    cfg2 = make_plugin_config("PermP2", PluginMode.AUDIT, priority=2)
     plugin1 = SequentialPlugin(cfg1)
     plugin2 = SequentialPlugin(cfg2)
 
@@ -407,6 +407,18 @@ def test_plugin_config_migration_enforce_to_sequential():
     assert cfg.mode == PluginMode.SEQUENTIAL
 
 
+def test_plugin_config_migration_permissive_to_audit():
+    """Legacy 'permissive' mode migrates to AUDIT."""
+    cfg = PluginConfig.model_validate(
+        {
+            "name": "legacy_permissive",
+            "kind": "test.Plugin",
+            "mode": "permissive",
+        }
+    )
+    assert cfg.mode == PluginMode.AUDIT
+
+
 # ---------------------------------------------------------------------------
 # SEQUENTIAL mode tests
 # ---------------------------------------------------------------------------
@@ -493,8 +505,8 @@ async def test_sequential_can_halt_pipeline():
 
 
 @pytest.mark.asyncio
-async def test_sequential_executes_before_permissive():
-    """SEQUENTIAL plugins run before PERMISSIVE plugins."""
+async def test_sequential_executes_before_audit():
+    """SEQUENTIAL plugins run before AUDIT plugins."""
 
     call_order: list[str] = []
 
@@ -505,7 +517,7 @@ async def test_sequential_executes_before_permissive():
 
     manager = await _make_manager()
     cfg_seq = make_plugin_config("SeqFirst", PluginMode.SEQUENTIAL, priority=10)
-    cfg_perm = make_plugin_config("PermSecond", PluginMode.PERMISSIVE, priority=1)  # lower priority number
+    cfg_perm = make_plugin_config("PermSecond", PluginMode.AUDIT, priority=1)  # lower priority number
     plugin_seq = OrderPlugin(cfg_seq)
     plugin_perm = OrderPlugin(cfg_perm)
 

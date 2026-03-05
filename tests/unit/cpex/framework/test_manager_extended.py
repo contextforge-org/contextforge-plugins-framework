@@ -69,7 +69,7 @@ def test_manager_module_import_does_not_parse_plugin_settings(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_manager_timeout_handling():
-    """Test plugin timeout handling in both concurrent and permissive modes."""
+    """Test plugin timeout handling in both concurrent and audit modes."""
 
     # Create a plugin that times out
     class TimeoutPlugin(Plugin):
@@ -115,8 +115,8 @@ async def test_manager_timeout_handling():
         # assert result.violation.code == "PLUGIN_TIMEOUT"
         # assert "timeout" in result.violation.description.lower()
 
-    # Test with permissive mode + on_error=IGNORE (errors are logged and ignored)
-    plugin_config.mode = PluginMode.PERMISSIVE
+    # Test with audit mode + on_error=IGNORE (errors are logged and ignored)
+    plugin_config.mode = PluginMode.AUDIT
     plugin_config.on_error = OnError.IGNORE
     with patch.object(manager._registry, "get_hook_refs_for_hook") as mock_get:
         hook_ref = HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(timeout_plugin))
@@ -124,7 +124,7 @@ async def test_manager_timeout_handling():
 
         result, _ = await manager.invoke_hook(PromptHookType.PROMPT_PRE_FETCH, prompt, global_context=global_context)
 
-        # Should continue in permissive mode with on_error=IGNORE
+        # Should continue in audit mode with on_error=IGNORE
         assert result.continue_processing
         assert result.violation is None
 
@@ -133,7 +133,7 @@ async def test_manager_timeout_handling():
 
 @pytest.mark.asyncio
 async def test_manager_exception_handling():
-    """Test plugin exception handling in both concurrent and permissive modes."""
+    """Test plugin exception handling in both concurrent and audit modes."""
 
     # Create a plugin that raises an exception
     class ErrorPlugin(Plugin):
@@ -176,8 +176,8 @@ async def test_manager_exception_handling():
         # assert result.violation.code == "PLUGIN_ERROR"
         # assert "error" in result.violation.description.lower()
 
-    # Test with permissive mode + on_error=IGNORE (errors are logged and ignored)
-    plugin_config.mode = PluginMode.PERMISSIVE
+    # Test with audit mode + on_error=IGNORE (errors are logged and ignored)
+    plugin_config.mode = PluginMode.AUDIT
     plugin_config.on_error = OnError.IGNORE
     with patch.object(manager._registry, "get_hook_refs_for_hook") as mock_get:
         hook_ref = HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(error_plugin))
@@ -185,7 +185,7 @@ async def test_manager_exception_handling():
 
         result, _ = await manager.invoke_hook(PromptHookType.PROMPT_PRE_FETCH, prompt, global_context=global_context)
 
-        # Should continue in permissive mode with on_error=IGNORE
+        # Should continue in audit mode with on_error=IGNORE
         assert result.continue_processing
         assert result.violation is None
 
@@ -698,8 +698,8 @@ async def test_manager_plugin_blocking():
 
 
 @pytest.mark.asyncio
-async def test_manager_plugin_permissive_blocking():
-    """Test plugin behavior when blocking in permissive mode."""
+async def test_manager_plugin_audit_blocking():
+    """Test plugin behavior when blocking in audit mode."""
 
     class BlockingPlugin(Plugin):
         async def prompt_pre_fetch(self, payload, context):
@@ -713,18 +713,18 @@ async def test_manager_plugin_permissive_blocking():
 
     config = PluginConfig(
         name="BlockingPlugin",
-        description="Test permissive blocking plugin",
+        description="Test audit blocking plugin",
         author="Test",
         version="1.0",
         tags=["test"],
         kind="BlockingPlugin",
-        mode=PluginMode.PERMISSIVE,  # Permissive mode
+        mode=PluginMode.AUDIT,  # Audit mode
         hooks=["prompt_pre_fetch"],
         config={},
     )
     plugin = BlockingPlugin(config)
 
-    # Test permissive mode blocking
+    # Test audit mode blocking
     with patch.object(manager._registry, "get_hook_refs_for_hook") as mock_get:
         hook_ref = HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(plugin))
         mock_get.return_value = [hook_ref]
@@ -899,7 +899,7 @@ async def test_base_plugin_coverage():
     assert plugin_ref.tags == ["test", "coverage"]
 
     # Test PluginRef mode property (covers line 344)
-    assert plugin_ref.mode == PluginMode.CONCURRENT  # Default mode
+    assert plugin_ref.mode == PluginMode.SEQUENTIAL  # Default mode
 
     # Test NotImplementedError for prompt_pre_fetch (covers lines 151-155)
     context = PluginContext(global_context=GlobalContext(request_id="test"))

@@ -81,12 +81,12 @@ class TransportType(str, Enum):
 class PluginMode(StrEnum):
     """Plugin modes of operation.
 
-    Execution order: SEQUENTIAL → PERMISSIVE → CONCURRENT → FIRE_AND_FORGET
+    Execution order: SEQUENTIAL → AUDIT → CONCURRENT → FIRE_AND_FORGET
 
     Attributes:
        sequential: Sequential, chained execution. Receives output of previous plugin.
            Can halt the pipeline. Global state is merged.
-       permissive: Sequential, chained execution. Cannot halt the pipeline — violations
+       audit: Sequential, chained execution. Cannot halt the pipeline — violations
            are logged only. Global state is NOT merged.
        concurrent: Parallel execution with fail-fast on first blocking result.
            Each plugin receives a snapshot of the payload; modifications are merged
@@ -102,8 +102,8 @@ class PluginMode(StrEnum):
         <PluginMode.SEQUENTIAL: 'sequential'>
         >>> PluginMode.FIRE_AND_FORGET
         <PluginMode.FIRE_AND_FORGET: 'fire_and_forget'>
-        >>> PluginMode.PERMISSIVE.value
-        'permissive'
+        >>> PluginMode.AUDIT.value
+        'audit'
         >>> PluginMode('disabled')
         <PluginMode.DISABLED: 'disabled'>
         >>> 'concurrent' in [m.value for m in PluginMode]
@@ -113,7 +113,7 @@ class PluginMode(StrEnum):
     FIRE_AND_FORGET = "fire_and_forget"
     CONCURRENT = "concurrent"
     SEQUENTIAL = "sequential"
-    PERMISSIVE = "permissive"
+    AUDIT = "audit"
     DISABLED = "disabled"
 
 
@@ -1178,7 +1178,7 @@ class PluginConfig(BaseModel):
     version: Optional[str] = None
     hooks: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
-    mode: PluginMode = PluginMode.CONCURRENT
+    mode: PluginMode = PluginMode.SEQUENTIAL
     on_error: OnError = OnError.FAIL
     priority: int = 100  # Lower = higher priority
 
@@ -1190,6 +1190,7 @@ class PluginConfig(BaseModel):
         Migrations:
             - ``enforce_ignore_error`` → ``sequential`` + ``on_error=ignore``
             - ``enforce`` → ``sequential``
+            - ``permissive`` → ``audit``
         """
         if isinstance(data, dict):
             mode = data.get("mode")
@@ -1198,6 +1199,8 @@ class PluginConfig(BaseModel):
                 data.setdefault("on_error", "ignore")
             elif mode == "enforce":
                 data["mode"] = "sequential"
+            elif mode == "permissive":
+                data["mode"] = "audit"
         return data
 
     conditions: list[PluginCondition] = Field(default_factory=list)  # When to apply

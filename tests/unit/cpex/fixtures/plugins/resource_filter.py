@@ -100,8 +100,8 @@ class ResourceFilterPlugin(Plugin):
                 code="INVALID_URI",
                 details={"uri": payload.uri},
             )
-            # In permissive mode, log but continue
-            if self.mode == PluginMode.PERMISSIVE:
+            # In audit mode, log but continue
+            if self.mode == PluginMode.AUDIT:
                 return ResourcePreFetchResult(continue_processing=True, violation=violation, modified_payload=payload)
             return ResourcePreFetchResult(continue_processing=False, violation=violation)
 
@@ -113,8 +113,8 @@ class ResourceFilterPlugin(Plugin):
                 code="PROTOCOL_BLOCKED",
                 details={"uri": payload.uri, "protocol": parsed.scheme, "allowed": self.allowed_protocols},
             )
-            # In permissive mode, log but continue
-            if self.mode == PluginMode.PERMISSIVE:
+            # In audit mode, log but continue
+            if self.mode == PluginMode.AUDIT:
                 return ResourcePreFetchResult(continue_processing=True, violation=violation, modified_payload=payload)
             return ResourcePreFetchResult(continue_processing=False, violation=violation)
 
@@ -132,8 +132,8 @@ class ResourceFilterPlugin(Plugin):
                     code="DOMAIN_BLOCKED",
                     details={"uri": payload.uri, "domain": parsed.netloc},
                 )
-                # In permissive mode, log but continue
-                if self.mode == PluginMode.PERMISSIVE:
+                # In audit mode, log but continue
+                if self.mode == PluginMode.AUDIT:
                     return ResourcePreFetchResult(
                         continue_processing=True, violation=violation, modified_payload=payload
                     )
@@ -199,8 +199,8 @@ class ResourceFilterPlugin(Plugin):
                         "max_size": self.max_content_size,
                     },
                 )
-                # In permissive mode, log but continue
-                if self.mode == PluginMode.PERMISSIVE:
+                # In audit mode, log but continue
+                if self.mode == PluginMode.AUDIT:
                     return ResourcePostFetchResult(
                         continue_processing=True, violation=violation, modified_payload=payload
                     )

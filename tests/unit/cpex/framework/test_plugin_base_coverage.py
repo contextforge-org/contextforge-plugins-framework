@@ -113,8 +113,8 @@ class TestPluginRef:
         assert ref.conditions == []
 
     def test_mode(self):
-        ref = PluginRef(ConcretePlugin(_make_config(mode=PluginMode.PERMISSIVE)))
-        assert ref.mode == PluginMode.PERMISSIVE
+        ref = PluginRef(ConcretePlugin(_make_config(mode=PluginMode.AUDIT)))
+        assert ref.mode == PluginMode.AUDIT
 
     def test_plugin_property(self):
         plugin = ConcretePlugin(_make_config())

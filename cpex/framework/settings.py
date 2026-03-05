@@ -81,8 +81,8 @@ class PluginsSettings(BaseSettings):
             " prefer setting on_error: fail on individual plugins for finer control."
         ),
     )
-    execution_pool: int | None = Field(
-        default=None,
+    execution_pool: int = Field(
+        default=10,
         description="Maximum number of concurrent background tasks. Unlimited if None.",
     )
 
@@ -240,7 +240,7 @@ class PluginsStartupSettings(BaseSettings):
     config_file: str = Field(default="plugins/config.yaml")
     plugin_timeout: int = 30
     fail_on_plugin_error: bool = False
-    execution_pool: int | None = None
+    execution_pool: int = 10
     model_config = SettingsConfigDict(env_prefix="PLUGINS_", env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
@@ -595,7 +595,7 @@ class LazySettingsWrapper:
         return get_startup_settings().fail_on_plugin_error
 
     @property
-    def execution_pool(self) -> int | None:
+    def execution_pool(self) -> int:
         """Access execution_pool without validating full plugin settings.
 
         Returns:

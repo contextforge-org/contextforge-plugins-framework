@@ -199,7 +199,7 @@ type-check:
 .PHONY: test
 test:
 	@echo "🧪 Running tests..."
-	@PYTHONPATH="$(SRC_DIR)" $(VENV_BIN)/pytest $(TEST_DIR) $(PYTEST_ARGS)
+	@PYTHONPATH="$(SRC_DIR)" $(VENV_BIN)/pytest --cov=$(SRC_DIR) $(TEST_DIR) $(PYTEST_ARGS)
 
 .PHONY: test-cov
 test-cov:
@@ -224,10 +224,9 @@ test-file:
 	@echo "🧪 Running test file: $(FILE)..."
 	@PYTHONPATH="$(SRC_DIR)" $(VENV_BIN)/pytest $(FILE) $(PYTEST_ARGS)
 
-.PHONY: test-registry
-test-registry:
-	@echo "🧪 Running hook registry tests..."
-	@PYTHONPATH="$(SRC_DIR)" $(VENV_BIN)/pytest test_hook_registry.py -v
+doctest:
+	@echo "🧪 Running doctest on all modules..."
+	@PYTHONPATH="$(SRC_DIR)" $(VENV_BIN)/pytest --doctest-modules cpex/ --tb=short --no-cov --disable-warnings
 
 # =============================================================================
 # Documentation
@@ -357,6 +356,12 @@ grpc-proto:                          ## Generate gRPC stubs for external plugin 
 			cpexs/framework/external/grpc/proto/plugin_service_pb2.pyi; \
 	fi
 	@echo "✅  gRPC stubs generated in cpex/framework/external/grpc/proto/"
+
+.PHONY: env-example
+env-example:
+	@test -d "$(VENV_DIR)" || $(MAKE) --no-print-directory venv
+	@pip install settings-doc
+	@settings-doc generate --class cpex.framework.settings.PluginsSettings --output-format dotenv > .env.template
 
 # =============================================================================
 # Development shortcuts

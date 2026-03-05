@@ -401,7 +401,7 @@ class TestResourceHookIntegration:
             version="1.0.0",
             hooks=[ResourceHookType.RESOURCE_PRE_FETCH],
             tags=["test"],
-            mode=PluginMode.PERMISSIVE,
+            mode=PluginMode.AUDIT,
             on_error=OnError.IGNORE,  # Continue on error
         )
         plugin = ErrorPlugin(config)
@@ -414,7 +414,7 @@ class TestResourceHookIntegration:
         payload = ResourcePreFetchPayload(uri="test://resource", metadata={})
         global_context = GlobalContext(request_id="test-123")
 
-        # Test with permissive mode - should handle error gracefully
+        # Test with audit mode - should handle error gracefully
         with patch.object(manager._registry, "get_hook_refs_for_hook", return_value=[hook_ref]):
             result, contexts = await manager.invoke_hook(ResourceHookType.RESOURCE_PRE_FETCH, payload, global_context)
             assert result.continue_processing is True  # Continues despite error
