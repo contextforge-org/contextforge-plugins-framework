@@ -58,7 +58,6 @@ class PluginsSettings(BaseSettings):
         ),
     )
     config_file: str = Field(default="plugins/config.yaml", description="Path to main plugins configuration file")
-    plugin_timeout: int = Field(default=30, description="Plugin execution timeout in seconds")
     log_level: str = Field(default="INFO", description="Logging level for plugin framework components")
     skip_ssl_verify: bool = Field(
         default=False,
@@ -71,6 +70,20 @@ class PluginsSettings(BaseSettings):
             " (10.x, 172.16.x, 192.168.x, 127.x, 169.254.x). Disable for development or sidecar"
             " plugin configurations that use private IPs."
         ),
+    )
+
+    # Plugin executor settings
+    plugin_timeout: int = Field(default=30, description="Plugin execution timeout in seconds")
+    fail_on_plugin_error: bool = Field(
+        default=False,
+        description=(
+            "Globally halt the pipeline on any plugin error. Superseded by per-plugin on_error;"
+            " prefer setting on_error: fail on individual plugins for finer control."
+        ),
+    )
+    execution_pool: int = Field(
+        default=10,
+        description="Maximum number of concurrent background tasks. Unlimited if None.",
     )
 
     # HTTP client settings
@@ -219,13 +232,15 @@ class PluginsConfigPathSettings(BaseSettings):
 class PluginsStartupSettings(BaseSettings):
     """Lightweight settings for fields read during gateway startup.
 
-    Reads only ``config_file`` and ``plugin_timeout`` so that malformed
-    unrelated plugin env vars (e.g. ``PLUGINS_SERVER_PORT=abc``) do not
-    prevent the gateway from booting.
+    Reads only ``config_file``, ``plugin_timeout``, ``fail_on_plugin_error``,
+    and ``execution_pool`` so that malformed unrelated plugin env vars
+    (e.g. ``PLUGINS_SERVER_PORT=abc``) do not prevent the gateway from booting.
     """
 
     config_file: str = Field(default="plugins/config.yaml")
     plugin_timeout: int = 30
+    fail_on_plugin_error: bool = False
+    execution_pool: int = 10
     model_config = SettingsConfigDict(env_prefix="PLUGINS_", env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
@@ -569,6 +584,24 @@ class LazySettingsWrapper:
             The plugin execution timeout in seconds.
         """
         return get_startup_settings().plugin_timeout
+
+    @property
+    def fail_on_plugin_error(self) -> bool:
+        """Access fail_on_plugin_error without validating full plugin settings.
+
+        Returns:
+            True if the pipeline should halt on any plugin error.
+        """
+        return get_startup_settings().fail_on_plugin_error
+
+    @property
+    def execution_pool(self) -> int:
+        """Access execution_pool without validating full plugin settings.
+
+        Returns:
+            Maximum concurrent tasks.
+        """
+        return get_startup_settings().execution_pool
 
     @property
     def config_path(self) -> str | None:

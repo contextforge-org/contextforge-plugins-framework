@@ -3,7 +3,7 @@ plugins:
   - name: "ReplaceBadWordsPlugin"
     kind: "external"
     unix_socket:
-      path: "/tmp/mcpgateway-test.sock"
+      path: "/tmp/cpex-test.sock"
       timeout: 30.0
       reconnect_attempts: 3
       reconnect_delay: 0.1

@@ -17,7 +17,7 @@ from jinja2.sandbox import SandboxedEnvironment
 import yaml
 
 # First-Party
-from cpex.framework.models import Config, PluginSettings
+from cpex.framework.models import Config
 
 
 class ConfigLoader:
@@ -26,22 +26,18 @@ class ConfigLoader:
     Examples:
         >>> import tempfile
         >>> import os
-        >>> from cpex.framework.models import PluginSettings
         >>> # Create a temporary config file
         >>> with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
         ...     _ = f.write(\"\"\"
-        ... plugin_settings:
-        ...   enable_plugin_api: true
-        ...   plugin_timeout: 30
         ... plugin_dirs: ['/path/to/plugins']
         ... \"\"\")
         ...     temp_path = f.name
         >>> try:
         ...     config = ConfigLoader.load_config(temp_path, use_jinja=False)
-        ...     config.plugin_settings.enable_plugin_api
+        ...     config.plugin_dirs
         ... finally:
         ...     os.unlink(temp_path)
-        True
+        ['/path/to/plugins']
     """
 
     @staticmethod
@@ -60,18 +56,15 @@ class ConfigLoader:
             >>> import os
             >>> with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
             ...     _ = f.write(\"\"\"
-            ... plugin_settings:
-            ...   plugin_timeout: 60
-            ...   enable_plugin_api: false
             ... plugin_dirs: []
             ... \"\"\")
             ...     temp_path = f.name
             >>> try:
             ...     cfg = ConfigLoader.load_config(temp_path, use_jinja=False)
-            ...     cfg.plugin_settings.plugin_timeout
+            ...     cfg.plugin_dirs
             ... finally:
             ...     os.unlink(temp_path)
-            60
+            []
         """
         try:
             with open(os.path.normpath(config), "r", encoding="utf-8") as file:
@@ -85,4 +78,4 @@ class ConfigLoader:
             return Config(**config_data)
         except FileNotFoundError:
             # Graceful fallback for tests and minimal environments without plugin config
-            return Config(plugins=[], plugin_dirs=[], plugin_settings=PluginSettings())
+            return Config(plugins=[], plugin_dirs=[])

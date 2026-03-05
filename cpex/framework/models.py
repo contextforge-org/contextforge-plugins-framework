@@ -10,7 +10,7 @@ the base plugin layer including configurations, and contexts.
 """
 
 # Standard
-from enum import Enum
+from enum import Enum, StrEnum
 import logging
 import os
 from pathlib import Path
@@ -78,32 +78,65 @@ class TransportType(str, Enum):
     GRPC = "GRPC"
 
 
-class PluginMode(str, Enum):
+class PluginMode(StrEnum):
     """Plugin modes of operation.
 
+    Execution order: SEQUENTIAL → AUDIT → CONCURRENT → FIRE_AND_FORGET
+
     Attributes:
-       enforce: enforces the plugin result, and blocks execution when there is an error.
-       enforce_ignore_error: enforces the plugin result, but allows execution when there is an error.
-       permissive: audits the result.
-       disabled: plugin disabled.
+       sequential: Sequential, chained execution. Receives output of previous plugin.
+           Can halt the pipeline. Global state is merged.
+       audit: Sequential, chained execution. Cannot halt the pipeline — violations
+           are logged only. Global state is NOT merged.
+       concurrent: Parallel execution with fail-fast on first blocking result.
+           Each plugin receives a snapshot of the payload; modifications are merged
+           into global state. Can halt the pipeline.
+       fire_and_forget: Fire-and-forget background execution (audit logging, telemetry).
+           Isolated snapshot; never halts the pipeline. Fires after all other phases.
+       disabled: Plugin disabled.
 
     Examples:
-        >>> PluginMode.ENFORCE
-        <PluginMode.ENFORCE: 'enforce'>
-        >>> PluginMode.ENFORCE_IGNORE_ERROR
-        <PluginMode.ENFORCE_IGNORE_ERROR: 'enforce_ignore_error'>
-        >>> PluginMode.PERMISSIVE.value
-        'permissive'
+        >>> PluginMode.CONCURRENT
+        <PluginMode.CONCURRENT: 'concurrent'>
+        >>> PluginMode.SEQUENTIAL
+        <PluginMode.SEQUENTIAL: 'sequential'>
+        >>> PluginMode.FIRE_AND_FORGET
+        <PluginMode.FIRE_AND_FORGET: 'fire_and_forget'>
+        >>> PluginMode.AUDIT.value
+        'audit'
         >>> PluginMode('disabled')
         <PluginMode.DISABLED: 'disabled'>
-        >>> 'enforce' in [m.value for m in PluginMode]
+        >>> 'concurrent' in [m.value for m in PluginMode]
         True
     """
 
-    ENFORCE = "enforce"
-    ENFORCE_IGNORE_ERROR = "enforce_ignore_error"
-    PERMISSIVE = "permissive"
+    FIRE_AND_FORGET = "fire_and_forget"
+    CONCURRENT = "concurrent"
+    SEQUENTIAL = "sequential"
+    AUDIT = "audit"
     DISABLED = "disabled"
+
+
+class OnError(StrEnum):
+    """Error handling behavior for plugins, independent of execution mode.
+
+    Attributes:
+        fail: Pipeline halts, error propagates (default).
+        ignore: Error logged; pipeline continues.
+        disable: Error logged; plugin auto-disabled; pipeline continues.
+
+    Examples:
+        >>> OnError.FAIL
+        <OnError.FAIL: 'fail'>
+        >>> OnError.IGNORE.value
+        'ignore'
+        >>> OnError('disable')
+        <OnError.DISABLE: 'disable'>
+    """
+
+    FAIL = "fail"
+    IGNORE = "ignore"
+    DISABLE = "disable"
 
 
 class BaseTemplate(BaseModel):
@@ -1127,7 +1160,8 @@ class PluginConfig(BaseModel):
         version (str): version of the plugin.
         hooks (list[str]): a list of the hook points where the plugin will be called. Default: [].
         tags (list[str]): a list of tags for making the plugin searchable.
-        mode (bool): whether the plugin is active.
+        mode (PluginMode): the execution mode of the plugin. Default: CONCURRENT.
+        on_error (OnError): error handling behavior independent of mode. Default: FAIL.
         priority (int): indicates the order in which the plugin is run. Lower = higher priority. Default: 100.
         conditions (Optional[list[PluginCondition]]): the conditions on which the plugin is run.
         applied_to (Optional[list[AppliedTo]]): the tools, fields, that the plugin is applied to.
@@ -1144,8 +1178,31 @@ class PluginConfig(BaseModel):
     version: Optional[str] = None
     hooks: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
-    mode: PluginMode = PluginMode.ENFORCE
+    mode: PluginMode = PluginMode.SEQUENTIAL
+    on_error: OnError = OnError.FAIL
     priority: int = 100  # Lower = higher priority
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_modes(cls, data: Any) -> Any:
+        """Migrate legacy mode values to current canonical mode names.
+
+        Migrations:
+            - ``enforce_ignore_error`` → ``sequential`` + ``on_error=ignore``
+            - ``enforce`` → ``sequential``
+            - ``permissive`` → ``audit``
+        """
+        if isinstance(data, dict):
+            mode = data.get("mode")
+            if mode == "enforce_ignore_error":
+                data["mode"] = "sequential"
+                data.setdefault("on_error", "ignore")
+            elif mode == "enforce":
+                data["mode"] = "sequential"
+            elif mode == "permissive":
+                data["mode"] = "audit"
+        return data
+
     conditions: list[PluginCondition] = Field(default_factory=list)  # When to apply
     applied_to: Optional[AppliedTo] = None  # Fields to apply to.
     config: Optional[dict[str, Any]] = None
@@ -1313,41 +1370,22 @@ class PluginViolation(BaseModel):
         self._plugin_name = name
 
 
-class PluginSettings(BaseModel):
-    """Global plugin settings.
-
-    Attributes:
-        parallel_execution_within_band (bool): execute plugins with same priority in parallel.
-        plugin_timeout (int):  timeout value for plugins operations.
-        fail_on_plugin_error (bool): error when there is a plugin connectivity or ignore.
-        enable_plugin_api (bool): enable or disable plugins globally.
-        plugin_health_check_interval (int): health check interval check.
-        include_user_info (bool): if enabled user info is injected in plugin context
-    """
-
-    parallel_execution_within_band: bool = False
-    plugin_timeout: int = 30
-    fail_on_plugin_error: bool = False
-    enable_plugin_api: bool = False
-    plugin_health_check_interval: int = 60
-    include_user_info: bool = False
-
-
 class Config(BaseModel):
     """Configurations for plugins.
 
     Attributes:
         plugins (Optional[list[PluginConfig]]): the list of plugins to enable.
         plugin_dirs (list[str]): The directories in which to look for plugins.
-        plugin_settings (PluginSettings): global settings for plugins.
+        plugin_settings (Optional[dict]): ignored; runtime settings are read from env vars via settings.py.
         server_settings (Optional[MCPServerConfig]): Server-side MCP configuration (when plugins run as server).
         grpc_server_settings (Optional[GRPCServerConfig]): Server-side gRPC configuration (when plugins run as gRPC server).
         unix_socket_server_settings (Optional[UnixSocketServerConfig]): Server-side Unix socket configuration.
     """
 
+    model_config = ConfigDict(extra="ignore")
+
     plugins: Optional[list[PluginConfig]] = []
     plugin_dirs: list[str] = []
-    plugin_settings: PluginSettings
     server_settings: Optional[MCPServerConfig] = None
     grpc_server_settings: Optional[GRPCServerConfig] = None
     unix_socket_server_settings: Optional[UnixSocketServerConfig] = None

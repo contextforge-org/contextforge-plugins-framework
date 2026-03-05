@@ -16,8 +16,6 @@ import sys
 import time
 import uuid
 
-from types import SimpleNamespace
-
 # Third-Party
 import pytest
 
@@ -31,6 +29,12 @@ from cpex.framework import (
     PromptHookType,
     PromptPosthookPayload,
     PromptPrehookPayload,
+)
+from tests.unit.cpex.fixtures.common.models import (
+    Message,
+    PromptResult,
+    Role,
+    TextContent,
 )
 
 # Check if grpc/protobuf is available (Unix socket uses protobuf from grpc package)
@@ -140,8 +144,8 @@ async def test_unix_client_post_hook(unix_server_proc):
         context = PluginContext(global_context=GlobalContext(request_id="1", server_id="2"))
 
         # Test prompt_post_fetch hook
-        message = SimpleNamespace(content=SimpleNamespace(type="text", text="What the crud?"), role="user")
-        prompt_result = SimpleNamespace(messages=[message])
+        message = Message(content=TextContent(type="text", text="What the crud?"), role=Role.USER)
+        prompt_result = PromptResult(messages=[message])
         payload_result = PromptPosthookPayload(prompt_id="test_prompt", result=prompt_result)
 
         result = await plugin.invoke_hook(PromptHookType.PROMPT_POST_FETCH, payload_result, context)
@@ -347,8 +351,8 @@ async def test_unix_plugin_manager_multiple_hooks(unix_server_proc_for_manager):
         assert result.modified_payload.args["user"] == "This is yikes!"
 
         # Test prompt_post_fetch
-        message = SimpleNamespace(content=SimpleNamespace(type="text", text="What crud!"), role="user")
-        prompt_result = SimpleNamespace(messages=[message])
+        message = Message(content=TextContent(type="text", text="What crud!"), role=Role.USER)
+        prompt_result = PromptResult(messages=[message])
         post_payload = PromptPosthookPayload(prompt_id="test_prompt", result=prompt_result)
 
         result, _ = await plugin_manager.invoke_hook(

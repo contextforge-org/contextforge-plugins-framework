@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Coverage tests for cpex.framework.manager — invoke_hook_for_plugin, _execute_with_timeout, permissive mode."""
+"""Coverage tests for cpex.framework.manager — invoke_hook_for_plugin, _execute_with_timeout, audit mode."""
 
 # Standard
 import asyncio
@@ -27,7 +27,7 @@ from cpex.framework.models import (
 # ---------------------------------------------------------------------------
 
 
-def _make_config(name="test", priority=100, mode=PluginMode.ENFORCE, hooks=None):
+def _make_config(name="test", priority=100, mode=PluginMode.CONCURRENT, hooks=None):
     return PluginConfig(
         name=name,
         kind="test.Plugin",
@@ -43,7 +43,7 @@ class ConcretePlugin(Plugin):
         return PluginResult(continue_processing=True)
 
 
-def _make_hook_ref(plugin=None, mode=PluginMode.ENFORCE):
+def _make_hook_ref(plugin=None, mode=PluginMode.CONCURRENT):
     plugin = plugin or ConcretePlugin(_make_config(mode=mode))
     ref = PluginRef(plugin)
     return HookRef("test_hook", ref)
@@ -306,15 +306,15 @@ class TestExecuteWithTimeout:
 
 
 # ===========================================================================
-# Permissive mode with no violation
+# Audit mode with no violation
 # ===========================================================================
 
 
-class TestPermissiveBlocking:
+class TestAuditBlocking:
     @pytest.mark.asyncio
-    async def test_permissive_no_violation(self):
-        """Plugin returns continue_processing=False in permissive mode with no violation object."""
-        plugin = ConcretePlugin(_make_config(mode=PluginMode.PERMISSIVE))
+    async def test_audit_no_violation(self):
+        """Plugin returns continue_processing=False in audit mode with no violation object."""
+        plugin = ConcretePlugin(_make_config(mode=PluginMode.AUDIT))
 
         # Override to return blocking result with no violation
         async def blocking_hook(payload, context):
@@ -329,13 +329,13 @@ class TestPermissiveBlocking:
         payload = MagicMock(spec=PluginPayload)
 
         result = await executor.execute_plugin(hook_ref, payload, context, False)
-        # In permissive mode, should still return the result (just log warning)
-        assert result.continue_processing is False
+        # In audit mode, should still return the result (just log warning)
+        assert result.continue_processing
 
     @pytest.mark.asyncio
-    async def test_permissive_with_violation_description(self):
-        """Plugin returns violation with description in permissive mode."""
-        plugin = ConcretePlugin(_make_config(mode=PluginMode.PERMISSIVE))
+    async def test_audit_with_violation_description(self):
+        """Plugin returns violation with description in audit mode."""
+        plugin = ConcretePlugin(_make_config(mode=PluginMode.AUDIT))
 
         async def blocking_hook(payload, context):
             return PluginResult(
@@ -352,8 +352,8 @@ class TestPermissiveBlocking:
         payload = MagicMock(spec=PluginPayload)
 
         result = await executor.execute_plugin(hook_ref, payload, context, False)
-        assert result.continue_processing is False
-        assert result.violation.plugin_name == "test"
+        assert result.continue_processing
+        assert not result.violation
 
 
 # ===========================================================================

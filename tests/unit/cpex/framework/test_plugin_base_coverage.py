@@ -27,7 +27,7 @@ def _make_config(**overrides) -> PluginConfig:
         version="1.0.0",
         hooks=["tool_pre_invoke"],
         tags=["tag1", "tag2"],
-        mode=PluginMode.ENFORCE,
+        mode=PluginMode.CONCURRENT,
         priority=42,
         conditions=[PluginCondition(server_ids={"s1"})],
     )
@@ -113,8 +113,8 @@ class TestPluginRef:
         assert ref.conditions == []
 
     def test_mode(self):
-        ref = PluginRef(ConcretePlugin(_make_config(mode=PluginMode.PERMISSIVE)))
-        assert ref.mode == PluginMode.PERMISSIVE
+        ref = PluginRef(ConcretePlugin(_make_config(mode=PluginMode.AUDIT)))
+        assert ref.mode == PluginMode.AUDIT
 
     def test_plugin_property(self):
         plugin = ConcretePlugin(_make_config())

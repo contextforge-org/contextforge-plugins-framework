@@ -10,7 +10,6 @@ Comprehensive unit tests for ExternalPluginServer.
 # Standard
 import os
 from unittest.mock import Mock, patch
-from types import SimpleNamespace
 
 # Third-Party
 import pytest
@@ -29,6 +28,12 @@ from cpex.framework import (
 from cpex.framework.errors import PluginError
 from cpex.framework.external.mcp.server.server import ExternalPluginServer
 from cpex.framework.models import MCPServerConfig, PluginErrorModel
+from tests.unit.cpex.fixtures.common.models import (
+    Message,
+    PromptResult,
+    Role,
+    TextContent,
+)
 
 
 @pytest_asyncio.fixture
@@ -258,8 +263,8 @@ class TestInvokeHook:
     @pytest.mark.asyncio
     async def test_invoke_hook_prompt_post_fetch(self, initialized_server):
         """Test invoking prompt post-fetch hook."""
-        message = SimpleNamespace(content=SimpleNamespace(type="text", text="test content"), role="user")
-        prompt_result = SimpleNamespace(messages=[message])
+        message = Message(content=TextContent(type="text", text="test content"), role=Role.USER)
+        prompt_result = PromptResult(messages=[message])
         payload = PromptPosthookPayload(prompt_id="123", result=prompt_result)
         context = PluginContext(global_context=GlobalContext(request_id="1", server_id="2"))
 

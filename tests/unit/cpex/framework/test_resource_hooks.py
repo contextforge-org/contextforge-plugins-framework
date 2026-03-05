@@ -9,7 +9,6 @@ Tests for resource hook functionality in the plugin framework.
 
 # Standard
 from unittest.mock import AsyncMock, MagicMock, patch
-from types import SimpleNamespace
 
 # Third-Party
 import pytest
@@ -20,6 +19,7 @@ from cpex.framework.base import PluginRef
 # Registry is imported for mocking
 from cpex.framework import (
     GlobalContext,
+    OnError,
     PluginCondition,
     PluginConfig,
     PluginContext,
@@ -35,6 +35,8 @@ from cpex.framework import (
     ResourcePreFetchResult,
 )
 
+from tests.unit.cpex.fixtures.common.models import ResourceContent
+
 
 class TestResourceHooks:
     """Test resource pre/post fetch hooks."""
@@ -47,7 +49,7 @@ class TestResourceHooks:
 
     def test_resource_post_fetch_payload(self):
         """Test ResourcePostFetchPayload creation and attributes."""
-        content = SimpleNamespace(type="resource", id="123", uri="file:///test.txt", text="Test content")
+        content = ResourceContent(type="resource", id="123", uri="file:///test.txt", text="Test content")
         payload = ResourcePostFetchPayload(uri="file:///test.txt", content=content)
         assert payload.uri == "file:///test.txt"
         assert payload.content == content
@@ -85,7 +87,7 @@ class TestResourceHooks:
             tags=["test"],
         )
         plugin = Plugin(config)
-        content = SimpleNamespace(type="resource", id="123", uri="file:///test.txt", text="Test content")
+        content = ResourceContent(type="resource", id="123", uri="file:///test.txt", text="Test content")
         payload = ResourcePostFetchPayload(uri="file:///test.txt", content=content)
         context = PluginContext(global_context=GlobalContext(request_id="test-123"))
 
@@ -116,7 +118,7 @@ class TestResourceHooks:
             version="1.0.0",
             hooks=[ResourceHookType.RESOURCE_PRE_FETCH],
             tags=["test"],
-            mode=PluginMode.ENFORCE,
+            mode=PluginMode.CONCURRENT,
         )
         plugin = BlockingResourcePlugin(config)
         payload = ResourcePreFetchPayload(uri="file:///etc/passwd", metadata={})
@@ -137,7 +139,7 @@ class TestResourceHooks:
             async def resource_post_fetch(self, payload, context):
                 # Modify content to redact sensitive data
                 modified_text = payload.content.text.replace("password: secret123", "password: [REDACTED]")
-                modified_content = SimpleNamespace(
+                modified_content = ResourceContent(
                     type=payload.content.type,
                     id=payload.content.id,
                     uri=payload.content.uri,
@@ -162,7 +164,7 @@ class TestResourceHooks:
             tags=["filter"],
         )
         plugin = ContentFilterPlugin(config)
-        content = SimpleNamespace(
+        content = ResourceContent(
             type="resource",
             id="123",
             uri="test://config",
@@ -241,7 +243,7 @@ class TestResourceHookIntegration:
                 mock_plugin_obj = MagicMock()
                 mock_plugin_obj.name = "test_plugin"
                 mock_plugin_obj.priority = 50
-                mock_plugin_obj.mode = PluginMode.ENFORCE
+                mock_plugin_obj.mode = PluginMode.CONCURRENT
                 mock_plugin_obj.conditions = []
                 mock_plugin_obj.resource_pre_fetch = AsyncMock(
                     return_value=ResourcePreFetchResult(
@@ -256,7 +258,7 @@ class TestResourceHookIntegration:
                 mock_ref.plugin = mock_plugin_obj
                 mock_ref.name = "test_plugin"
                 mock_ref.priority = 50
-                mock_ref.mode = PluginMode.ENFORCE
+                mock_ref.mode = PluginMode.CONCURRENT
                 mock_ref.conditions = []
                 mock_ref.uuid = "test-uuid"
 
@@ -304,7 +306,7 @@ class TestResourceHookIntegration:
             version="1.0.0",
             hooks=[ResourceHookType.RESOURCE_POST_FETCH],
             tags=["test"],
-            mode=PluginMode.ENFORCE,
+            mode=PluginMode.CONCURRENT,
         )
         plugin = TestResourcePlugin(config)
         plugin_ref = PluginRef(plugin)
@@ -314,7 +316,7 @@ class TestResourceHookIntegration:
         await manager.initialize()
 
         with patch.object(manager._registry, "get_hook_refs_for_hook", return_value=[hook_ref]):
-            content = SimpleNamespace(type="resource", id="123", uri="test://resource", text="Test")
+            content = ResourceContent(type="resource", id="123", uri="test://resource", text="Test")
             payload = ResourcePostFetchPayload(uri="test://resource", content=content)
             global_context = GlobalContext(request_id="test-123")
 
@@ -399,7 +401,8 @@ class TestResourceHookIntegration:
             version="1.0.0",
             hooks=[ResourceHookType.RESOURCE_PRE_FETCH],
             tags=["test"],
-            mode=PluginMode.PERMISSIVE,  # Should continue on error
+            mode=PluginMode.AUDIT,
+            on_error=OnError.IGNORE,  # Continue on error
         )
         plugin = ErrorPlugin(config)
         plugin_ref = PluginRef(plugin)
@@ -411,13 +414,14 @@ class TestResourceHookIntegration:
         payload = ResourcePreFetchPayload(uri="test://resource", metadata={})
         global_context = GlobalContext(request_id="test-123")
 
-        # Test with permissive mode - should handle error gracefully
+        # Test with audit mode - should handle error gracefully
         with patch.object(manager._registry, "get_hook_refs_for_hook", return_value=[hook_ref]):
             result, contexts = await manager.invoke_hook(ResourceHookType.RESOURCE_PRE_FETCH, payload, global_context)
             assert result.continue_processing is True  # Continues despite error
 
-        # Test with enforce mode - should raise PluginError
-        config.mode = PluginMode.ENFORCE
+        # Test with concurrent mode + on_error=FAIL (default) - should raise PluginError
+        config.mode = PluginMode.CONCURRENT
+        config.on_error = OnError.FAIL
         with patch.object(manager._registry, "get_hook_refs_for_hook", return_value=[hook_ref]):
             with pytest.raises(PluginError):
                 result, contexts = await manager.invoke_hook(
