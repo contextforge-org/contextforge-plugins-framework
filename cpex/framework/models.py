@@ -14,7 +14,7 @@ from enum import Enum, StrEnum
 import logging
 import os
 from pathlib import Path
-from typing import Any, Generic, Optional, Self, TypeVar, Union
+from typing import Any, Generic, List, Optional, Self, TypeVar, Union
 
 # Third-Party
 from pydantic import (
@@ -27,6 +27,8 @@ from pydantic import (
     PrivateAttr,
     ValidationInfo,
 )
+from packaging.version import Version, InvalidVersion
+
 
 # First-Party
 from cpex.framework.constants import (
@@ -1749,4 +1751,95 @@ class PluginPackageInfo(BaseModel):
             )
         
         return self
+    
+class PluginVersionInfo(BaseModel):
+    """Represents the version information of a plugin.
+
+    Attributes:
+        version (str): The version of the plugin.
+        released (str): The release date of the plugin.
+        breaking_changes: (bool): Whether the version contains breaking changes.
+        deprecated (bool): Whether the version is deprecated.
+        manifest_file (str): The manifest file of the plugin.
+        changelog (str): The release notes for the plugin.
+        min_max_framework_version (str): The minimum and maximum framework version required for the plugin (comma separated).
+    """
+    version: str
+    released: str
+    breaking_changes: Optional[bool] = None
+    deprecated: bool = False
+    manifest_file: str
+    changelog: Optional[str] = None
+    min_max_framework_version: Optional[str] = "0.1.0.dev4,0.1.0.dev4"
+
+class PluginVersionRegistry(BaseModel):
+    """Represents the version registry of a plugin.
+    Attributes:
+        versions (List[PluginVersionInfo]): A list of PluginVersionInfo objects representing the different versions of the plugin.
+    """
+    latest: Optional[PluginVersionInfo] = None
+    latest_prerelease: Optional[PluginVersionInfo] = None
+    versions: List[PluginVersionInfo]
+
+    def get_version(self) -> Optional[PluginVersionInfo]:
+        """Returns the latest version of the plugin.
+        Returns:
+            Optional[PluginVersionInfo]: The latest version of the plugin, or None if no version is available.
+        """
+        return self.latest
+
+    def get_latest_compatible(self, framework_version: str) -> Optional[PluginVersionInfo]:
+        """Returns the latest compatible version for the given framework version.
+        
+        Args:
+            framework_version (str): The framework version to check compatibility against.
+            
+        Returns:
+            Optional[PluginVersionInfo]: The latest compatible version, or None if no compatible version is found.
+        """
+        
+        try:
+            fw_version = Version(framework_version)
+        except InvalidVersion:
+            logging.getLogger(__name__).warning(
+                f"Invalid framework version format: {framework_version}"
+            )
+            return None
+        
+        compatible_versions = []
+        
+        for version_info in self.versions:
+            if not version_info.min_max_framework_version:
+                continue
+                
+            try:
+                # Parse min and max framework versions
+                parts = version_info.min_max_framework_version.split(',')
+                if len(parts) != 2:
+                    continue
+                    
+                min_version = Version(parts[0].strip())
+                max_version = Version(parts[1].strip())
+                
+                # Check if framework version is within range
+                if min_version <= fw_version <= max_version:
+                    compatible_versions.append(version_info)
+                    
+            except (InvalidVersion, ValueError):
+                continue
+        
+        if not compatible_versions:
+            return None
+        
+        # Sort by version and return the latest
+        try:
+            sorted_versions = sorted(
+                compatible_versions,
+                key=lambda v: Version(v.version),
+                reverse=True
+            )
+            return sorted_versions[0]
+        except InvalidVersion:
+            # If sorting fails, return the first compatible version
+            return compatible_versions[0]
     
