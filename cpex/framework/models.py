@@ -1836,3 +1836,10 @@ class PluginVersionRegistry(BaseModel):
         except InvalidVersion:
             # If sorting fails, return the first compatible version
             return compatible_versions[0]
+
+class PluginInstallationType(StrEnum):
+    """Plugin installation type."""
+    BUNDLED = "bundled"    # Pre-installed with framework
+    PYPI = "pypi"          # Installed from PyPI
+    GIT = "git"            # Installed from Git repo
+    LOCAL = "local"        # Installed from local path
