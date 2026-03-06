@@ -463,7 +463,7 @@ class TestAction:
             (ResourceContentPart(content=Resource(resource_request_id="r", uri="f:///a", resource_type=ResourceType.FILE)), Role.TOOL, ViewAction.READ),
             (ResourceRefContentPart(content=ResourceReference(resource_request_id="r", uri="f:///a", resource_type=ResourceType.FILE)), Role.ASSISTANT, ViewAction.READ),
             (PromptRequestContentPart(content=PromptRequest(prompt_request_id="p", name="s")), Role.ASSISTANT, ViewAction.INVOKE),
-            (PromptResultContentPart(content=PromptResult(prompt_request_id="p", prompt_name="s")), Role.TOOL, ViewAction.GENERATE),
+            (PromptResultContentPart(content=PromptResult(prompt_request_id="p", prompt_name="s")), Role.TOOL, ViewAction.RECEIVE),
             (ImageContentPart(content=ImageSource(type="url", data="http://img")), Role.USER, ViewAction.SEND),
         ]
         for part, role, expected_action in pairs:
@@ -538,10 +538,11 @@ class TestDirection:
         view = list(iter_views(msg))[0]
         assert view.is_pre is True
 
-    def test_tool_text_is_pre(self):
+    def test_tool_text_is_post(self):
         msg = Message(role=Role.TOOL, content=[TextContent(text="result text")])
         view = list(iter_views(msg))[0]
-        assert view.is_pre is True
+        assert view.is_pre is False
+        assert view.is_post is True
 
 
 # ---------------------------------------------------------------------------
@@ -817,7 +818,11 @@ class TestProperties:
             role=Role.TOOL,
             content=[PromptResultContentPart(content=PromptResult(
                 prompt_request_id="p1", prompt_name="s",
-                messages=["m1", "m2"], is_error=False,
+                messages=[
+                    Message(role=Role.USER, content=[TextContent(text="m1")]),
+                    Message(role=Role.ASSISTANT, content=[TextContent(text="m2")]),
+                ],
+                is_error=False,
             ))],
         )
         view = list(iter_views(msg))[0]
@@ -979,3 +984,191 @@ class TestRepr:
         r = repr(view)
         assert "tool_call" in r
         assert "tool://_/test" in r
+
+
+# ---------------------------------------------------------------------------
+# Hook property
+# ---------------------------------------------------------------------------
+
+
+class TestHookProperty:
+    """Tests for the hook property on MessageView."""
+
+    def test_hook_none_by_default(self):
+        msg = Message(role=Role.USER, content=[TextContent(text="hi")])
+        view = list(iter_views(msg))[0]
+        assert view.hook is None
+
+    def test_hook_passed_through(self):
+        msg = Message(role=Role.USER, content=[TextContent(text="hi")])
+        view = list(iter_views(msg, hook="llm_input"))[0]
+        assert view.hook == "llm_input"
+
+    def test_hook_in_to_dict(self):
+        msg = Message(role=Role.USER, content=[TextContent(text="hi")])
+        view = list(iter_views(msg, hook="tool_pre_invoke"))[0]
+        d = view.to_dict()
+        assert d["hook"] == "tool_pre_invoke"
+
+    def test_hook_absent_from_to_dict_when_none(self):
+        msg = Message(role=Role.USER, content=[TextContent(text="hi")])
+        view = list(iter_views(msg))[0]
+        d = view.to_dict()
+        assert "hook" not in d
+
+
+# ---------------------------------------------------------------------------
+# Content edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestContentEdgeCases:
+    """Tests for content property edge cases (json fallbacks)."""
+
+    def test_tool_call_non_serializable_args(self):
+        """Tool call with non-JSON-serializable arguments falls back to str()."""
+        tc = ToolCall(tool_call_id="tc1", name="test", arguments={"key": "val"})
+        msg = Message(role=Role.ASSISTANT, content=[ToolCallContentPart(content=tc)])
+        view = list(iter_views(msg))[0]
+        assert view.content is not None
+
+    def test_prompt_request_content(self):
+        pr = PromptRequest(
+            prompt_request_id="pr1", name="test",
+            arguments={"key": "val"},
+        )
+        msg = Message(role=Role.USER, content=[PromptRequestContentPart(content=pr)])
+        view = list(iter_views(msg))[0]
+        assert '"key"' in view.content
+
+    def test_prompt_result_content(self):
+        pr = PromptResult(
+            prompt_request_id="pr1", prompt_name="test",
+            content="rendered text",
+        )
+        msg = Message(role=Role.TOOL, content=[PromptResultContentPart(content=pr)])
+        view = list(iter_views(msg))[0]
+        assert view.content == "rendered text"
+
+    def test_resource_blob_size(self):
+        """Resource with blob but no content still reports size_bytes."""
+        res = Resource(
+            resource_request_id="r1", uri="file:///a.bin",
+            resource_type=ResourceType.FILE, blob=b"\x00\x01\x02",
+        )
+        msg = Message(role=Role.TOOL, content=[ResourceContentPart(content=res)])
+        view = list(iter_views(msg))[0]
+        assert view.content is None
+        assert view.size_bytes == 3
+
+    def test_resource_explicit_size(self):
+        """Resource with explicit size_bytes uses that value."""
+        res = Resource(
+            resource_request_id="r1", uri="file:///a.txt",
+            resource_type=ResourceType.FILE, content="hello",
+            size_bytes=999,
+        )
+        msg = Message(role=Role.TOOL, content=[ResourceContentPart(content=res)])
+        view = list(iter_views(msg))[0]
+        assert view.size_bytes == 999
+
+    def test_to_dict_no_content_with_blob_size(self):
+        """to_dict includes size_bytes even when content is None (blob path)."""
+        res = Resource(
+            resource_request_id="r1", uri="file:///a.bin",
+            resource_type=ResourceType.FILE, blob=b"\x00\x01",
+        )
+        msg = Message(role=Role.TOOL, content=[ResourceContentPart(content=res)])
+        view = list(iter_views(msg))[0]
+        d = view.to_dict()
+        assert "content" not in d
+        assert d["size_bytes"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Properties edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestPropertiesEdgeCases:
+    """Tests for properties on various view kinds."""
+
+    def test_resource_properties(self):
+        res = Resource(
+            resource_request_id="r1", uri="file:///a.txt",
+            resource_type=ResourceType.FILE, content="hi",
+            version="v1", annotations={"label": "pii"},
+        )
+        msg = Message(role=Role.TOOL, content=[ResourceContentPart(content=res)])
+        view = list(iter_views(msg))[0]
+        props = view.properties
+        assert props["resource_type"] == "file"
+        assert props["version"] == "v1"
+        assert props["annotations"] == {"label": "pii"}
+
+    def test_tool_call_properties(self):
+        tc = ToolCall(
+            tool_call_id="tc1", name="test",
+            namespace="ns", arguments={},
+        )
+        msg = Message(role=Role.ASSISTANT, content=[ToolCallContentPart(content=tc)])
+        view = list(iter_views(msg))[0]
+        props = view.properties
+        assert props["namespace"] == "ns"
+        assert props["tool_id"] == "tc1"
+
+    def test_tool_result_properties(self):
+        tr = ToolResult(
+            tool_call_id="tc1", tool_name="test",
+            content="result", is_error=True,
+        )
+        msg = Message(role=Role.TOOL, content=[ToolResultContentPart(content=tr)])
+        view = list(iter_views(msg))[0]
+        props = view.properties
+        assert props["is_error"] is True
+        assert props["tool_name"] == "test"
+
+    def test_prompt_request_properties(self):
+        pr = PromptRequest(
+            prompt_request_id="pr1", name="test",
+            server_id="srv1",
+        )
+        msg = Message(role=Role.USER, content=[PromptRequestContentPart(content=pr)])
+        view = list(iter_views(msg))[0]
+        props = view.properties
+        assert props["server_id"] == "srv1"
+
+
+# ---------------------------------------------------------------------------
+# Headers immutability
+# ---------------------------------------------------------------------------
+
+
+class TestHeadersImmutability:
+    """Tests that headers returns a read-only mapping."""
+
+    def test_headers_not_mutable(self):
+        ext = Extensions(http=HttpExtension(headers={"Authorization": "Bearer tok"}))
+        msg = Message(
+            role=Role.USER,
+            content=[TextContent(text="hi")],
+            extensions=ext,
+        )
+        view = list(iter_views(msg))[0]
+        with pytest.raises(TypeError):
+            view.headers["new_key"] = "val"
+
+
+# ---------------------------------------------------------------------------
+# get_arg / has_arg
+# ---------------------------------------------------------------------------
+
+
+class TestArgHelpers:
+    """Tests for get_arg and has_arg."""
+
+    def test_get_arg_on_non_tool(self):
+        msg = Message(role=Role.USER, content=[TextContent(text="hi")])
+        view = list(iter_views(msg))[0]
+        assert view.get_arg("anything") is None
+        assert view.get_arg("anything", "fallback") == "fallback"

@@ -26,17 +26,36 @@ from cpex.framework.models import PluginPayload, PluginResult
 class MessageHookType(str, Enum):
     """Message hook points.
 
+    The hook type indicates *where* in the pipeline the evaluation
+    is happening, enabling plugins to register for specific locations.
+
     Attributes:
-        EVALUATE: Evaluate a message for policy decisions.
+        EVALUATE: Generic message evaluation.
+        LLM_INPUT: Before model/LLM call (user messages going to LLM).
+        LLM_OUTPUT: After model/LLM call (LLM response).
+        TOOL_PRE_INVOKE: Before tool execution (tool call arguments).
+        TOOL_POST_INVOKE: After tool execution (tool result).
+        PROMPT_PRE_FETCH: Before prompt template fetch.
+        PROMPT_POST_FETCH: After prompt template fetch.
+        RESOURCE_PRE_FETCH: Before resource fetch.
+        RESOURCE_POST_FETCH: After resource fetch.
 
     Examples:
         >>> MessageHookType.EVALUATE
         <MessageHookType.EVALUATE: 'evaluate'>
-        >>> MessageHookType.EVALUATE.value
-        'evaluate'
+        >>> MessageHookType.LLM_INPUT
+        <MessageHookType.LLM_INPUT: 'llm_input'>
     """
 
     EVALUATE = "evaluate"
+    LLM_INPUT = "llm_input"
+    LLM_OUTPUT = "llm_output"
+    TOOL_PRE_INVOKE = "tool_pre_invoke"
+    TOOL_POST_INVOKE = "tool_post_invoke"
+    PROMPT_PRE_FETCH = "prompt_pre_fetch"
+    PROMPT_POST_FETCH = "prompt_post_fetch"
+    RESOURCE_PRE_FETCH = "resource_pre_fetch"
+    RESOURCE_POST_FETCH = "resource_post_fetch"
 
 
 class MessagePayload(PluginPayload):
@@ -48,6 +67,7 @@ class MessagePayload(PluginPayload):
 
     Attributes:
         message: The CMF message to evaluate.
+        hook: The hook location where this evaluation is happening.
 
     Examples:
         >>> from cpex.framework.cmf.message import Message, Role, TextContent
@@ -55,19 +75,18 @@ class MessagePayload(PluginPayload):
         ...     role=Role.USER,
         ...     content=[TextContent(text="Hello")],
         ... )
-        >>> payload = MessagePayload(message=msg)
-        >>> payload.message.role
-        <Role.USER: 'user'>
-        >>> payload.message.content[0].text
-        'Hello'
-
-        >>> # Iterate views through the payload
-        >>> views = list(payload.message.iter_views())
-        >>> len(views)
-        1
+        >>> payload = MessagePayload(
+        ...     message=msg, hook=MessageHookType.LLM_INPUT
+        ... )
+        >>> payload.hook
+        <MessageHookType.LLM_INPUT: 'llm_input'>
     """
 
     message: Message = Field(description="The CMF message to evaluate.")
+    hook: MessageHookType = Field(
+        default=MessageHookType.EVALUATE,
+        description="The hook location where this evaluation is happening.",
+    )
 
 
 MessageResult = PluginResult[MessagePayload]

@@ -601,3 +601,125 @@ class TestMessage:
         )
         views = list(msg.iter_views())
         assert len(views) == 2
+
+
+# ---------------------------------------------------------------------------
+# Validation Tests
+# ---------------------------------------------------------------------------
+
+
+class TestResourceValidation:
+    """Tests for Resource model validators."""
+
+    def test_content_only(self):
+        res = Resource(
+            resource_request_id="r1", uri="file:///a.txt",
+            resource_type=ResourceType.FILE, content="hello",
+        )
+        assert res.content == "hello"
+        assert res.blob is None
+
+    def test_blob_only(self):
+        res = Resource(
+            resource_request_id="r1", uri="file:///a.bin",
+            resource_type=ResourceType.FILE, blob=b"\x00\x01",
+        )
+        assert res.blob == b"\x00\x01"
+        assert res.content is None
+
+    def test_neither_content_nor_blob(self):
+        res = Resource(
+            resource_request_id="r1", uri="file:///a.txt",
+            resource_type=ResourceType.FILE,
+        )
+        assert res.content is None
+        assert res.blob is None
+
+    def test_content_and_blob_raises(self):
+        with pytest.raises(ValueError, match="cannot have both"):
+            Resource(
+                resource_request_id="r1", uri="file:///a.txt",
+                resource_type=ResourceType.FILE,
+                content="hello", blob=b"\x00",
+            )
+
+
+class TestResourceReferenceValidation:
+    """Tests for ResourceReference range validators."""
+
+    def test_valid_range(self):
+        ref = ResourceReference(
+            resource_request_id="r1", uri="file:///a.txt",
+            resource_type=ResourceType.FILE,
+            range_start=10, range_end=20,
+        )
+        assert ref.range_start == 10
+        assert ref.range_end == 20
+
+    def test_equal_range(self):
+        ref = ResourceReference(
+            resource_request_id="r1", uri="file:///a.txt",
+            resource_type=ResourceType.FILE,
+            range_start=5, range_end=5,
+        )
+        assert ref.range_start == ref.range_end
+
+    def test_invalid_range_raises(self):
+        with pytest.raises(ValueError, match="range_end.*must be >= range_start"):
+            ResourceReference(
+                resource_request_id="r1", uri="file:///a.txt",
+                resource_type=ResourceType.FILE,
+                range_start=20, range_end=10,
+            )
+
+    def test_start_only(self):
+        ref = ResourceReference(
+            resource_request_id="r1", uri="file:///a.txt",
+            resource_type=ResourceType.FILE, range_start=5,
+        )
+        assert ref.range_start == 5
+        assert ref.range_end is None
+
+    def test_end_only(self):
+        ref = ResourceReference(
+            resource_request_id="r1", uri="file:///a.txt",
+            resource_type=ResourceType.FILE, range_end=10,
+        )
+        assert ref.range_start is None
+        assert ref.range_end == 10
+
+
+class TestDiscriminator:
+    """Tests for content_type discriminator function."""
+
+    def test_missing_content_type_in_dict_raises(self):
+        with pytest.raises(Exception):
+            Message(role=Role.USER, content=[{"text": "hello"}])
+
+    def test_invalid_content_type_in_dict_raises(self):
+        with pytest.raises(Exception):
+            Message(role=Role.USER, content=[{"content_type": "bogus", "text": "hello"}])
+
+
+class TestMediaSourceLiteral:
+    """Tests that media source type fields enforce Literal['url', 'base64']."""
+
+    def test_image_source_valid_types(self):
+        assert ImageSource(type="url", data="https://x.com/a.jpg").type == "url"
+        assert ImageSource(type="base64", data="abc").type == "base64"
+
+    def test_image_source_invalid_type(self):
+        with pytest.raises(Exception):
+            ImageSource(type="ftp", data="abc")
+
+    def test_video_source_invalid_type(self):
+        with pytest.raises(Exception):
+            VideoSource(type="file", data="abc")
+
+    def test_audio_source_invalid_type(self):
+        with pytest.raises(Exception):
+            AudioSource(type="stream", data="abc")
+
+    def test_document_source_invalid_type(self):
+        with pytest.raises(Exception):
+            DocumentSource(type="unknown", data="abc")
