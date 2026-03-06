@@ -133,8 +133,13 @@ def bootstrap(
         Path, typer.Option("--destination", "-d", help="The directory in which to bootstrap the plugin project.")
     ] = DEFAULT_PROJECT_DIR,
     template_url: Annotated[
-        str, typer.Option("--template_url", "-u", help="The URL to the plugins cookiecutter template.")
-    ] = DEFAULT_TEMPLATE_URL,
+        str,
+        typer.Option(
+            "--template_url",
+            "-u",
+            help="The URL to the plugins cookiecutter template. Overrides local templates when provided.",
+        ),
+    ] = None,
     template_type: Annotated[
         str, typer.Option("--template_type", "-t", help="Plugin template type: native or external.")
     ] = "native",
@@ -166,10 +171,11 @@ def bootstrap(
         raise typer.Exit(1)
 
     if dry_run:
+        source = template_url if template_url is not None else str(LOCAL_TEMPLATES_DIR / template_type)
         logger.info(
             "Dry run: would create plugin project at %s from template %s (type=%s)",
             destination,
-            template_url,
+            source,
             template_type,
         )
         return
@@ -182,16 +188,14 @@ def bootstrap(
             "email": git_user_email(),
         }
 
-        # Prefer local bundled templates; fall back to remote URL
+        # Explicit URL overrides local templates; otherwise prefer local
         local_template_dir = LOCAL_TEMPLATES_DIR / template_type
-        if local_template_dir.is_dir():
-            cookiecutter(
-                template=str(local_template_dir),
-                output_dir=output_dir,
-                no_input=no_input,
-                extra_context=extra_context,
-            )
-        elif command_exists("git"):
+        use_remote = template_url is not None
+
+        if use_remote:
+            if not command_exists("git"):
+                logger.error("git is required to fetch remote templates but was not found.")
+                raise typer.Exit(1)
             cookiecutter(
                 template=template_url,
                 checkout=vcs_ref,
@@ -200,8 +204,26 @@ def bootstrap(
                 no_input=no_input,
                 extra_context=extra_context,
             )
+        elif local_template_dir.is_dir():
+            cookiecutter(
+                template=str(local_template_dir),
+                output_dir=output_dir,
+                no_input=no_input,
+                extra_context=extra_context,
+            )
+        elif command_exists("git"):
+            cookiecutter(
+                template=DEFAULT_TEMPLATE_URL,
+                checkout=vcs_ref,
+                directory=f"cpex/templates/{template_type}",
+                output_dir=output_dir,
+                no_input=no_input,
+                extra_context=extra_context,
+            )
         else:
             logger.warning("No local templates found and git is not available to fetch remote template.")
+    except (SystemExit, typer.Exit):
+        raise
     except Exception:
         logger.exception("An error was caught while copying template.")
 

@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 from cpex.tools.cli import (
     DEFAULT_AUTHOR_EMAIL,
     DEFAULT_AUTHOR_NAME,
+    DEFAULT_TEMPLATE_URL,
     LOCAL_TEMPLATES_DIR,
     app,
     command_exists,
@@ -231,10 +232,96 @@ class TestBootstrapLocalTemplate:
             assert mock_cc.call_args.kwargs["output_dir"] == "."
 
 
+class TestBootstrapExplicitUrl:
+    """Test bootstrap with explicit --template_url overrides local templates."""
+
+    def test_explicit_url_overrides_local_templates(self):
+        with (
+            patch("cpex.tools.cli.command_exists", return_value=True),
+            patch(_CC_PATCH_TARGET) as mock_cc,
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "bootstrap",
+                    "-d",
+                    "/tmp/test_url",
+                    "-u",
+                    "https://example.com/repo.git",
+                    "--no_input",
+                ],
+            )
+            assert result.exit_code == 0
+            mock_cc.assert_called_once()
+            assert mock_cc.call_args.kwargs["template"] == "https://example.com/repo.git"
+            assert mock_cc.call_args.kwargs["checkout"] == "main"
+
+    def test_explicit_url_with_custom_vcs_ref(self):
+        with (
+            patch("cpex.tools.cli.command_exists", return_value=True),
+            patch(_CC_PATCH_TARGET) as mock_cc,
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "bootstrap",
+                    "-d",
+                    "/tmp/test_url_ref",
+                    "-u",
+                    "https://example.com/repo.git",
+                    "--vcs_ref",
+                    "v2.0",
+                    "--no_input",
+                ],
+            )
+            assert result.exit_code == 0
+            assert mock_cc.call_args.kwargs["checkout"] == "v2.0"
+
+    def test_explicit_url_with_external_template_type(self):
+        with (
+            patch("cpex.tools.cli.command_exists", return_value=True),
+            patch(_CC_PATCH_TARGET) as mock_cc,
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "bootstrap",
+                    "-d",
+                    "/tmp/test_url_ext",
+                    "-u",
+                    "https://example.com/repo.git",
+                    "-t",
+                    "external",
+                    "--no_input",
+                ],
+            )
+            assert result.exit_code == 0
+            assert "cpex/templates/external" in mock_cc.call_args.kwargs["directory"]
+
+    def test_explicit_url_exits_if_git_missing(self):
+        with (
+            patch("cpex.tools.cli.command_exists", return_value=False),
+            patch(_CC_PATCH_TARGET) as mock_cc,
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "bootstrap",
+                    "-d",
+                    "/tmp/test_url_nogit",
+                    "-u",
+                    "https://example.com/repo.git",
+                    "--no_input",
+                ],
+            )
+            assert result.exit_code == 1
+            mock_cc.assert_not_called()
+
+
 class TestBootstrapRemoteFallback:
     """Test bootstrap falls back to remote URL when local templates are missing."""
 
-    def test_falls_back_to_remote_when_local_missing(self):
+    def test_falls_back_to_default_remote_when_local_missing(self):
         with (
             patch("cpex.tools.cli.LOCAL_TEMPLATES_DIR", Path("/nonexistent/templates")),
             patch("cpex.tools.cli.command_exists", return_value=True),
@@ -242,11 +329,11 @@ class TestBootstrapRemoteFallback:
         ):
             runner.invoke(app, ["bootstrap", "-d", "/tmp/test_remote", "--no_input"])
             mock_cc.assert_called_once()
-            assert "http" in mock_cc.call_args.kwargs["template"]
+            assert mock_cc.call_args.kwargs["template"] == DEFAULT_TEMPLATE_URL
             assert mock_cc.call_args.kwargs["checkout"] == "main"
             assert "cpex/templates/native" in mock_cc.call_args.kwargs["directory"]
 
-    def test_falls_back_to_remote_with_custom_vcs_ref(self):
+    def test_falls_back_to_default_remote_with_custom_vcs_ref(self):
         with (
             patch("cpex.tools.cli.LOCAL_TEMPLATES_DIR", Path("/nonexistent/templates")),
             patch("cpex.tools.cli.command_exists", return_value=True),
