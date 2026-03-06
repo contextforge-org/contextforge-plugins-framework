@@ -19,10 +19,13 @@ compose them into the typed content-part hierarchy for message serialization.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Annotated, Iterator, TYPE_CHECKING, Union
+from typing import Any, Annotated, Iterator, Literal, TYPE_CHECKING, Union
 
 # Third-Party
-from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag
+from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag, model_validator
+
+# First-Party
+from cpex.framework.extensions.extensions import Extensions
 
 # ---------------------------------------------------------------------------
 # Enums
@@ -257,6 +260,13 @@ class Resource(BaseModel):
     resource_type: ResourceType = Field(description="The kind of resource.")
     content: str | None = Field(default=None, description="Text content if embedded.")
     blob: bytes | None = Field(default=None, description="Binary content if embedded.")
+
+    @model_validator(mode="after")
+    def _check_content_blob_exclusion(self) -> Resource:
+        if self.content is not None and self.blob is not None:
+            raise ValueError("Resource cannot have both 'content' and 'blob' set")
+        return self
+
     mime_type: str | None = Field(default=None, description="MIME type of content.")
     size_bytes: int | None = Field(default=None, description="Size information.")
     annotations: dict[str, Any] = Field(default_factory=dict, description="Metadata (classification, retention, etc.).")
@@ -296,6 +306,13 @@ class ResourceReference(BaseModel):
     range_start: int | None = Field(default=None, description="Line number or byte offset for partial references.")
     range_end: int | None = Field(default=None, description="End of range.")
     selector: str | None = Field(default=None, description="CSS/XPath/JSONPath selector.")
+
+    @model_validator(mode="after")
+    def _check_range_consistency(self) -> ResourceReference:
+        if self.range_start is not None and self.range_end is not None:
+            if self.range_end < self.range_start:
+                raise ValueError(f"range_end ({self.range_end}) must be >= range_start ({self.range_start})")
+        return self
 
 
 class PromptRequest(BaseModel):
@@ -354,7 +371,7 @@ class PromptResult(BaseModel):
 
     prompt_request_id: str = Field(description="ID of the corresponding prompt request.")
     prompt_name: str = Field(description="Name of the prompt that was rendered.")
-    messages: list[Any] = Field(
+    messages: list[Message] = Field(
         default_factory=list,
         description="Rendered messages (prompts produce messages).",
     )
@@ -381,7 +398,7 @@ class ImageSource(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    type: str = Field(description="Source type: 'url' or 'base64'.")
+    type: Literal["url", "base64"] = Field(description="Source type: 'url' or 'base64'.")
     data: str = Field(description="URL or base64-encoded string.")
     media_type: str | None = Field(default=None, description="MIME type (e.g., image/jpeg).")
 
@@ -405,7 +422,7 @@ class VideoSource(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    type: str = Field(description="Source type: 'url' or 'base64'.")
+    type: Literal["url", "base64"] = Field(description="Source type: 'url' or 'base64'.")
     data: str = Field(description="URL or base64-encoded string.")
     media_type: str | None = Field(default=None, description="MIME type (e.g., video/mp4).")
     duration_ms: int | None = Field(default=None, description="Duration in milliseconds.")
@@ -430,7 +447,7 @@ class AudioSource(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    type: str = Field(description="Source type: 'url' or 'base64'.")
+    type: Literal["url", "base64"] = Field(description="Source type: 'url' or 'base64'.")
     data: str = Field(description="URL or base64-encoded string.")
     media_type: str | None = Field(default=None, description="MIME type (e.g., audio/mp3).")
     duration_ms: int | None = Field(default=None, description="Duration in milliseconds.")
@@ -460,7 +477,7 @@ class DocumentSource(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    type: str = Field(description="Source type: 'url' or 'base64'.")
+    type: Literal["url", "base64"] = Field(description="Source type: 'url' or 'base64'.")
     data: str = Field(description="URL or base64-encoded string.")
     media_type: str | None = Field(default=None, description="MIME type (e.g., application/pdf).")
     title: str | None = Field(default=None, description="Document title.")
@@ -511,7 +528,7 @@ class TextContent(ContentPart):
         ('Hello, world!', 'Updated')
     """
 
-    content_type: ContentType = Field(default=ContentType.TEXT, description="Content type discriminator.")
+    content_type: Literal[ContentType.TEXT] = Field(default=ContentType.TEXT, description="Content type discriminator.")
     text: str = Field(description="The text content.")
 
 
@@ -528,7 +545,9 @@ class ThinkingContent(ContentPart):
         <ContentType.THINKING: 'thinking'>
     """
 
-    content_type: ContentType = Field(default=ContentType.THINKING, description="Content type discriminator.")
+    content_type: Literal[ContentType.THINKING] = Field(
+        default=ContentType.THINKING, description="Content type discriminator."
+    )
     text: str = Field(description="The reasoning text.")
 
 
@@ -547,7 +566,9 @@ class ToolCallContentPart(ContentPart):
         'search'
     """
 
-    content_type: ContentType = Field(default=ContentType.TOOL_CALL, description="Content type discriminator.")
+    content_type: Literal[ContentType.TOOL_CALL] = Field(
+        default=ContentType.TOOL_CALL, description="Content type discriminator."
+    )
     content: ToolCall = Field(description="The wrapped ToolCall.")
 
 
@@ -566,7 +587,9 @@ class ToolResultContentPart(ContentPart):
         'search'
     """
 
-    content_type: ContentType = Field(default=ContentType.TOOL_RESULT, description="Content type discriminator.")
+    content_type: Literal[ContentType.TOOL_RESULT] = Field(
+        default=ContentType.TOOL_RESULT, description="Content type discriminator."
+    )
     content: ToolResult = Field(description="The wrapped ToolResult.")
 
 
@@ -585,7 +608,9 @@ class ResourceContentPart(ContentPart):
         'file:///data.txt'
     """
 
-    content_type: ContentType = Field(default=ContentType.RESOURCE, description="Content type discriminator.")
+    content_type: Literal[ContentType.RESOURCE] = Field(
+        default=ContentType.RESOURCE, description="Content type discriminator."
+    )
     content: Resource = Field(description="The wrapped Resource.")
 
 
@@ -604,7 +629,9 @@ class ResourceRefContentPart(ContentPart):
         'db://users/42'
     """
 
-    content_type: ContentType = Field(default=ContentType.RESOURCE_REF, description="Content type discriminator.")
+    content_type: Literal[ContentType.RESOURCE_REF] = Field(
+        default=ContentType.RESOURCE_REF, description="Content type discriminator."
+    )
     content: ResourceReference = Field(description="The wrapped ResourceReference.")
 
 
@@ -623,7 +650,9 @@ class PromptRequestContentPart(ContentPart):
         'summarize'
     """
 
-    content_type: ContentType = Field(default=ContentType.PROMPT_REQUEST, description="Content type discriminator.")
+    content_type: Literal[ContentType.PROMPT_REQUEST] = Field(
+        default=ContentType.PROMPT_REQUEST, description="Content type discriminator."
+    )
     content: PromptRequest = Field(description="The wrapped PromptRequest.")
 
 
@@ -642,7 +671,9 @@ class PromptResultContentPart(ContentPart):
         'summarize'
     """
 
-    content_type: ContentType = Field(default=ContentType.PROMPT_RESULT, description="Content type discriminator.")
+    content_type: Literal[ContentType.PROMPT_RESULT] = Field(
+        default=ContentType.PROMPT_RESULT, description="Content type discriminator."
+    )
     content: PromptResult = Field(description="The wrapped PromptResult.")
 
 
@@ -661,7 +692,9 @@ class ImageContentPart(ContentPart):
         'url'
     """
 
-    content_type: ContentType = Field(default=ContentType.IMAGE, description="Content type discriminator.")
+    content_type: Literal[ContentType.IMAGE] = Field(
+        default=ContentType.IMAGE, description="Content type discriminator."
+    )
     content: ImageSource = Field(description="The wrapped ImageSource.")
 
 
@@ -680,7 +713,9 @@ class VideoContentPart(ContentPart):
         'url'
     """
 
-    content_type: ContentType = Field(default=ContentType.VIDEO, description="Content type discriminator.")
+    content_type: Literal[ContentType.VIDEO] = Field(
+        default=ContentType.VIDEO, description="Content type discriminator."
+    )
     content: VideoSource = Field(description="The wrapped VideoSource.")
 
 
@@ -699,7 +734,9 @@ class AudioContentPart(ContentPart):
         'url'
     """
 
-    content_type: ContentType = Field(default=ContentType.AUDIO, description="Content type discriminator.")
+    content_type: Literal[ContentType.AUDIO] = Field(
+        default=ContentType.AUDIO, description="Content type discriminator."
+    )
     content: AudioSource = Field(description="The wrapped AudioSource.")
 
 
@@ -718,7 +755,9 @@ class DocumentContentPart(ContentPart):
         'application/pdf'
     """
 
-    content_type: ContentType = Field(default=ContentType.DOCUMENT, description="Content type discriminator.")
+    content_type: Literal[ContentType.DOCUMENT] = Field(
+        default=ContentType.DOCUMENT, description="Content type discriminator."
+    )
     content: DocumentSource = Field(description="The wrapped DocumentSource.")
 
 
@@ -739,8 +778,13 @@ def _content_type_discriminator(v: Any) -> str:
         The content_type string value for discriminator routing.
     """
     if isinstance(v, dict):
-        return v.get("content_type", "text")
-    return v.content_type.value if hasattr(v, "content_type") else "text"
+        ct = v.get("content_type")
+        if ct is None:
+            raise ValueError("Missing 'content_type' discriminator in content part dict")
+        return ct
+    if not hasattr(v, "content_type"):
+        raise ValueError(f"Content part {type(v).__name__} missing 'content_type' attribute")
+    return v.content_type.value
 
 
 ContentPartUnion = Annotated[
@@ -836,16 +880,20 @@ class Message(BaseModel):
     role: Role = Field(description="Who is speaking.")
     content: list[ContentPartUnion] = Field(default_factory=list, description="List of typed content parts.")
     channel: Channel | None = Field(default=None, description="Optional output classification.")
-    extensions: Any = Field(
+    extensions: Extensions | None = Field(
         default=None,
         description="Contextual metadata (identity, security, governance, etc.).",
     )
 
-    def iter_views(self) -> Iterator[MessageView]:
+    def iter_views(self, hook: str | None = None) -> Iterator[MessageView]:
         """Decompose this message into individually addressable MessageViews.
 
         Yields one MessageView per content part. Each view provides a
         uniform interface for policy evaluation regardless of content type.
+
+        Args:
+            hook: Optional hook location string (e.g., "llm_input",
+                "tool_post_invoke") to attach to each view.
 
         Returns:
             An iterator of MessageView objects.
@@ -874,7 +922,7 @@ class Message(BaseModel):
         """
         from cpex.framework.cmf.view import iter_views  # pylint: disable=import-outside-toplevel
 
-        return iter_views(self)
+        return iter_views(self, hook=hook)
 
 
 if TYPE_CHECKING:

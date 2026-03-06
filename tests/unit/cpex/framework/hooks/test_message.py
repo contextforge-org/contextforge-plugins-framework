@@ -40,7 +40,7 @@ class TestMessageHookType:
             MessageHookType("invalid")
 
     def test_member_count(self):
-        assert len(MessageHookType) == 1
+        assert len(MessageHookType) == 9
 
     def test_is_str_enum(self):
         assert isinstance(MessageHookType.EVALUATE, str)

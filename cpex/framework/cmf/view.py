@@ -14,9 +14,11 @@ content part and message extensions directly.
 
 # Standard
 import json
+import logging
 import re
 from enum import Enum
-from typing import Any, Iterator
+from types import MappingProxyType
+from typing import Any, Iterator, Mapping
 
 # First-Party
 from cpex.framework.cmf.message import (
@@ -31,6 +33,8 @@ from cpex.framework.extensions.security import (
     ObjectSecurityProfile,
     SubjectExtension,
 )
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Enums
@@ -123,6 +127,21 @@ _CONTENT_TYPE_TO_VIEW_KIND: dict[ContentType, ViewKind] = {
     ContentType.DOCUMENT: ViewKind.DOCUMENT,
 }
 
+_ACTION_MAP: dict[ViewKind, ViewAction] = {
+    ViewKind.TOOL_CALL: ViewAction.EXECUTE,
+    ViewKind.TOOL_RESULT: ViewAction.RECEIVE,
+    ViewKind.RESOURCE: ViewAction.READ,
+    ViewKind.RESOURCE_REF: ViewAction.READ,
+    ViewKind.PROMPT_REQUEST: ViewAction.INVOKE,
+    ViewKind.PROMPT_RESULT: ViewAction.RECEIVE,
+}
+
+# Kinds whose action depends on message direction (role)
+_DIRECTION_DEPENDENT_KINDS = frozenset({
+    ViewKind.TEXT, ViewKind.THINKING,
+    ViewKind.IMAGE, ViewKind.VIDEO, ViewKind.AUDIO, ViewKind.DOCUMENT,
+})
+
 # Sensitive headers stripped during serialization
 _SENSITIVE_HEADERS = frozenset({"authorization", "cookie", "x-api-key"})
 
@@ -185,19 +204,28 @@ class MessageView:
         True
     """
 
-    __slots__ = ("_part", "_kind", "_message")
+    __slots__ = ("_part", "_kind", "_message", "_hook")
 
-    def __init__(self, part: ContentPart, kind: ViewKind, message: Message) -> None:
+    def __init__(
+        self,
+        part: ContentPart,
+        kind: ViewKind,
+        message: Message,
+        hook: str | None = None,
+    ) -> None:
         """Initialize a MessageView.
 
         Args:
             part: The underlying content part.
             kind: The kind of content.
             message: The parent message (for role and extensions access).
+            hook: The hook location where this view is being evaluated
+                (e.g., "llm_input", "tool_post_invoke"). None if unset.
         """
         self._part = part
         self._kind = kind
         self._message = message
+        self._hook = hook
 
     # =========================================================================
     # Internal Helpers
@@ -239,6 +267,19 @@ class MessageView:
             The Role (user, assistant, system, developer, tool).
         """
         return self._message.role
+
+    @property
+    def hook(self) -> str | None:
+        """The hook location where this view is being evaluated.
+
+        Indicates where in the pipeline the evaluation is occurring
+        (e.g., "llm_input", "llm_output", "tool_pre_invoke",
+        "tool_post_invoke"). None if not set.
+
+        Returns:
+            Hook location string or None.
+        """
+        return self._hook
 
     @property
     def raw(self) -> ContentPart:
@@ -355,24 +396,22 @@ class MessageView:
     def action(self) -> ViewAction:
         """The semantic action this view represents.
 
+        For content kinds like text and media, the action depends on
+        the message role: SEND for user/system/developer input,
+        GENERATE for assistant output, RECEIVE for tool output.
+
         Returns:
             A ViewAction value.
         """
-        _ACTION_MAP: dict[ViewKind, ViewAction] = {
-            ViewKind.TEXT: ViewAction.SEND,
-            ViewKind.THINKING: ViewAction.GENERATE,
-            ViewKind.TOOL_CALL: ViewAction.EXECUTE,
-            ViewKind.TOOL_RESULT: ViewAction.RECEIVE,
-            ViewKind.RESOURCE: ViewAction.READ,
-            ViewKind.RESOURCE_REF: ViewAction.READ,
-            ViewKind.PROMPT_REQUEST: ViewAction.INVOKE,
-            ViewKind.PROMPT_RESULT: ViewAction.GENERATE,
-            ViewKind.IMAGE: ViewAction.SEND,
-            ViewKind.VIDEO: ViewAction.SEND,
-            ViewKind.AUDIO: ViewAction.SEND,
-            ViewKind.DOCUMENT: ViewAction.SEND,
-        }
-        return _ACTION_MAP.get(self._kind, ViewAction.SEND)
+        fixed = _ACTION_MAP.get(self._kind)
+        if fixed is not None:
+            return fixed
+        role = self._message.role
+        if role == Role.ASSISTANT:
+            return ViewAction.GENERATE
+        if role == Role.TOOL:
+            return ViewAction.RECEIVE
+        return ViewAction.SEND
 
     @property
     def args(self) -> dict[str, Any] | None:
@@ -521,7 +560,7 @@ class MessageView:
             return True
         if self._kind in (ViewKind.TOOL_RESULT, ViewKind.PROMPT_RESULT, ViewKind.RESOURCE):
             return False
-        return self._message.role in (Role.USER, Role.SYSTEM, Role.DEVELOPER, Role.TOOL)
+        return self._message.role in (Role.USER, Role.SYSTEM, Role.DEVELOPER)
 
     @property
     def is_post(self) -> bool:
@@ -534,7 +573,7 @@ class MessageView:
             return True
         if self._kind in (ViewKind.TOOL_CALL, ViewKind.PROMPT_REQUEST, ViewKind.RESOURCE_REF):
             return False
-        return self._message.role == Role.ASSISTANT
+        return self._message.role in (Role.ASSISTANT, Role.TOOL)
 
     @property
     def is_tool(self) -> bool:
@@ -680,18 +719,18 @@ class MessageView:
     # --- read_headers ---
 
     @property
-    def headers(self) -> dict[str, str]:
+    def headers(self) -> Mapping[str, str]:
         """HTTP headers associated with the request.
 
         Capability: read_headers.
 
         Returns:
-            Dict of header name to value.
+            Read-only mapping of header name to value.
         """
         ext = self._ext()
         if ext and ext.http:
-            return ext.http.headers
-        return {}
+            return MappingProxyType(ext.http.headers)
+        return MappingProxyType({})
 
     # --- read_labels ---
 
@@ -939,10 +978,13 @@ class MessageView:
         view_uri = self.uri
         if not view_uri:
             return False
-        regex = pattern.replace("**", "<<<DOUBLE>>>")
-        regex = regex.replace("*", "[^/]*")
-        regex = regex.replace("<<<DOUBLE>>>", ".*")
-        regex = f"^{regex}$"
+        # Split on ** first, then * within each segment, escaping literals
+        parts = pattern.split("**")
+        regex_parts = []
+        for part in parts:
+            sub_parts = part.split("*")
+            regex_parts.append("[^/]*".join(re.escape(s) for s in sub_parts))
+        regex = f"^{'.*'.join(regex_parts)}$"
         return bool(re.match(regex, view_uri))
 
     def has_content(self) -> bool:
@@ -978,6 +1020,9 @@ class MessageView:
             "action": self.action.value,
         }
 
+        if self._hook is not None:
+            result["hook"] = self._hook
+
         if self.uri:
             result["uri"] = self.uri
         if self.name:
@@ -987,9 +1032,11 @@ class MessageView:
             text = self.content
             if text is not None:
                 result["content"] = text
-            size = self.size_bytes
-            if size is not None:
-                result["size_bytes"] = size
+                result["size_bytes"] = len(text.encode("utf-8"))
+            else:
+                size = self.size_bytes
+                if size is not None:
+                    result["size_bytes"] = size
 
         if self.mime_type:
             result["mime_type"] = self.mime_type
@@ -1106,8 +1153,9 @@ class MessageView:
         """
         role_part = f", role={self._message.role.value}"
         uri_part = f", uri={self.uri}" if self.uri else ""
+        hook_part = f", hook={self._hook}" if self._hook else ""
         direction = "pre" if self.is_pre else "post" if self.is_post else "?"
-        return f"MessageView(kind={self._kind.value}{role_part}, {direction}{uri_part})"
+        return f"MessageView(kind={self._kind.value}{role_part}, {direction}{uri_part}{hook_part})"
 
 
 # ---------------------------------------------------------------------------
@@ -1115,7 +1163,7 @@ class MessageView:
 # ---------------------------------------------------------------------------
 
 
-def iter_views(message: Message) -> Iterator[MessageView]:
+def iter_views(message: Message, hook: str | None = None) -> Iterator[MessageView]:
     """Iterate over a message yielding one MessageView per content part.
 
     Memory-efficient: views are yielded one at a time and hold only
@@ -1126,6 +1174,8 @@ def iter_views(message: Message) -> Iterator[MessageView]:
 
     Args:
         message: The message to decompose into views.
+        hook: Optional hook location string (e.g., "llm_input",
+            "tool_post_invoke") to attach to each view.
 
     Yields:
         A MessageView for each content part in the message.
@@ -1157,5 +1207,7 @@ def iter_views(message: Message) -> Iterator[MessageView]:
     """
     for part in message.content:
         kind = _CONTENT_TYPE_TO_VIEW_KIND.get(part.content_type)
-        if kind is not None:
-            yield MessageView(part, kind, message)
+        if kind is None:
+            logger.warning("Unknown content type %r in iter_views", part.content_type)
+            raise ValueError(f"Unknown content type: {part.content_type!r}")
+        yield MessageView(part, kind, message, hook=hook)
