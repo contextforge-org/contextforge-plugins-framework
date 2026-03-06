@@ -82,6 +82,21 @@ cli = [
 # All extras
 all = ["cpex[grpc,cli]"]
 
+[tool.ruff]
+exclude = [
+    "cpex/templates",
+]
+
+[tool.black]
+exclude = """
+  /(
+    cpex/templates
+  )/
+"""
+
+[tool.isort]
+skip = ["cpex/templates"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
