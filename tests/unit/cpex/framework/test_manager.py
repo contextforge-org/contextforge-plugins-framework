@@ -11,18 +11,20 @@ Unit tests for plugin manager.
 import pytest
 
 # First-Party
-from cpex.framework import GlobalContext, PluginManager, PluginViolationError
 from cpex.framework import (
-    PromptHookType,
-    ToolHookType,
+    GlobalContext,
     HttpHeaderPayload,
+    PluginManager,
+    PluginViolationError,
+    PromptHookType,
     PromptPosthookPayload,
     PromptPrehookPayload,
+    ToolHookType,
     ToolPostInvokePayload,
     ToolPreInvokePayload,
 )
-from tests.unit.cpex.fixtures.plugins.search_replace import SearchReplaceConfig
 from tests.unit.cpex.fixtures.common.models import Message, PromptResult, Role, TextContent
+from tests.unit.cpex.fixtures.plugins.search_replace import SearchReplaceConfig
 
 
 @pytest.mark.asyncio
@@ -465,9 +467,9 @@ async def test_plugin_manager_thread_safety():
     assert len(managers) == num_threads, f"Expected {num_threads} managers, got {len(managers)}"
 
     # CRITICAL: Config should only be loaded once despite multiple threads
-    assert (
-        load_count["value"] == 1
-    ), f"Config was loaded {load_count['value']} times instead of 1 (race condition detected)"
+    assert load_count["value"] == 1, (
+        f"Config was loaded {load_count['value']} times instead of 1 (race condition detected)"
+    )
 
     # Verify all managers share the same state
     first_manager = managers[0][1]

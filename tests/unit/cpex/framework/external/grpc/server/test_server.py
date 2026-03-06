@@ -8,19 +8,19 @@ Unit tests for gRPC plugin server.
 Tests for GrpcPluginServicer and GrpcHealthServicer.
 """
 
-import pytest
-
 # Standard
 from unittest.mock import AsyncMock, MagicMock
 
-# Third-Party
+import pytest
 
+# Third-Party
 # First-Party
 from cpex.framework.models import GlobalContext, PluginConfig, PluginContext
 
 try:
     from google.protobuf import json_format
     from google.protobuf.struct_pb2 import Struct
+
     from cpex.framework.external.grpc.proto import plugin_service_pb2
     from cpex.framework.external.grpc.server.server import GrpcHealthServicer, GrpcPluginServicer
 

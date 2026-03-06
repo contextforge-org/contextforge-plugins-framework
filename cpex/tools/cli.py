@@ -27,9 +27,9 @@ $ mcpplugins --help
 
 # Standard
 import logging
-from pathlib import Path
 import shutil
 import subprocess  # nosec B404 # Safe: Used only for git commands with hardcoded args
+from pathlib import Path
 
 # Third-Party
 import typer
@@ -96,9 +96,7 @@ def git_user_name() -> str:
         True
     """
     try:
-        res = subprocess.run(
-            ["git", "config", "user.name"], stdout=subprocess.PIPE, check=False
-        )  # nosec B607 B603 # Safe: hardcoded git command
+        res = subprocess.run(["git", "config", "user.name"], stdout=subprocess.PIPE, check=False)  # nosec B607 B603 # Safe: hardcoded git command
         return res.stdout.strip().decode() if not res.returncode else DEFAULT_AUTHOR_NAME
     except Exception:
         return DEFAULT_AUTHOR_NAME
@@ -116,9 +114,7 @@ def git_user_email() -> str:
         True
     """
     try:
-        res = subprocess.run(
-            ["git", "config", "user.email"], stdout=subprocess.PIPE, check=False
-        )  # nosec B607 B603 # Safe: hardcoded git command
+        res = subprocess.run(["git", "config", "user.email"], stdout=subprocess.PIPE, check=False)  # nosec B607 B603 # Safe: hardcoded git command
         return res.stdout.strip().decode() if not res.returncode else DEFAULT_AUTHOR_EMAIL
     except Exception:
         return DEFAULT_AUTHOR_EMAIL

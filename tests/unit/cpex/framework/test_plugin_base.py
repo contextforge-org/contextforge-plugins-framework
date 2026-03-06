@@ -11,8 +11,8 @@ from pydantic import BaseModel
 # First-Party
 from cpex.framework.base import Plugin
 from cpex.framework.errors import PluginError
-from cpex.framework.models import PluginConfig, PluginResult
 from cpex.framework.hooks import registry as hook_registry
+from cpex.framework.models import PluginConfig, PluginResult
 
 
 class DummyPayload(BaseModel):

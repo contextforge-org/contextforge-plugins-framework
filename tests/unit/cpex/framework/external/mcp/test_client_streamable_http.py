@@ -28,8 +28,7 @@ from cpex.framework import (
     PromptPosthookPayload,
     PromptPrehookPayload,
 )
-
-from tests.unit.cpex.fixtures.common.models import Message, TextContent, Role, PromptResult
+from tests.unit.cpex.fixtures.common.models import Message, PromptResult, Role, TextContent
 
 
 def _wait_for_port(host: str, port: int, timeout: float = 10.0, proc: subprocess.Popen | None = None) -> None:

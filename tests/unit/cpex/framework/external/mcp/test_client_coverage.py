@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 # Third-Party
 import httpx
-from mcp.types import TextContent
 import orjson
 import pytest
+from mcp.types import TextContent
 
 # First-Party
 from cpex.framework.base import PluginRef

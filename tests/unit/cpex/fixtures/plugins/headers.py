@@ -10,11 +10,10 @@ Headers plugin.
 
 import logging
 
-from cpex.framework.constants import GATEWAY_METADATA, TOOL_METADATA
 from cpex.framework import (
-    PluginContext,
-    Plugin,
     HttpHeaderPayload,
+    Plugin,
+    PluginContext,
     PromptPosthookPayload,
     PromptPosthookResult,
     PromptPrehookPayload,
@@ -28,6 +27,7 @@ from cpex.framework import (
     ToolPreInvokePayload,
     ToolPreInvokeResult,
 )
+from cpex.framework.constants import GATEWAY_METADATA, TOOL_METADATA
 
 logger = logging.getLogger("header_plugin")
 

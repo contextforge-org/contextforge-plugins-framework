@@ -9,12 +9,12 @@ Test agent plugins for unit testing.
 
 # First-Party
 from cpex.framework import (
-    Plugin,
-    PluginContext,
-    AgentPreInvokePayload,
-    AgentPreInvokeResult,
     AgentPostInvokePayload,
     AgentPostInvokeResult,
+    AgentPreInvokePayload,
+    AgentPreInvokeResult,
+    Plugin,
+    PluginContext,
 )
 
 

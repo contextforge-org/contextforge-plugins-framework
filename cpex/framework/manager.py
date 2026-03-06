@@ -39,8 +39,8 @@ from pydantic import BaseModel, RootModel
 
 # First-Party
 from cpex.framework.base import HookRef, Plugin
-from cpex.framework.errors import convert_exception_to_error, PluginError, PluginViolationError
-from cpex.framework.hooks.policies import apply_policy, DefaultHookPolicy, HookPayloadPolicy
+from cpex.framework.errors import PluginError, PluginViolationError, convert_exception_to_error
+from cpex.framework.hooks.policies import DefaultHookPolicy, HookPayloadPolicy, apply_policy
 from cpex.framework.loader.config import ConfigLoader
 from cpex.framework.loader.plugin import PluginLoader
 from cpex.framework.memory import copyonwrite, wrap_payload_for_isolation
@@ -55,7 +55,7 @@ from cpex.framework.models import (
     PluginPayload,
     PluginResult,
 )
-from cpex.framework.observability import current_trace_id, ObservabilityProvider
+from cpex.framework.observability import ObservabilityProvider, current_trace_id
 from cpex.framework.registry import PluginInstanceRegistry
 from cpex.framework.settings import settings
 from cpex.framework.utils import payload_matches
@@ -183,7 +183,7 @@ class PluginExecutor:
         decision_plugin_name: Optional[str] = None
 
         sequential_refs, audit_refs, concurrent_refs, fire_and_forget_refs = self._group_by_mode(
-            hook_refs, payload, hook_type, global_context, policy
+            hook_refs, payload, hook_type, global_context
         )
 
         # Independent semaphores prevent one mode from starving the other
@@ -427,7 +427,6 @@ class PluginExecutor:
         payload: PluginPayload,
         hook_type: str,
         global_context: GlobalContext,
-        policy: Any,
     ) -> tuple[list[HookRef], list[HookRef], list[HookRef], list[HookRef]]:
         """Group hook references by mode, filtering disabled and condition-unmatched plugins.
 
@@ -436,7 +435,6 @@ class PluginExecutor:
             payload: The current payload (used for condition matching).
             hook_type: The hook type identifier.
             global_context: Shared context for condition evaluation.
-            policy: The hook payload policy (unused here but kept for future use).
 
         Returns:
             A tuple of (sequential_refs, audit_refs, concurrent_refs, fire_and_forget_refs),

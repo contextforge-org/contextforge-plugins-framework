@@ -13,13 +13,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 # Third-Party
 import pytest
 
-# First-Party
-from cpex.framework.base import PluginRef
-
 # Registry is imported for mocking
 from cpex.framework import (
     GlobalContext,
     OnError,
+    Plugin,
     PluginCondition,
     PluginConfig,
     PluginContext,
@@ -28,13 +26,14 @@ from cpex.framework import (
     PluginMode,
     PluginViolation,
     ResourceHookType,
-    Plugin,
     ResourcePostFetchPayload,
     ResourcePostFetchResult,
     ResourcePreFetchPayload,
     ResourcePreFetchResult,
 )
 
+# First-Party
+from cpex.framework.base import PluginRef
 from tests.unit.cpex.fixtures.common.models import ResourceContent
 
 

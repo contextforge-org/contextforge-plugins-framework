@@ -41,15 +41,20 @@ cpex = "cpex.tools.cli:main"
 
 # dev dependencies
 dev = [
-    "black>=25.9.0",
+    "bandit>=1.8.6",
+    "interrogate>=1.7.0",
     "mypy>=1.18.2",
+    "pyroma>=5.0",
+    "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
     "pytest-cov>=7.0.0",
     "pytest-env>=1.1.5",
-    "pytest>=8.4.2",
+    "pytest-xdist>=3.8.0",
+    "radon>=6.0.1",
     "ruff>=0.13.3",
     "twine>=6.2.0",
     "types-PyYAML>=6.0.0",
+    "vulture>=2.14",
 ]
 
 # documentation support
@@ -82,20 +87,64 @@ cli = [
 # All extras
 all = ["cpex[grpc,cli]"]
 
+[tool.interrogate]
+exclude = ["cpex/templates", "*_pb2.py", "*_pb2_grpc.py"]
+fail-under = 100
+
+[tool.radon]
+exclude = "cpex/templates/*,*_pb2.py,*_pb2_grpc.py"
+
+[tool.vulture]
+min_confidence = 80
+exclude = ["cpex/templates", "cpex/framework/observability.py", "*_pb2.py", "*_pb2_grpc.py"]
+
 [tool.ruff]
+line-length = 120
 exclude = [
     "cpex/templates",
 ]
 
-[tool.black]
-exclude = """
-  /(
-    cpex/templates
-  )/
-"""
+# Linter configuration
+[tool.ruff.lint]
+# Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
+# Also "D1" for docstring present checks.
+# "PL" enables Pylint rules natively in ruff (replaces pylint for these checks).
+select = ["E3", "E4", "E7", "E9", "F", "D1", "PL", "I"]
+ignore = [
+    # ---- Rules already disabled in .pylintrc (intentionally relaxed) ----
+    "PLR0904",  # too-many-public-methods  (pylint R0904)
+    "PLR0912",  # too-many-branches        (pylint R0912)
+    "PLR0913",  # too-many-arguments       (pylint R0913)
+    "PLR0914",  # too-many-locals          (pylint R0914)
+    "PLR0915",  # too-many-statements      (pylint R0915)
+    # ---- Accepted codebase patterns (high violation count, tolerated by pylint scoring) ----
+    "PLC0415",  # import-outside-top-level (pylint C0415) — lazy-import patterns
+    "PLW0603",  # global-statement         (pylint W0603) — config/singleton patterns
+    "PLR0911",  # too-many-returns
+    "PLR0917",  # too-many-positional-args
+    "PLR1702",  # too-many-nested-blocks
+    # ---- Ruff-only PL rules with no pylint equivalent (out of migration scope) ----
+    "PLC1901",  # compare-to-empty-string  (deprecated in pylint)
+    "PLC2701",  # import-private-name      (ruff-only)
+    "PLR2004",  # magic-value-comparison   (ruff-only)
+    "PLR5501",  # collapsible-else-if      (ruff-only)
+    "PLR6104",  # non-augmented-assignment (ruff-only)
+    "PLR6201",  # literal-membership       (ruff-only)
+    "PLR6301",  # no-self-use              (ruff-only)
+    "PLW2901",  # redefined-loop-name      (ruff-only)
+]
 
-[tool.isort]
-skip = ["cpex/templates"]
+preview = true
+
+# Allow fix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+
+# Ignore D1 (docstring checks) and Pylint checks in tests and other non-production code
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["D1", "PL"]
+"scripts/**/*.py" = ["D1", "PL"]
+".github/**/*.py" = ["D1", "PL"]
 
 [build-system]
 requires = ["hatchling"]

@@ -21,11 +21,13 @@ from cpex.framework.base import Plugin
 from cpex.framework.decorator import hook
 from cpex.framework.errors import PluginError, PluginViolationError
 from cpex.framework.external.mcp.server import ExternalPluginServer
-from cpex.framework.hooks.registry import HookRegistry, get_hook_registry
-from cpex.framework.loader.config import ConfigLoader
-from cpex.framework.loader.plugin import PluginLoader
-from cpex.framework.manager import PluginManager
-from cpex.framework.observability import ObservabilityProvider
+from cpex.framework.hooks.agents import (
+    AgentHookType,
+    AgentPostInvokePayload,
+    AgentPostInvokeResult,
+    AgentPreInvokePayload,
+    AgentPreInvokeResult,
+)
 from cpex.framework.hooks.http import (
     HttpAuthCheckPermissionPayload,
     HttpAuthCheckPermissionResult,
@@ -39,20 +41,6 @@ from cpex.framework.hooks.http import (
     HttpPreRequestPayload,
     HttpPreRequestResult,
 )
-from cpex.framework.hooks.agents import (
-    AgentHookType,
-    AgentPostInvokePayload,
-    AgentPostInvokeResult,
-    AgentPreInvokePayload,
-    AgentPreInvokeResult,
-)
-from cpex.framework.hooks.resources import (
-    ResourceHookType,
-    ResourcePostFetchPayload,
-    ResourcePostFetchResult,
-    ResourcePreFetchPayload,
-    ResourcePreFetchResult,
-)
 from cpex.framework.hooks.policies import HookPayloadPolicy
 from cpex.framework.hooks.prompts import (
     PromptHookType,
@@ -61,13 +49,24 @@ from cpex.framework.hooks.prompts import (
     PromptPrehookPayload,
     PromptPrehookResult,
 )
+from cpex.framework.hooks.registry import HookRegistry, get_hook_registry
+from cpex.framework.hooks.resources import (
+    ResourceHookType,
+    ResourcePostFetchPayload,
+    ResourcePostFetchResult,
+    ResourcePreFetchPayload,
+    ResourcePreFetchResult,
+)
 from cpex.framework.hooks.tools import (
     ToolHookType,
     ToolPostInvokePayload,
     ToolPostInvokeResult,
-    ToolPreInvokeResult,
     ToolPreInvokePayload,
+    ToolPreInvokeResult,
 )
+from cpex.framework.loader.config import ConfigLoader
+from cpex.framework.loader.plugin import PluginLoader
+from cpex.framework.manager import PluginManager
 from cpex.framework.models import (
     GlobalContext,
     MCPClientConfig,
@@ -84,6 +83,7 @@ from cpex.framework.models import (
     PluginViolation,
     TransportType,
 )
+from cpex.framework.observability import ObservabilityProvider
 from cpex.framework.utils import get_attr
 
 # Plugin manager singleton (lazy initialization)

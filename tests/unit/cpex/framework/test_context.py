@@ -8,12 +8,13 @@ Tests for context passing plugins.
 """
 
 import pytest
+
 from cpex.framework import (
     GlobalContext,
     PluginManager,
     ToolHookType,
-    ToolPreInvokePayload,
     ToolPostInvokePayload,
+    ToolPreInvokePayload,
 )
 
 

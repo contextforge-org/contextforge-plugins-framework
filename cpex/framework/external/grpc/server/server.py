@@ -16,10 +16,11 @@ ExternalPluginServer, which handles the actual plugin loading and execution.
 import logging
 from typing import Any
 
+import grpc
+
 # Third-Party
 from google.protobuf import json_format
 from google.protobuf.struct_pb2 import Struct
-import grpc
 
 # First-Party
 from cpex.framework.external.grpc.proto import plugin_service_pb2, plugin_service_pb2_grpc

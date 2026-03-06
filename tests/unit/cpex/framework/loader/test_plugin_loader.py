@@ -10,19 +10,21 @@ Unit tests for config and plugin loaders.
 # Standard
 from unittest.mock import patch
 
+import pytest
+
 # Third-Party
 from pydantic import ValidationError
-import pytest
+
+from cpex.framework import GlobalContext, PluginContext, PluginMode, PromptPosthookPayload, PromptPrehookPayload
+from cpex.framework.constants import EXTERNAL_PLUGIN_TYPE
+from cpex.framework.external.mcp.client import ExternalPlugin
 
 # First-Party
 from cpex.framework.loader.config import ConfigLoader
 from cpex.framework.loader.plugin import PluginLoader
-from cpex.framework import GlobalContext, PluginContext, PluginMode, PromptPosthookPayload, PromptPrehookPayload
-from cpex.framework.constants import EXTERNAL_PLUGIN_TYPE
-from cpex.framework.external.mcp.client import ExternalPlugin
 from cpex.framework.models import PluginConfig
-from tests.unit.cpex.fixtures.plugins.search_replace import SearchReplaceConfig, SearchReplacePlugin
 from tests.unit.cpex.fixtures.common.models import Message, PromptResult, Role, TextContent
+from tests.unit.cpex.fixtures.plugins.search_replace import SearchReplaceConfig, SearchReplacePlugin
 
 
 def test_config_loader_load():

@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 # First-Party
-from cpex.framework import ToolPreInvokePayload, PluginError
+from cpex.framework import PluginError, ToolPreInvokePayload
 from cpex.framework.models import (
     GlobalContext,
     GRPCClientConfig,
@@ -28,6 +28,7 @@ try:
     import grpc
     from google.protobuf import json_format
     from google.protobuf.struct_pb2 import Struct
+
     from cpex.framework.external.grpc.client import GrpcExternalPlugin
 
     HAS_GRPC = True

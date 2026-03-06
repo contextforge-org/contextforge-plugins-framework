@@ -30,6 +30,7 @@ from cpex.framework.models import (
 try:
     from google.protobuf import json_format
     from google.protobuf.struct_pb2 import Struct
+
     from cpex.framework.external.unix.client import UnixSocketExternalPlugin
 
     HAS_GRPC = True

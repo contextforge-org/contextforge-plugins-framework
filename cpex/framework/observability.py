@@ -28,7 +28,7 @@ class ObservabilityProvider(Protocol):
         trace_id: str,
         name: str,
         kind: str = "internal",
-        resource_type: Optional[str] = None,
+        resource_type: Optional[str] = None,  # noqa
         resource_name: Optional[str] = None,
         attributes: Optional[Dict[str, Any]] = None,
     ) -> Optional[str]:

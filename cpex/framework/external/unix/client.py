@@ -40,7 +40,7 @@ from google.protobuf.struct_pb2 import Struct
 
 # First-Party
 from cpex.framework.base import Plugin
-from cpex.framework.errors import convert_exception_to_error, PluginError
+from cpex.framework.errors import PluginError, convert_exception_to_error
 from cpex.framework.external.grpc.proto import plugin_service_pb2
 from cpex.framework.external.proto_convert import pydantic_context_to_proto, update_pydantic_context_from_proto
 from cpex.framework.external.unix.protocol import read_message, write_message_async

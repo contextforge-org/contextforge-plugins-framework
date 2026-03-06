@@ -19,11 +19,11 @@ from google.protobuf import json_format
 
 # First-Party
 from cpex.framework.external.grpc.proto import plugin_service_pb2
+from cpex.framework.models import GlobalContext as PydanticGlobalContext
+from cpex.framework.models import PluginContext as PydanticPluginContext
 from cpex.framework.models import (
     PluginResult,
 )
-from cpex.framework.models import GlobalContext as PydanticGlobalContext
-from cpex.framework.models import PluginContext as PydanticPluginContext
 from cpex.framework.models import PluginViolation as PydanticPluginViolation
 
 

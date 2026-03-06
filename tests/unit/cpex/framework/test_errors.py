@@ -8,18 +8,20 @@ Tests for errors module.
 """
 
 # Third-Party
-import pytest
 import re
-from cpex.framework.errors import convert_exception_to_error
+
+import pytest
+
 from cpex.framework import (
     GlobalContext,
     OnError,
     PluginError,
-    PluginMode,
     PluginManager,
+    PluginMode,
     PromptHookType,
     PromptPrehookPayload,
 )
+from cpex.framework.errors import convert_exception_to_error
 
 
 @pytest.mark.asyncio

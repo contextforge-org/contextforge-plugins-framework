@@ -21,11 +21,10 @@ from unittest.mock import patch
 # Third-Party
 import pytest
 
-# First-Party
-from cpex.framework.base import HookRef
 from cpex.framework import (
     GlobalContext,
     OnError,
+    Plugin,
     PluginConfig,
     PluginError,
     PluginManager,
@@ -33,8 +32,10 @@ from cpex.framework import (
     PluginResult,
     PromptHookType,
     PromptPrehookPayload,
-    Plugin,
 )
+
+# First-Party
+from cpex.framework.base import HookRef
 from cpex.framework.registry import PluginRef
 
 # ---------------------------------------------------------------------------

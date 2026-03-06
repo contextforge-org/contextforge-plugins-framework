@@ -17,7 +17,7 @@ Examples:
 """
 
 # Standard
-from typing import Any, Optional, Protocol, runtime_checkable, Sequence
+from typing import Any, Optional, Protocol, Sequence, runtime_checkable
 
 
 @runtime_checkable

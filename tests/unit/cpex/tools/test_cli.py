@@ -11,8 +11,10 @@ Tests for the cpex CLI bootstrap command and utility functions.
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-# Third-Party
+# We use typer's CliRunner for testing typer apps
+from typer.testing import CliRunner
 
+# Third-Party
 # First-Party
 from cpex.tools.cli import (
     DEFAULT_AUTHOR_EMAIL,
@@ -24,9 +26,6 @@ from cpex.tools.cli import (
     git_user_email,
     git_user_name,
 )
-
-# We use typer's CliRunner for testing typer apps
-from typer.testing import CliRunner
 
 runner = CliRunner()
 

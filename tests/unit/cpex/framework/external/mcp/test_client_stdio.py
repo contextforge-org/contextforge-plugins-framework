@@ -8,39 +8,40 @@ Tests for external client on stdio.
 """
 
 # Standard
-from contextlib import AsyncExitStack
 import json
 import os
 import re
 import sys
+from contextlib import AsyncExitStack
 from typing import Optional
+
+import pytest
 
 # Third-Party
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-import pytest
 
 # First-Party
 from cpex.framework import (
     ConfigLoader,
     GlobalContext,
     PluginConfig,
-    PluginError,
     PluginContext,
+    PluginError,
     PluginLoader,
     PluginManager,
     PromptHookType,
-    ResourceHookType,
-    ToolHookType,
     PromptPosthookPayload,
     PromptPrehookPayload,
+    ResourceHookType,
     ResourcePostFetchPayload,
     ResourcePreFetchPayload,
+    ToolHookType,
     ToolPostInvokePayload,
     ToolPreInvokePayload,
 )
+from tests.unit.cpex.fixtures.common.models import Message, PromptResult, ResourceContent, Role, TextContent
 from tests.unit.cpex.fixtures.plugins.search_replace import SearchReplaceConfig
-from tests.unit.cpex.fixtures.common.models import Message, TextContent, Role, PromptResult, ResourceContent
 
 
 @pytest.mark.asyncio

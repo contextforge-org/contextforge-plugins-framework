@@ -11,8 +11,7 @@ Run `make grpc-proto` to regenerate after modifying plugin_service.proto.
 """
 
 try:
-    from cpex.framework.external.grpc.proto import plugin_service_pb2
-    from cpex.framework.external.grpc.proto import plugin_service_pb2_grpc
+    from cpex.framework.external.grpc.proto import plugin_service_pb2, plugin_service_pb2_grpc
 
     __all__ = ["plugin_service_pb2", "plugin_service_pb2_grpc"]
 except ImportError:

@@ -112,15 +112,20 @@ uninstall:
 # Linting & Formatting
 # =============================================================================
 
-.PHONY: black
-black:
-	@echo "🎨 Running black on $(TARGET)..."
-	@$(VENV_BIN)/black -l 120 $(TARGET)
+.PHONY: vulture
+vulture:
+	@echo "⚡ Running vulture on $(TARGET)..."
+	@$(VENV_BIN)/vulture $(TARGET)
 
-.PHONY: black-check
-black-check:
-	@echo "🎨 Checking black on $(TARGET)..."
-	@$(VENV_BIN)/black -l 120 --check --diff $(TARGET)
+.PHONY: interrogate
+interrogate:
+	@echo "⚡ Running interrogate on $(TARGET)..."
+	@$(VENV_BIN)/interrogate $(TARGET)
+
+.PHONY: interrogate-verbose
+interrogate-verbose:
+	@echo "⚡ Running interrogate on $(TARGET)..."
+	@$(VENV_BIN)/interrogate -vv $(TARGET)
 
 .PHONY: ruff
 ruff:
@@ -143,8 +148,13 @@ ruff-format:
 	@echo "⚡ Formatting with ruff on $(TARGET)..."
 	@$(VENV_BIN)/ruff format $(TARGET)
 
+.PHONY: ruff-format-check
+ruff-format-check:
+	@echo "⚡ Checking formatting with ruff on $(TARGET)..."
+	@$(VENV_BIN)/ruff format --check $(TARGET)
+
 .PHONY: format
-format: black ruff-format
+format: ruff-format
 	@echo "✅  Code formatted"
 
 .PHONY: lint
@@ -166,9 +176,8 @@ lint-fix:
 		fi; \
 	done; \
 	echo "🔧 Fixing lint issues in $$actual_target..."; \
-	$(MAKE) --no-print-directory black TARGET="$$actual_target"; \
-	$(MAKE) --no-print-directory isort TARGET="$$actual_target"; \
 	$(MAKE) --no-print-directory ruff-fix TARGET="$$actual_target"; \
+	$(MAKE) --no-print-directory ruff-format TARGET="$$actual_target"; \
 	echo "✅  Lint issues fixed"
 
 .PHONY: lint-check
@@ -182,8 +191,7 @@ lint-check:
 	fi; \
 	echo "🔍 Checking for lint issues..."; \
 	$(MAKE) --no-print-directory ruff-check TARGET="$$actual_target"; \
-	$(MAKE) --no-print-directory black-check TARGET="$$actual_target"; \
-	$(MAKE) --no-print-directory isort-check TARGET="$$actual_target"; \
+	$(MAKE) --no-print-directory ruff-format-check TARGET="$$actual_target"; \
 	echo "✅  Lint check complete"
 
 .PHONY: type-check

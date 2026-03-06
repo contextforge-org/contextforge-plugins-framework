@@ -10,21 +10,19 @@ Extended tests for plugin manager to achieve 100% coverage.
 # Standard
 import asyncio
 import importlib.util
-from pathlib import Path
-import sys
-from unittest.mock import patch
 import re
+import sys
 import uuid
+from pathlib import Path
+from unittest.mock import patch
 
 # Third-Party
 import pytest
 
-# First-Party
-from cpex.framework.base import HookRef
-from cpex.framework.models import Config
 from cpex.framework import (
     GlobalContext,
     OnError,
+    Plugin,
     PluginCondition,
     PluginConfig,
     PluginContext,
@@ -35,15 +33,17 @@ from cpex.framework import (
     PluginViolation,
     PluginViolationError,
     PromptHookType,
-    ToolHookType,
-    Plugin,
     PromptPosthookPayload,
     PromptPrehookPayload,
+    ToolHookType,
     ToolPostInvokePayload,
     ToolPreInvokePayload,
 )
-from cpex.framework.registry import PluginRef
 
+# First-Party
+from cpex.framework.base import HookRef
+from cpex.framework.models import Config
+from cpex.framework.registry import PluginRef
 from tests.unit.cpex.fixtures.common.models import Message, PromptResult, Role, TextContent
 
 
@@ -232,10 +232,10 @@ async def test_manager_exception_handling():
 async def test_manager_condition_filtering():
     """Test that plugins are filtered based on conditions across all hook types."""
     from cpex.framework import (
-        ResourceHookType,
-        ResourcePreFetchPayload,
         AgentHookType,
         AgentPreInvokePayload,
+        ResourceHookType,
+        ResourcePreFetchPayload,
     )
 
     manager = PluginManager("./tests/unit/cpex/fixtures/configs/valid_no_plugin.yaml")
@@ -614,7 +614,6 @@ async def test_manager_local_context_persistence():
         return []
 
     with patch.object(manager._registry, "get_hook_refs_for_hook", side_effect=get_hook_refs_side_effect):
-
         # First call to pre_fetch
         prompt = PromptPrehookPayload(prompt_id="test", args={})
         global_context = GlobalContext(request_id="1")
@@ -771,8 +770,8 @@ async def test_manager_shutdown_behavior():
 async def test_manager_payload_size_validation():
     """Test payload size validation functionality."""
     # First-Party
-    from cpex.framework.manager import MAX_PAYLOAD_SIZE, PayloadSizeError, PluginExecutor
     from cpex.framework import PromptPosthookPayload, PromptPrehookPayload
+    from cpex.framework.manager import MAX_PAYLOAD_SIZE, PayloadSizeError, PluginExecutor
 
     # Test payload size validation directly on executor (covers lines 252, 258)
     executor = PluginExecutor()
@@ -864,7 +863,6 @@ async def test_manager_initialization_edge_cases():
 async def test_base_plugin_coverage():
     """Test base plugin functionality for complete coverage."""
     # First-Party
-    from cpex.framework.base import PluginRef
     from cpex.framework import (
         GlobalContext,
         PluginConfig,
@@ -876,6 +874,7 @@ async def test_base_plugin_coverage():
         ToolPostInvokePayload,
         ToolPreInvokePayload,
     )
+    from cpex.framework.base import PluginRef
 
     # Test plugin with tags property (covers line 130)
     config = PluginConfig(
@@ -969,8 +968,8 @@ async def test_plugin_types_coverage():
 async def test_plugin_loader_return_none():
     """Test plugin loader return None case."""
     # First-Party
-    from cpex.framework.loader.plugin import PluginLoader
     from cpex.framework import PluginConfig
+    from cpex.framework.loader.plugin import PluginLoader
 
     loader = PluginLoader()
 

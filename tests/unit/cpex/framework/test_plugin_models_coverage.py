@@ -21,9 +21,9 @@ from cpex.framework.models import (
     MCPServerConfig,
     MCPServerTLSConfig,
     PluginConfig,
+    TransportType,
     UnixSocketClientConfig,
     UnixSocketServerConfig,
-    TransportType,
 )
 
 # ---------------------------------------------------------------------------

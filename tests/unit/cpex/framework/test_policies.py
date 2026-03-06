@@ -15,9 +15,8 @@ import pytest
 from pydantic import BaseModel, Field, ValidationError
 
 # First-Party
-from cpex.framework.hooks.policies import apply_policy, DefaultHookPolicy, HookPayloadPolicy
+from cpex.framework.hooks.policies import DefaultHookPolicy, HookPayloadPolicy, apply_policy
 from cpex.framework.models import PluginPayload
-
 from tests.unit.cpex.fixtures.common.models import Message, PromptResult, Role, TextContent
 
 
@@ -248,8 +247,9 @@ class TestProtocolConformance:
         assert isinstance(result, PromptResultLike)
 
     def test_simple_namespace_satisfies_message_like(self):
-        from cpex.framework.protocols import MessageLike
         from types import SimpleNamespace
+
+        from cpex.framework.protocols import MessageLike
 
         msg = SimpleNamespace(role=Role.USER, content="hello")
         assert isinstance(msg, MessageLike)

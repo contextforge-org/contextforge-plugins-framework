@@ -15,15 +15,16 @@ import asyncio
 import logging
 from typing import Optional
 
+import grpc
+
 # Third-Party
 from google.protobuf import json_format
 from google.protobuf.struct_pb2 import Struct
-import grpc
 
 # First-Party
 from cpex.framework.base import Plugin
 from cpex.framework.constants import IGNORE_CONFIG_EXTERNAL
-from cpex.framework.errors import convert_exception_to_error, PluginError
+from cpex.framework.errors import PluginError, convert_exception_to_error
 from cpex.framework.external.grpc.proto import plugin_service_pb2, plugin_service_pb2_grpc
 from cpex.framework.external.grpc.tls_utils import create_insecure_channel, create_secure_channel
 from cpex.framework.external.proto_convert import pydantic_context_to_proto, update_pydantic_context_from_proto

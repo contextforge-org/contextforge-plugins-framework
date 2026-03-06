@@ -10,11 +10,11 @@ These tests spawn a real gRPC server subprocess and test actual communication.
 
 # Standard
 import os
-from pathlib import Path
 import socket
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 # Third-Party
 import pytest
@@ -30,8 +30,7 @@ from cpex.framework import (
     PromptPosthookPayload,
     PromptPrehookPayload,
 )
-
-from tests.unit.cpex.fixtures.common.models import Message, TextContent, Role, PromptResult
+from tests.unit.cpex.fixtures.common.models import Message, PromptResult, Role, TextContent
 
 # Check if grpc is available
 try:

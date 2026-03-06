@@ -13,8 +13,8 @@ import os
 
 # Third-Party
 import jinja2
-from jinja2.sandbox import SandboxedEnvironment
 import yaml
+from jinja2.sandbox import SandboxedEnvironment
 
 # First-Party
 from cpex.framework.models import Config

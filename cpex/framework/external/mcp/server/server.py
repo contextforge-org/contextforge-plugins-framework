@@ -71,7 +71,7 @@ from pydantic import BaseModel
 
 # First-Party
 from cpex.framework.constants import CONTEXT, ERROR, PLUGIN_NAME, RESULT
-from cpex.framework.errors import convert_exception_to_error, PluginError
+from cpex.framework.errors import PluginError, convert_exception_to_error
 from cpex.framework.loader.config import ConfigLoader
 from cpex.framework.manager import PluginManager
 from cpex.framework.models import GRPCServerConfig, MCPServerConfig, PluginContext

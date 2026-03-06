@@ -15,6 +15,7 @@ import pytest
 
 try:
     import grpc
+
     from cpex.framework.external.grpc.proto import plugin_service_pb2, plugin_service_pb2_grpc
 
     HAS_GRPC = True

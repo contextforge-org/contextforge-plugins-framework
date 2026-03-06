@@ -10,21 +10,21 @@ Module that contains plugin MCP client code to serve external plugins.
 
 # Standard
 import asyncio
-from contextlib import AsyncExitStack
-from functools import partial
 import logging
 import os
-from pathlib import Path
 import sys
+from contextlib import AsyncExitStack
+from functools import partial
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
 # Third-Party
 import httpx
+import orjson
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamablehttp_client
 from mcp.types import TextContent
-import orjson
 
 # First-Party
 from cpex.framework.base import HookRef, Plugin, PluginRef
@@ -41,7 +41,7 @@ from cpex.framework.constants import (
     PYTHON_SUFFIX,
     RESULT,
 )
-from cpex.framework.errors import convert_exception_to_error, PluginError
+from cpex.framework.errors import PluginError, convert_exception_to_error
 from cpex.framework.external.mcp.tls_utils import create_ssl_context
 from cpex.framework.hooks.registry import get_hook_registry
 from cpex.framework.models import (
@@ -371,7 +371,6 @@ class ExternalPlugin(Plugin):
         base_delay = 1.0
 
         for attempt in range(max_retries):
-
             try:
                 client_factory = _tls_httpx_client_factory
                 streamable_client = streamablehttp_client(
@@ -562,7 +561,9 @@ class ExternalHookRef(HookRef):
         self._plugin_ref = plugin_ref
         self._hook = hook
         if hasattr(plugin_ref.plugin, INVOKE_HOOK):
-            self._func: Callable[[PluginPayload, PluginContext], Awaitable[PluginResult]] = partial(plugin_ref.plugin.invoke_hook, hook)  # type: ignore[attr-defined]
+            self._func: Callable[[PluginPayload, PluginContext], Awaitable[PluginResult]] = partial(
+                plugin_ref.plugin.invoke_hook, hook
+            )  # type: ignore[attr-defined]
         else:
             raise PluginError(
                 error=PluginErrorModel(

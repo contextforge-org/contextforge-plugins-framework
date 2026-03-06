@@ -9,9 +9,9 @@ This module implements the base plugin object.
 """
 
 # Standard
+import uuid
 from abc import ABC
 from typing import Awaitable, Callable, Optional, Union
-import uuid
 
 # First-Party
 from cpex.framework.errors import PluginError

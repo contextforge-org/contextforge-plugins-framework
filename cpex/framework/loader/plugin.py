@@ -10,10 +10,10 @@ This module implements the plugin loader.
 
 # Standard
 import logging
-from typing import cast, Type
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
+from typing import Type, cast
 
 # First-Party
 from cpex.framework.base import Plugin

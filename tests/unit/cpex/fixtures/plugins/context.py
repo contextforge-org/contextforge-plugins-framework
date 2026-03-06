@@ -9,8 +9,8 @@ Context plugin.
 """
 
 from cpex.framework import (
-    PluginContext,
     Plugin,
+    PluginContext,
     PromptPosthookPayload,
     PromptPosthookResult,
     PromptPrehookPayload,

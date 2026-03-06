@@ -62,12 +62,13 @@ import os
 import sys
 from typing import Any, Dict, Literal
 
+import uvicorn
+
 # Third-Party
 from fastapi import Response, status
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
-from prometheus_client import Gauge, generate_latest, REGISTRY
-import uvicorn
+from prometheus_client import REGISTRY, Gauge, generate_latest
 
 # First-Party
 from cpex.framework import ExternalPluginServer, MCPServerConfig

@@ -10,9 +10,9 @@ the base plugin layer including configurations, and contexts.
 """
 
 # Standard
-from enum import Enum, StrEnum
 import logging
 import os
+from enum import Enum, StrEnum
 from pathlib import Path
 from typing import Any, Generic, Optional, Self, TypeVar, Union
 
@@ -21,11 +21,11 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    PrivateAttr,
+    ValidationInfo,
     field_serializer,
     field_validator,
     model_validator,
-    PrivateAttr,
-    ValidationInfo,
 )
 
 # First-Party
@@ -1125,9 +1125,7 @@ class UnixSocketServerConfig(BaseModel):
         '/tmp/plugin.sock'
     """
 
-    path: str = Field(
-        default="/tmp/mcpgateway-plugins.sock", description="Path to the Unix domain socket"
-    )  # nosec B108 - configurable default
+    path: str = Field(default="/tmp/mcpgateway-plugins.sock", description="Path to the Unix domain socket")  # nosec B108 - configurable default
 
     @classmethod
     def from_env(cls) -> Optional["UnixSocketServerConfig"]:

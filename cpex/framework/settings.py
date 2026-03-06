@@ -11,13 +11,13 @@ Self-contained settings for the plugin framework.
 """
 
 # Standard
-from functools import lru_cache
 import logging
 import os
+from functools import lru_cache
 from typing import Any, Literal
 
 # Third-Party
-from pydantic import AliasChoices, Field, field_validator, SecretStr
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)

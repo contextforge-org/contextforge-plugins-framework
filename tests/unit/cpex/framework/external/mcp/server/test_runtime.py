@@ -15,22 +15,23 @@ from unittest.mock import AsyncMock, MagicMock
 # Third-Party
 import pytest
 
+import cpex.framework.external.mcp.server.runtime as runtime
+
 # First-Party
 from cpex.framework import (
     GlobalContext,
     PluginContext,
+    PromptHookType,
     PromptPosthookPayload,
     PromptPrehookPayload,
-    PromptHookType,
+    ResourceHookType,
     ResourcePostFetchPayload,
     ResourcePreFetchPayload,
-    ResourceHookType,
+    ToolHookType,
     ToolPostInvokePayload,
     ToolPreInvokePayload,
-    ToolHookType,
 )
 from cpex.framework.external.mcp.server import ExternalPluginServer
-import cpex.framework.external.mcp.server.runtime as runtime
 from tests.unit.cpex.fixtures.common.models import (
     Message,
     PromptResult,

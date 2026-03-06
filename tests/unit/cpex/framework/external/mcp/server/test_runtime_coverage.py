@@ -8,9 +8,10 @@ from unittest.mock import MagicMock
 # Third-Party
 import pytest
 
+import cpex.framework.external.mcp.server.runtime as runtime
+
 # First-Party
 from cpex.framework.models import MCPServerConfig
-import cpex.framework.external.mcp.server.runtime as runtime
 
 # ===========================================================================
 # Module-Level Tool Functions

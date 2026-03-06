@@ -13,10 +13,11 @@ from unittest.mock import AsyncMock, patch
 # Third-Party
 import pytest
 
+from cpex.framework import PluginConfig, PromptHookType, ToolHookType
+
 # First-Party
 from cpex.framework.loader.config import ConfigLoader
 from cpex.framework.loader.plugin import PluginLoader
-from cpex.framework import PluginConfig, PromptHookType, ToolHookType
 from cpex.framework.registry import PluginInstanceRegistry
 from tests.unit.cpex.fixtures.plugins.simple import SimplePromptPlugin
 

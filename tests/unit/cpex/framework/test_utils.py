@@ -13,10 +13,10 @@ Unit tests for utilities.
 from cpex.framework import (
     GlobalContext,
     PluginCondition,
-    PromptPrehookPayload,
     PromptPosthookPayload,
-    ToolPreInvokePayload,
+    PromptPrehookPayload,
     ToolPostInvokePayload,
+    ToolPreInvokePayload,
 )
 from cpex.framework.utils import import_module, matches, parse_class_name, payload_matches
 
@@ -412,7 +412,7 @@ def test_orjson_response_render():
 
 def test_coerce_nested_depth_limit():
     """Test coerce_nested stops recursing at _COERCE_MAX_DEPTH."""
-    from cpex.framework.utils import StructuredData, _COERCE_MAX_DEPTH, coerce_nested
+    from cpex.framework.utils import _COERCE_MAX_DEPTH, StructuredData, coerce_nested
 
     # Build a dict nested deeper than the limit
     deeply = {"leaf": True}

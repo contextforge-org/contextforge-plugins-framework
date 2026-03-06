@@ -380,6 +380,7 @@ class CopyOnWriteList(list):
     """
 
     def __init__(self, original: list):
+        """Initialize with the original list to wrap."""
         super().__init__()
         self._original = original
         self._materialized = False
@@ -399,21 +400,25 @@ class CopyOnWriteList(list):
     # -- read operations (delegate to original when not materialized) ------
 
     def __getitem__(self, index):
+        """Return item at index from the active backing store."""
         if self._materialized:
             return super().__getitem__(index)
         return self._original[index]
 
     def __len__(self):
+        """Return the length of the active backing store."""
         if self._materialized:
             return super().__len__()
         return len(self._original)
 
     def __iter__(self):
+        """Iterate over the active backing store."""
         if self._materialized:
             return super().__iter__()
         return iter(self._original)
 
     def __contains__(self, item):
+        """Return True if item is in the active backing store."""
         if self._materialized:
             return super().__contains__(item)
         return item in self._original
@@ -421,42 +426,52 @@ class CopyOnWriteList(list):
     # -- write operations (materialize on first write) ---------------------
 
     def __setitem__(self, index, value):
+        """Set item at index, materializing on first write."""
         self._materialize()
         super().__setitem__(index, value)
 
     def __delitem__(self, index):
+        """Delete item at index, materializing on first write."""
         self._materialize()
         super().__delitem__(index)
 
     def append(self, value):
+        """Append value, materializing on first write."""
         self._materialize()
         super().append(value)
 
     def extend(self, values):
+        """Extend with values, materializing on first write."""
         self._materialize()
         super().extend(values)
 
     def insert(self, index, value):
+        """Insert value at index, materializing on first write."""
         self._materialize()
         super().insert(index, value)
 
     def remove(self, value):
+        """Remove first occurrence of value, materializing on first write."""
         self._materialize()
         super().remove(value)
 
     def pop(self, index=-1):
+        """Remove and return item at index, materializing on first write."""
         self._materialize()
         return super().pop(index)
 
     def clear(self):
+        """Clear all items, materializing on first write."""
         self._materialize()
         super().clear()
 
     def sort(self, *, key=None, reverse=False):
+        """Sort in place, materializing on first write."""
         self._materialize()
         super().sort(key=key, reverse=reverse)
 
     def reverse(self):
+        """Reverse in place, materializing on first write."""
         self._materialize()
         super().reverse()
 
@@ -471,6 +486,7 @@ class CopyOnWriteList(list):
         return list(self)
 
     def __repr__(self) -> str:
+        """Return a string representation of the list."""
         return f"CopyOnWriteList({list(self)})"
 
 

@@ -13,13 +13,14 @@ import ssl
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import pytest
+
 # Third-Party
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import ExtensionOID, NameOID
-import pytest
 
 # First-Party
 from cpex.framework.external.mcp.tls_utils import create_ssl_context

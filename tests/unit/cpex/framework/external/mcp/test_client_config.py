@@ -16,31 +16,32 @@ from unittest.mock import AsyncMock, Mock, patch
 
 # Third-Party
 import pytest
-from mcp.types import CallToolResult, TextContent as MCPTextContent
+from mcp.types import CallToolResult
+from mcp.types import TextContent as MCPTextContent
 
 # First-Party
 from cpex.framework import (
     ConfigLoader,
     GlobalContext,
+    MCPClientConfig,
     PluginContext,
+    PluginError,
     PromptHookType,
-    ResourceHookType,
-    ToolHookType,
     PromptPosthookPayload,
     PromptPrehookPayload,
+    ResourceHookType,
     ResourcePostFetchPayload,
     ResourcePreFetchPayload,
+    ToolHookType,
     ToolPostInvokePayload,
     ToolPreInvokePayload,
-    MCPClientConfig,
     TransportType,
-    PluginError,
 )
 from cpex.framework.external.mcp.client import ExternalPlugin
 from tests.unit.cpex.fixtures.common.models import (
     Message,
-    ResourceContent,
     PromptResult,
+    ResourceContent,
     Role,
     TextContent,
 )

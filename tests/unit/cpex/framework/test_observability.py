@@ -28,7 +28,7 @@ from cpex.framework import (
 )
 from cpex.framework.base import HookRef
 from cpex.framework.manager import PluginExecutor
-from cpex.framework.observability import current_trace_id, NullObservability
+from cpex.framework.observability import NullObservability, current_trace_id
 from cpex.framework.registry import PluginRef
 
 

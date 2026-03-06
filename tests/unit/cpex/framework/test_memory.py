@@ -13,9 +13,9 @@ from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 # First-Party
 from cpex.framework.memory import (
-    copyonwrite,
     CopyOnWriteDict,
     CopyOnWriteList,
+    copyonwrite,
     wrap_payload_for_isolation,
 )
 

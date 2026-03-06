@@ -10,15 +10,16 @@ plugins.
 """
 
 # Standard
-from functools import cache
 import importlib
 import logging
+from functools import cache
 from types import ModuleType
 from typing import Any, Optional
 
+import orjson
+
 # Third-Party
 from fastapi.responses import JSONResponse
-import orjson
 from pydantic import BaseModel, ConfigDict
 
 # First-Party
