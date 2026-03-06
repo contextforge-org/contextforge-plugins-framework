@@ -29,7 +29,6 @@ from pydantic import (
 )
 from packaging.version import Version, InvalidVersion
 
-
 # First-Party
 from cpex.framework.constants import (
     CMD,
@@ -1548,6 +1547,7 @@ class PluginPayload(BaseModel):
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
+
 class PluginPackageInfo(BaseModel):
     """Plugin package information.
 
@@ -1563,6 +1563,7 @@ class PluginPackageInfo(BaseModel):
             version_constraint=">=1.0.0")
         >>> pkg2 = PluginPackageInfo(pypi_package="my-package", version_constraint=">=1.0.0")
     """
+
     pypi_package: Optional[str] = None
     git_repository: Optional[str] = None
     git_branch_tag_commit: Optional[str] = None
@@ -1587,20 +1588,21 @@ class PluginPackageInfo(BaseModel):
             # They cannot start or end with hyphens or periods
             if not pypi_package.strip():
                 raise ValueError("PyPI package name cannot be empty or whitespace")
-            
+
             # Check for valid characters
             import re
+
             if not re.match(r"^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$", pypi_package):
                 raise ValueError(
                     f"Invalid PyPI package name '{pypi_package}'. "
                     "Package names must start and end with a letter or number, "
                     "and can only contain ASCII letters, numbers, hyphens, underscores, and periods."
                 )
-            
+
             # Check length (PyPI has a 214 character limit for package names)
             if len(pypi_package) > 214:
                 raise ValueError(f"PyPI package name '{pypi_package}' exceeds maximum length of 214 characters")
-        
+
         return pypi_package if pypi_package != "" else None
 
     @field_validator("git_repository", mode="after")
@@ -1620,28 +1622,25 @@ class PluginPackageInfo(BaseModel):
         if git_repository is not None and git_repository != "":
             if not git_repository.strip():
                 raise ValueError("Git repository URL cannot be empty or whitespace")
-            
+
             # Support common Git URL formats: https://, git://, ssh://, git@
             import re
+
             git_url_pattern = re.compile(
-                r"^(https?://|git://|git@)"
-                r"[a-zA-Z0-9._-]+"
-                r"(/|:)"
-                r"[a-zA-Z0-9._/-]+"
-                r"(\.git)?$"
+                r"^(https?://|git://|git@)" r"[a-zA-Z0-9._-]+" r"(/|:)" r"[a-zA-Z0-9._/-]+" r"(\.git)?$"
             )
-            
+
             if not git_url_pattern.match(git_repository):
                 raise ValueError(
                     f"Invalid Git repository URL '{git_repository}'. "
                     "Must be a valid Git URL (e.g., https://github.com/user/repo.git, "
                     "git@github.com:user/repo.git)"
                 )
-            
+
             # Additional validation for https/http URLs using existing validator
             if git_repository.startswith(("http://", "https://")):
                 validate_plugin_url(git_repository, "Git repository URL")
-        
+
         return git_repository if git_repository != "" else None
 
     @field_validator("git_branch_tag_commit", mode="after")
@@ -1661,26 +1660,29 @@ class PluginPackageInfo(BaseModel):
         if git_branch_tag_commit is not None and git_branch_tag_commit != "":
             if not git_branch_tag_commit.strip():
                 raise ValueError("Git branch/tag/commit cannot be empty or whitespace")
-            
+
             # Git refs can contain alphanumeric characters, hyphens, underscores, slashes, and periods
             # Commit hashes are typically 7-40 hex characters
             import re
+
             if not re.match(r"^[a-zA-Z0-9._/-]+$", git_branch_tag_commit):
                 raise ValueError(
                     f"Invalid Git branch/tag/commit '{git_branch_tag_commit}'. "
                     "Must contain only alphanumeric characters, hyphens, underscores, slashes, and periods."
                 )
-            
+
             # Check for common invalid patterns
             if git_branch_tag_commit.startswith(("/", ".", "-")) or git_branch_tag_commit.endswith(("/", ".")):
                 raise ValueError(
                     f"Invalid Git branch/tag/commit '{git_branch_tag_commit}'. "
                     "Cannot start with /, ., or - or end with / or ."
                 )
-            
+
             if len(git_branch_tag_commit) > 255:
-                raise ValueError(f"Git branch/tag/commit '{git_branch_tag_commit}' exceeds maximum length of 255 characters")
-        
+                raise ValueError(
+                    f"Git branch/tag/commit '{git_branch_tag_commit}' exceeds maximum length of 255 characters"
+                )
+
         return git_branch_tag_commit if git_branch_tag_commit != "" else None
 
     @field_validator("version_constraint", mode="after")
@@ -1700,32 +1702,29 @@ class PluginPackageInfo(BaseModel):
         if version_constraint is not None and version_constraint != "":
             if not version_constraint.strip():
                 raise ValueError("Version constraint cannot be empty or whitespace")
-            
+
             # Validate semantic version constraint format (e.g., ">=1.0.0,<2.0.0", "~=1.2.3", "==1.0.0")
             import re
+
             # Pattern for version specifiers: operator + optional space + version number
-            version_pattern = re.compile(
-                r"^(==|!=|<=|>=|<|>|~=|===)\s*"
-                r"\d+(\.\d+)*"
-                r"([a-zA-Z0-9._-]*)?$"
-            )
-            
+            version_pattern = re.compile(r"^(==|!=|<=|>=|<|>|~=|===)\s*" r"\d+(\.\d+)*" r"([a-zA-Z0-9._-]*)?$")
+
             # Split by comma for multiple constraints
             constraints = [c.strip() for c in version_constraint.split(",")]
-            
+
             for constraint in constraints:
                 if not constraint:
                     raise ValueError("Version constraint cannot contain empty parts")
-                
+
                 if not version_pattern.match(constraint):
                     raise ValueError(
                         f"Invalid version constraint '{constraint}'. "
                         "Must follow PEP 440 format (e.g., '>=1.0.0', '~=1.2.3', '==1.0.0,<2.0.0')"
                     )
-            
+
             if len(version_constraint) > 255:
                 raise ValueError(f"Version constraint '{version_constraint}' exceeds maximum length of 255 characters")
-        
+
         return version_constraint if version_constraint != "" else None
 
     @model_validator(mode="after")
@@ -1740,18 +1739,16 @@ class PluginPackageInfo(BaseModel):
         """
         if not self.pypi_package and not self.git_repository:
             raise ValueError(
-                "At least one installation method must be specified: "
-                "either 'pypi_package' or 'git_repository'"
+                "At least one installation method must be specified: " "either 'pypi_package' or 'git_repository'"
             )
-        
+
         # If git_branch_tag_commit is specified, git_repository must also be specified
         if self.git_branch_tag_commit and not self.git_repository:
-            raise ValueError(
-                "'git_branch_tag_commit' can only be specified when 'git_repository' is provided"
-            )
-        
+            raise ValueError("'git_branch_tag_commit' can only be specified when 'git_repository' is provided")
+
         return self
-    
+
+
 class PluginVersionInfo(BaseModel):
     """Represents the version information of a plugin.
 
@@ -1764,6 +1761,7 @@ class PluginVersionInfo(BaseModel):
         changelog (str): The release notes for the plugin.
         min_max_framework_version (str): The minimum and maximum framework version required for the plugin (comma separated).
     """
+
     version: str
     released: str
     breaking_changes: Optional[bool] = None
@@ -1772,11 +1770,13 @@ class PluginVersionInfo(BaseModel):
     changelog: Optional[str] = None
     min_max_framework_version: Optional[str] = "0.1.0.dev4,0.1.0.dev4"
 
+
 class PluginVersionRegistry(BaseModel):
     """Represents the version registry of a plugin.
     Attributes:
         versions (List[PluginVersionInfo]): A list of PluginVersionInfo objects representing the different versions of the plugin.
     """
+
     latest: Optional[PluginVersionInfo] = None
     latest_prerelease: Optional[PluginVersionInfo] = None
     versions: List[PluginVersionInfo]
@@ -1790,56 +1790,49 @@ class PluginVersionRegistry(BaseModel):
 
     def get_latest_compatible(self, framework_version: str) -> Optional[PluginVersionInfo]:
         """Returns the latest compatible version for the given framework version.
-        
+
         Args:
             framework_version (str): The framework version to check compatibility against.
-            
+
         Returns:
             Optional[PluginVersionInfo]: The latest compatible version, or None if no compatible version is found.
         """
-        
+
         try:
             fw_version = Version(framework_version)
         except InvalidVersion:
-            logging.getLogger(__name__).warning(
-                f"Invalid framework version format: {framework_version}"
-            )
+            logging.getLogger(__name__).warning(f"Invalid framework version format: {framework_version}")
             return None
-        
+
         compatible_versions = []
-        
+
         for version_info in self.versions:
             if not version_info.min_max_framework_version:
                 continue
-                
+
             try:
                 # Parse min and max framework versions
-                parts = version_info.min_max_framework_version.split(',')
+                parts = version_info.min_max_framework_version.split(",")
                 if len(parts) != 2:
                     continue
-                    
+
                 min_version = Version(parts[0].strip())
                 max_version = Version(parts[1].strip())
-                
+
                 # Check if framework version is within range
                 if min_version <= fw_version <= max_version:
                     compatible_versions.append(version_info)
-                    
+
             except (InvalidVersion, ValueError):
                 continue
-        
+
         if not compatible_versions:
             return None
-        
+
         # Sort by version and return the latest
         try:
-            sorted_versions = sorted(
-                compatible_versions,
-                key=lambda v: Version(v.version),
-                reverse=True
-            )
+            sorted_versions = sorted(compatible_versions, key=lambda v: Version(v.version), reverse=True)
             return sorted_versions[0]
         except InvalidVersion:
             # If sorting fails, return the first compatible version
             return compatible_versions[0]
-    
