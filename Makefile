@@ -127,6 +127,11 @@ interrogate-verbose:
 	@echo "⚡ Running interrogate on $(TARGET)..."
 	@$(VENV_BIN)/interrogate -vv $(TARGET)
 
+.PHONY: radon
+radon:
+	@echo "⚡ Running radon on $(TARGET)..."
+	@$(VENV_BIN)/radon cc $(TARGET) --min C --show-complexity
+
 .PHONY: ruff
 ruff:
 	@echo "⚡ Running ruff on $(TARGET)..."

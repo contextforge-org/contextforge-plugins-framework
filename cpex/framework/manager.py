@@ -193,35 +193,9 @@ class PluginExecutor:
 
         # SEQUENTIAL: sequential, chained execution — can halt pipeline
         for hook_ref in sequential_refs:
-            local_context_key = global_context.request_id + hook_ref.plugin_ref.uuid
-            tmp_gc = GlobalContext(
-                request_id=global_context.request_id,
-                user=global_context.user,
-                tenant_id=global_context.tenant_id,
-                server_id=global_context.server_id,
-                state={} if not global_context.state else copyonwrite(global_context.state),
-                metadata={} if not global_context.metadata else copyonwrite(global_context.metadata),
-            )
-            if local_contexts and local_context_key in local_contexts:
-                local_context = local_contexts[local_context_key]
-                local_context.global_context = tmp_gc
-            else:
-                local_context = PluginContext(global_context=tmp_gc)
-            res_local_contexts[local_context_key] = local_context
-
+            local_context = self._prepare_plugin_context(hook_ref, global_context, local_contexts, res_local_contexts)
             effective_payload = current_payload if current_payload is not None else payload
-            needs_isolation = (
-                policy or self.default_hook_policy == DefaultHookPolicy.DENY or isinstance(effective_payload, RootModel)
-            )
-            plugin_input = (
-                (
-                    wrap_payload_for_isolation(effective_payload)
-                    if isinstance(effective_payload, BaseModel)
-                    else copy.deepcopy(effective_payload)
-                )
-                if needs_isolation
-                else effective_payload
-            )
+            plugin_input = self._isolate_payload(effective_payload, policy)
 
             result = await self.execute_plugin(
                 hook_ref,
@@ -245,52 +219,24 @@ class PluginExecutor:
                     hook_type,
                     violation_detail,
                 )
-                self._fire_and_forget_tasks(
-                    fire_and_forget_refs, payload, global_context, res_local_contexts, fire_and_forget_semaphore
-                )
-                if hook_type == HTTP_AUTH_CHECK_PERMISSION_HOOK and decision_plugin_name:
-                    combined_metadata[DECISION_PLUGIN_METADATA_KEY] = decision_plugin_name
-                return (
-                    PluginResult(
-                        continue_processing=False,
-                        modified_payload=current_payload,
-                        violation=result.violation,
-                        metadata=combined_metadata,
-                    ),
+                return self._build_halt_result(
+                    current_payload,
+                    result.violation,
+                    combined_metadata,
+                    fire_and_forget_refs,
+                    payload,
+                    global_context,
                     res_local_contexts,
+                    fire_and_forget_semaphore,
+                    hook_type,
+                    decision_plugin_name,
                 )
 
         # AUDIT: sequential, chained execution — cannot halt pipeline
         for hook_ref in audit_refs:
-            local_context_key = global_context.request_id + hook_ref.plugin_ref.uuid
-            tmp_gc = GlobalContext(
-                request_id=global_context.request_id,
-                user=global_context.user,
-                tenant_id=global_context.tenant_id,
-                server_id=global_context.server_id,
-                state={} if not global_context.state else copyonwrite(global_context.state),
-                metadata={} if not global_context.metadata else copyonwrite(global_context.metadata),
-            )
-            if local_contexts and local_context_key in local_contexts:
-                local_context = local_contexts[local_context_key]
-                local_context.global_context = tmp_gc
-            else:
-                local_context = PluginContext(global_context=tmp_gc)
-            res_local_contexts[local_context_key] = local_context
-
+            local_context = self._prepare_plugin_context(hook_ref, global_context, local_contexts, res_local_contexts)
             effective_payload = current_payload if current_payload is not None else payload
-            needs_isolation = (
-                policy or self.default_hook_policy == DefaultHookPolicy.DENY or isinstance(effective_payload, RootModel)
-            )
-            plugin_input = (
-                (
-                    wrap_payload_for_isolation(effective_payload)
-                    if isinstance(effective_payload, BaseModel)
-                    else copy.deepcopy(effective_payload)
-                )
-                if needs_isolation
-                else effective_payload
-            )
+            plugin_input = self._isolate_payload(effective_payload, policy)
 
             result = await self.execute_plugin(
                 hook_ref,
@@ -324,36 +270,8 @@ class PluginExecutor:
             concurrent_tasks: list[asyncio.Task] = []
             effective_payload = current_payload if current_payload is not None else payload
             for ref in concurrent_refs:
-                # RootModel subclasses must always be deep-copied to prevent in-place corruption.
-                needs_isolation = (
-                    policy
-                    or self.default_hook_policy == DefaultHookPolicy.DENY
-                    or isinstance(effective_payload, RootModel)
-                )
-                plugin_input = (
-                    (
-                        wrap_payload_for_isolation(effective_payload)
-                        if isinstance(effective_payload, BaseModel)
-                        else copy.deepcopy(effective_payload)
-                    )
-                    if needs_isolation
-                    else effective_payload
-                )
-                tmp_gc = GlobalContext(
-                    request_id=global_context.request_id,
-                    user=global_context.user,
-                    tenant_id=global_context.tenant_id,
-                    server_id=global_context.server_id,
-                    state={} if not global_context.state else copyonwrite(global_context.state),
-                    metadata={} if not global_context.metadata else copyonwrite(global_context.metadata),
-                )
-                local_context_key = global_context.request_id + ref.plugin_ref.uuid
-                if local_contexts and local_context_key in local_contexts:
-                    local_context = local_contexts[local_context_key]
-                    local_context.global_context = tmp_gc
-                else:
-                    local_context = PluginContext(global_context=tmp_gc)
-                res_local_contexts[local_context_key] = local_context
+                plugin_input = self._isolate_payload(effective_payload, policy)
+                local_context = self._prepare_plugin_context(ref, global_context, local_contexts, res_local_contexts)
                 idx = len(concurrent_ctx_list)
                 concurrent_ctx_list.append((ref, local_context, effective_payload))
                 coro = self.execute_plugin(
@@ -391,19 +309,17 @@ class PluginExecutor:
                         if not task.done():
                             task.cancel()
                     await asyncio.gather(*concurrent_tasks, return_exceptions=True)
-                    self._fire_and_forget_tasks(
-                        fire_and_forget_refs, payload, global_context, res_local_contexts, fire_and_forget_semaphore
-                    )
-                    if hook_type == HTTP_AUTH_CHECK_PERMISSION_HOOK and decision_plugin_name:
-                        combined_metadata[DECISION_PLUGIN_METADATA_KEY] = decision_plugin_name
-                    return (
-                        PluginResult(
-                            continue_processing=False,
-                            modified_payload=current_payload,
-                            violation=result.violation,
-                            metadata=combined_metadata,
-                        ),
+                    return self._build_halt_result(
+                        current_payload,
+                        result.violation,
+                        combined_metadata,
+                        fire_and_forget_refs,
+                        payload,
+                        global_context,
                         res_local_contexts,
+                        fire_and_forget_semaphore,
+                        hook_type,
+                        decision_plugin_name,
                     )
 
         # FIRE_AND_FORGET: fire-and-forget background tasks (fires last with final payload snapshot)
@@ -529,6 +445,82 @@ class PluginExecutor:
                 hook_type,
             )
         return current_payload, decision_plugin_name
+
+    def _prepare_plugin_context(
+        self,
+        hook_ref: HookRef,
+        global_context: GlobalContext,
+        local_contexts: Optional[PluginContextTable],
+        res_local_contexts: dict,
+    ) -> PluginContext:
+        """Create an isolated GlobalContext copy and resolve or create the PluginContext.
+
+        The resolved context is stored in *res_local_contexts* as a side effect.
+        """
+        local_context_key = global_context.request_id + hook_ref.plugin_ref.uuid
+        tmp_gc = GlobalContext(
+            request_id=global_context.request_id,
+            user=global_context.user,
+            tenant_id=global_context.tenant_id,
+            server_id=global_context.server_id,
+            state={} if not global_context.state else copyonwrite(global_context.state),
+            metadata={} if not global_context.metadata else copyonwrite(global_context.metadata),
+        )
+        if local_contexts and local_context_key in local_contexts:
+            local_context = local_contexts[local_context_key]
+            local_context.global_context = tmp_gc
+        else:
+            local_context = PluginContext(global_context=tmp_gc)
+        res_local_contexts[local_context_key] = local_context
+        return local_context
+
+    def _isolate_payload(
+        self,
+        effective_payload: PluginPayload,
+        policy: Any,
+    ) -> PluginPayload:
+        """Return an isolated copy of the payload when policy or defaults demand it.
+
+        Copy-on-write wrapping is used for BaseModel payloads; other types are deep-copied.
+        When no isolation is required the original payload is returned as-is.
+        """
+        needs_isolation = (
+            policy or self.default_hook_policy == DefaultHookPolicy.DENY or isinstance(effective_payload, RootModel)
+        )
+        if not needs_isolation:
+            return effective_payload
+        if isinstance(effective_payload, BaseModel):
+            return wrap_payload_for_isolation(effective_payload)
+        return copy.deepcopy(effective_payload)
+
+    def _build_halt_result(
+        self,
+        current_payload: Optional[PluginPayload],
+        violation: Any,
+        combined_metadata: dict[str, Any],
+        fire_and_forget_refs: list[HookRef],
+        payload: PluginPayload,
+        global_context: GlobalContext,
+        res_local_contexts: dict,
+        fire_and_forget_semaphore: Optional[asyncio.Semaphore],
+        hook_type: str,
+        decision_plugin_name: Optional[str],
+    ) -> tuple[PluginResult, dict]:
+        """Schedule fire-and-forget tasks and build a pipeline-halting result."""
+        self._fire_and_forget_tasks(
+            fire_and_forget_refs, payload, global_context, res_local_contexts, fire_and_forget_semaphore
+        )
+        if hook_type == HTTP_AUTH_CHECK_PERMISSION_HOOK and decision_plugin_name:
+            combined_metadata[DECISION_PLUGIN_METADATA_KEY] = decision_plugin_name
+        return (
+            PluginResult(
+                continue_processing=False,
+                modified_payload=current_payload,
+                violation=violation,
+                metadata=combined_metadata,
+            ),
+            res_local_contexts,
+        )
 
     @staticmethod
     async def _with_semaphore(semaphore: asyncio.Semaphore, coro: Any) -> Any:
