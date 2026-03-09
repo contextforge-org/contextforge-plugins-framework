@@ -32,7 +32,7 @@ import asyncio
 import copy
 import logging
 import threading
-from typing import Any, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 # Third-Party
 from pydantic import BaseModel, RootModel
@@ -108,7 +108,7 @@ class PluginExecutor:
         timeout: int = DEFAULT_PLUGIN_TIMEOUT,
         observability: Optional[ObservabilityProvider] = None,
         hook_policies: Optional[dict[str, HookPayloadPolicy]] = None,
-        default_hook_policy: Optional[str] = None,
+        default_hook_policy: Optional[Literal["allow", "deny"]] = None,
     ):
         """Initialize the plugin executor.
 
@@ -890,7 +890,7 @@ class PluginManager:
         timeout: int = DEFAULT_PLUGIN_TIMEOUT,
         observability: Optional[ObservabilityProvider] = None,
         hook_policies: Optional[dict[str, HookPayloadPolicy]] = None,
-        default_hook_policy: Optional[str] = None,
+        default_hook_policy: Optional[Literal["allow", "deny"]] = None,
     ):
         """Initialize plugin manager.
 
