@@ -19,7 +19,7 @@ from typing import Optional
 # First-Party
 from cpex.framework.base import Plugin
 from cpex.framework.decorator import hook
-from cpex.framework.errors import PluginError, PluginViolationError
+from cpex.framework.errors import PluginError, PluginFrameworkError, PluginViolationError
 from cpex.framework.external.mcp.server import ExternalPluginServer
 from cpex.framework.hooks.agents import (
     AgentHookType,
@@ -163,6 +163,7 @@ __all__ = [
     "PluginContextTable",
     "PluginError",
     "PluginErrorModel",
+    "PluginFrameworkError",
     "PluginLoader",
     "PluginManager",
     "PluginMode",

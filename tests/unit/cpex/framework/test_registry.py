@@ -27,6 +27,7 @@ async def test_registry_register():
     """Load a plugin with the plugin loader."""
     config = ConfigLoader.load_config(config="./tests/unit/cpex/fixtures/configs/valid_single_plugin.yaml")
     loader = PluginLoader()
+    loader.append_to_search_path(config.plugin_dirs)
     plugin = await loader.load_and_instantiate_plugin(config.plugins[0])
     registry = PluginInstanceRegistry()
     registry.register(plugin)
@@ -50,6 +51,7 @@ async def test_registry_duplicate_plugin_registration():
     """Test that registering a plugin twice raises ValueError."""
     config = ConfigLoader.load_config(config="./tests/unit/cpex/fixtures/configs/valid_single_plugin.yaml")
     loader = PluginLoader()
+    loader.append_to_search_path(config.plugin_dirs)
     plugin = await loader.load_and_instantiate_plugin(config.plugins[0])
     registry = PluginInstanceRegistry()
 

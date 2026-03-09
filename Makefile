@@ -17,7 +17,7 @@ VENV_BIN  = $(VENV_DIR)/bin
 
 # Python
 PYTHON = python3
-PYTEST_ARGS ?= -v
+PYTEST_ARGS ?=
 
 # =============================================================================
 # Help
@@ -212,12 +212,12 @@ type-check:
 .PHONY: test
 test:
 	@echo "🧪 Running tests..."
-	@PYTHONPATH="$(SRC_DIR)" $(VENV_BIN)/pytest --cov=$(SRC_DIR) $(TEST_DIR) $(PYTEST_ARGS)
+	@PYTHONPATH="$(SRC_DIR)" $(VENV_BIN)/pytest -n auto $(TEST_DIR) $(PYTEST_ARGS)
 
 .PHONY: test-cov
 test-cov:
 	@echo "🧪 Running tests with coverage..."
-	@PYTHONPATH="$(SRC_DIR)" $(VENV_BIN)/pytest $(TEST_DIR) \
+	@PYTHONPATH="$(SRC_DIR)" $(VENV_BIN)/pytest -n auto $(TEST_DIR) \
 		--cov=$(SRC_DIR) \
 		--cov-report=html \
 		--cov-report=term-missing \
@@ -253,6 +253,11 @@ docs:
 # Building & Distribution
 # =============================================================================
 
+.PHONY: check-manifest
+check-manifest:
+	@echo "📦  Verifying MANIFEST.in completeness..."
+	@$(VENV_BIN)/check-manifest
+
 .PHONY: dist
 dist: clean
 	@echo "📦 Building distribution packages..."
@@ -278,7 +283,7 @@ sdist:
 	@echo "✅  Source distribution written to ./dist"
 
 .PHONY: verify
-verify: dist
+verify: dist check-manifest
 	@echo "🔍 Verifying package..."
 	@$(VENV_BIN)/twine check dist/*
 	@echo "✅  Package verified - ready to publish"

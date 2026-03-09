@@ -12,12 +12,18 @@ in plugin contexts.
 
 # Standard
 import copy
+import logging
+import weakref
 from typing import Any, Iterator, Optional, TypeVar
 
 # Third-Party
 from pydantic import BaseModel, RootModel
 
+# First-Party
+from cpex.framework.errors import PluginFrameworkError
+
 T = TypeVar("T")
+logger = logging.getLogger(__name__)
 
 
 class CopyOnWriteDict(dict):
@@ -517,6 +523,21 @@ def copyonwrite(o: T) -> T:
 _PRIMITIVE_TYPES = (str, int, float, bool, bytes, type(None))
 
 
+def _safe_deepcopy(value: Any) -> Any:
+    """Deep-copy *value* with diagnostic context on failure.
+
+    Wraps :func:`copy.deepcopy` so that failures surface the concrete type and
+    a truncated repr, making it much easier to identify which field or object
+    caused the issue (e.g. file handles, C extensions, locks).
+    """
+    try:
+        return copy.deepcopy(value)
+    except Exception as e:
+        raise PluginFrameworkError(
+            f"Cannot deep-copy value of type {type(value).__qualname__} (repr={repr(value)!s:.200}): {e}"
+        ) from e
+
+
 def _wrap_value(value: Any) -> Any:
     """Wrap a single value with the appropriate CoW wrapper.
 
@@ -536,7 +557,7 @@ def _wrap_value(value: Any) -> Any:
         elif isinstance(root, list):
             wrapped_root = CopyOnWriteList(root)
         else:
-            wrapped_root = copy.deepcopy(root)
+            wrapped_root = _safe_deepcopy(root)
         return value.model_construct(root=wrapped_root)
     if isinstance(value, BaseModel):
         return wrap_payload_for_isolation(value)
@@ -544,8 +565,12 @@ def _wrap_value(value: Any) -> Any:
         return CopyOnWriteDict(value)
     if isinstance(value, list):
         return CopyOnWriteList(value)
+    # Weak-reference proxies wrap live objects that must not be
+    # copied — pass them through as-is so plugins see the same proxy.
+    if isinstance(value, (weakref.ProxyType, weakref.CallableProxyType)):
+        return value
     # Other mutable types — fallback to deep copy
-    return copy.deepcopy(value)
+    return _safe_deepcopy(value)
 
 
 def wrap_payload_for_isolation(payload: BaseModel) -> BaseModel:
@@ -570,7 +595,7 @@ def wrap_payload_for_isolation(payload: BaseModel) -> BaseModel:
         elif isinstance(root, list):
             wrapped_root = CopyOnWriteList(root)
         else:
-            wrapped_root = copy.deepcopy(root)
+            wrapped_root = _safe_deepcopy(root)
         return payload.model_construct(root=wrapped_root)
 
     updates = {}

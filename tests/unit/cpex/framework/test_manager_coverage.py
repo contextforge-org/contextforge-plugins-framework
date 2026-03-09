@@ -468,18 +468,6 @@ class TestBorgHookPoliciesInjection:
 
         assert pm2._executor.observability is mock_obs
 
-    def test_defensive_executor_init_when_none(self):
-        """When shared state exists but _executor is None (unusual test
-        scenario), the defensive path creates a new PluginExecutor."""
-        pm = PluginManager()
-        # Simulate unusual state: shared state populated but executor nulled
-        pm._executor = None
-
-        # Re-instantiate without hook_policies — triggers defensive path
-        pm2 = PluginManager()
-        assert pm2._executor is not None
-        assert isinstance(pm2._executor, PluginExecutor)
-
 
 # ===========================================================================
 # PluginManager executor property and setter (lines 605, 615, 620)

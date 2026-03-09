@@ -193,6 +193,7 @@ async def test_plugin_loader_shutdown_with_existing_types():
     """Test shutdown clears existing plugin types."""
     config = ConfigLoader.load_config(config="./tests/unit/cpex/fixtures/configs/valid_single_plugin.yaml")
     loader = PluginLoader()
+    loader.append_to_search_path(config.plugin_dirs)
 
     # Load a plugin to populate _plugin_types
     plugin = await loader.load_and_instantiate_plugin(config.plugins[0])
@@ -223,6 +224,9 @@ async def test_plugin_loader_registration_branch_coverage():
         hooks=["prompt_pre_fetch"],
         config={"words": [{"search": "test", "replace": "example"}]},
     )
+
+    # Add plugin dirs to search path so importlib can resolve the kind
+    loader.append_to_search_path(["tests/unit/cpex/fixtures"])
 
     # First load - should register the plugin type (lines 85-87)
     assert config.kind not in loader._plugin_types  # Verify it's not registered yet

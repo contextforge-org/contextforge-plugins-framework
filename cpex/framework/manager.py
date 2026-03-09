@@ -29,10 +29,9 @@ Examples:
 
 # Standard
 import asyncio
-import copy
 import logging
 import threading
-from typing import Any, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 # Third-Party
 from pydantic import BaseModel, RootModel
@@ -43,7 +42,7 @@ from cpex.framework.errors import PluginError, PluginViolationError, convert_exc
 from cpex.framework.hooks.policies import DefaultHookPolicy, HookPayloadPolicy, apply_policy
 from cpex.framework.loader.config import ConfigLoader
 from cpex.framework.loader.plugin import PluginLoader
-from cpex.framework.memory import copyonwrite, wrap_payload_for_isolation
+from cpex.framework.memory import _safe_deepcopy, copyonwrite, wrap_payload_for_isolation
 from cpex.framework.models import (
     Config,
     GlobalContext,
@@ -108,6 +107,7 @@ class PluginExecutor:
         timeout: int = DEFAULT_PLUGIN_TIMEOUT,
         observability: Optional[ObservabilityProvider] = None,
         hook_policies: Optional[dict[str, HookPayloadPolicy]] = None,
+        default_hook_policy: Optional[Literal["allow", "deny"]] = None,
     ):
         """Initialize the plugin executor.
 
@@ -116,12 +116,16 @@ class PluginExecutor:
             timeout: Maximum execution time per plugin in seconds.
             observability: Optional observability provider implementing ObservabilityProvider protocol.
             hook_policies: Per-hook-type payload modification policies.
+            default_hook_policy: Fallback hook policy ("allow", "denied") when a policy is not specified
+                for a hook type (overrides `settings.default_hook_policy`).
         """
         self.timeout = timeout
         self.config = config
         self.observability = observability
         self.hook_policies: dict[str, HookPayloadPolicy] = hook_policies or {}
-        self.default_hook_policy = DefaultHookPolicy(settings.default_hook_policy)
+        self.default_hook_policy = DefaultHookPolicy(
+            default_hook_policy if default_hook_policy else settings.default_hook_policy
+        )
         self._runtime_disabled: set[str] = set()
 
     async def execute(
@@ -491,7 +495,7 @@ class PluginExecutor:
             return effective_payload
         if isinstance(effective_payload, BaseModel):
             return wrap_payload_for_isolation(effective_payload)
-        return copy.deepcopy(effective_payload)
+        return _safe_deepcopy(effective_payload)
 
     def _build_halt_result(
         self,
@@ -553,7 +557,7 @@ class PluginExecutor:
                 # Already scheduled — skip to avoid double-scheduling
                 continue
             task_input = (
-                wrap_payload_for_isolation(payload) if isinstance(payload, BaseModel) else copy.deepcopy(payload)
+                wrap_payload_for_isolation(payload) if isinstance(payload, BaseModel) else _safe_deepcopy(payload)
             )
             tmp_gc = GlobalContext(
                 request_id=global_context.request_id,
@@ -885,6 +889,7 @@ class PluginManager:
         timeout: int = DEFAULT_PLUGIN_TIMEOUT,
         observability: Optional[ObservabilityProvider] = None,
         hook_policies: Optional[dict[str, HookPayloadPolicy]] = None,
+        default_hook_policy: Optional[Literal["allow", "deny"]] = None,
     ):
         """Initialize plugin manager.
 
@@ -903,6 +908,8 @@ class PluginManager:
             timeout: Maximum execution time per plugin in seconds.
             observability: Optional observability provider implementing ObservabilityProvider protocol.
             hook_policies: Per-hook-type payload modification policies (injected by gateway).
+            default_hook_policy: Fallback hook policy ("allow", "deny") when a policy is not specified
+                for a hook type (if set, takes precedence over `settings.default_hook_policy`).
 
         Examples:
             >>> # Initialize with configuration file
@@ -929,11 +936,10 @@ class PluginManager:
                         timeout=timeout,
                         observability=observability,
                         hook_policies=hook_policies,
+                        default_hook_policy=default_hook_policy,
                     )
-        elif hook_policies:
-            # Allow hook policies to be injected after initial Borg creation.
-            # This handles the case where the first PluginManager instantiation
-            # (e.g. from a service) didn't have policies, but a later one does.
+        elif hook_policies or default_hook_policy or observability:
+            # Allow optional arguments to be injected after initial Borg creation.
             with self.__lock:
                 executor = self._get_executor()
                 # Only update timeout if caller provided a non-default value
@@ -945,13 +951,10 @@ class PluginManager:
                     logger.warning(
                         "PluginManager: hook_policies already set; ignoring new policies (call reset() first to replace them)"
                     )
+                if default_hook_policy:
+                    executor.default_hook_policy = DefaultHookPolicy(default_hook_policy)
                 if observability and not executor.observability:
                     executor.observability = observability
-        elif self._executor is None:
-            # Defensive initialization for unusual state transitions in tests.
-            with self.__lock:
-                if self._executor is None:
-                    self._executor = PluginExecutor(config=self._config, timeout=timeout, observability=observability)
 
     def _get_executor(self) -> PluginExecutor:
         """Get plugin executor, creating it lazily if necessary.

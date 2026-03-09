@@ -7,14 +7,20 @@ Authors: Fred Araujo
 Tests for memory module.
 """
 
+# Standard
+import weakref
+
 # Third-Party
 import pytest
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 # First-Party
+from cpex.framework.errors import PluginFrameworkError
 from cpex.framework.memory import (
     CopyOnWriteDict,
     CopyOnWriteList,
+    _safe_deepcopy,
+    _wrap_value,
     copyonwrite,
     wrap_payload_for_isolation,
 )
@@ -1205,3 +1211,188 @@ class TestWrapPayloadForIsolation:
         # data=42 is a primitive, name="x" is a primitive — no updates needed
         assert wrapped2.name == "x"
         assert wrapped2.data == 42
+
+
+# ---------------------------------------------------------------------------
+# Helper: a target class for weakref proxies
+# ---------------------------------------------------------------------------
+
+
+class _Service:
+    """Dummy service object that supports weak references."""
+
+    def __init__(self, name: str = "svc"):
+        self.name = name
+
+    def greet(self) -> str:
+        return f"hello from {self.name}"
+
+
+class _PayloadWithWeakref(BaseModel):
+    """Payload with a weakref proxy field (non-writable by convention)."""
+
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
+    label: str = "test"
+    service: object = None  # Will hold a weakref.proxy
+
+
+class _PayloadWithWeakrefAndDict(BaseModel):
+    """Payload with both a weakref proxy and a mutable dict field."""
+
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
+    label: str = "test"
+    service: object = None
+    args: dict = Field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Tests: weakref proxies through isolation
+# ---------------------------------------------------------------------------
+
+
+class TestWeakrefIsolation:
+    """Tests for weakref proxy handling in payload isolation."""
+
+    def test_wrap_value_passes_proxy_through(self):
+        """_wrap_value returns a weakref.proxy as-is (no copy)."""
+        svc = _Service("alpha")
+        proxy = weakref.proxy(svc)
+
+        result = _wrap_value(proxy)
+
+        assert result is proxy
+        assert result.greet() == "hello from alpha"
+
+    def test_wrap_value_passes_callable_proxy_through(self):
+        """_wrap_value returns a callable weakref.proxy as-is."""
+        svc = _Service("beta")
+        proxy = weakref.proxy(svc)  # proxy to an object with __call__-able methods
+
+        result = _wrap_value(proxy)
+
+        assert result is proxy
+
+    def test_payload_weakref_field_preserved_after_isolation(self):
+        """Weakref proxy field survives wrap_payload_for_isolation unchanged."""
+        svc = _Service("gamma")
+        proxy = weakref.proxy(svc)
+        p = _PayloadWithWeakref(label="x", service=proxy)
+
+        wrapped = wrap_payload_for_isolation(p)
+
+        # The proxy is the same object — not copied
+        assert wrapped.service is proxy
+        assert wrapped.service.greet() == "hello from gamma"
+
+    def test_payload_weakref_alongside_mutable_field(self):
+        """Weakref proxy is preserved while mutable dict field is CoW-wrapped."""
+        svc = _Service("delta")
+        proxy = weakref.proxy(svc)
+        original_args = {"key": "val"}
+        p = _PayloadWithWeakrefAndDict(label="x", service=proxy, args=original_args)
+
+        wrapped = wrap_payload_for_isolation(p)
+
+        # Weakref proxy passed through
+        assert wrapped.service is proxy
+        assert wrapped.service.greet() == "hello from delta"
+        # Dict field is CoW-wrapped and isolates mutations
+        assert isinstance(wrapped.args, CopyOnWriteDict)
+        wrapped.args["key"] = "changed"
+        assert original_args["key"] == "val"
+
+    def test_multiple_isolations_share_same_proxy(self):
+        """Multiple isolation calls return the same proxy identity."""
+        svc = _Service("echo")
+        proxy = weakref.proxy(svc)
+        p = _PayloadWithWeakref(label="x", service=proxy)
+
+        w1 = wrap_payload_for_isolation(p)
+        w2 = wrap_payload_for_isolation(p)
+
+        assert w1.service is w2.service is proxy
+
+    def test_weakref_in_dict_field_passed_through(self):
+        """A weakref proxy stored inside a dict value is not deep-copied."""
+        svc = _Service("foxtrot")
+        proxy = weakref.proxy(svc)
+        original = {"svc": proxy, "count": 1}
+        p = _PayloadWithAny(name="x", data=original)
+
+        wrapped = wrap_payload_for_isolation(p)
+
+        # The dict itself is CoW-wrapped
+        assert isinstance(wrapped.data, CopyOnWriteDict)
+        # The proxy inside the dict is the same object (read from original)
+        assert wrapped.data["svc"] is proxy
+        assert wrapped.data["svc"].greet() == "hello from foxtrot"
+
+    def test_weakref_in_list_field_passed_through(self):
+        """A weakref proxy stored inside a list element is not deep-copied."""
+        svc = _Service("golf")
+        proxy = weakref.proxy(svc)
+        original = [proxy, 42]
+        p = _PayloadWithAny(name="x", data=original)
+
+        wrapped = wrap_payload_for_isolation(p)
+
+        assert isinstance(wrapped.data, CopyOnWriteList)
+        # Proxy is read from the original list (no copy)
+        assert wrapped.data[0] is proxy
+        assert wrapped.data[0].greet() == "hello from golf"
+
+    def test_expired_weakref_raises_on_access(self):
+        """If the referent is garbage-collected, accessing the proxy raises ReferenceError."""
+        svc = _Service("hotel")
+        proxy = weakref.proxy(svc)
+        p = _PayloadWithWeakref(label="x", service=proxy)
+
+        wrapped = wrap_payload_for_isolation(p)
+
+        # Delete the referent
+        del svc
+        with pytest.raises(ReferenceError):
+            wrapped.service.greet()
+
+
+# ---------------------------------------------------------------------------
+# Tests: _safe_deepcopy diagnostics
+# ---------------------------------------------------------------------------
+
+
+class TestSafeDeepCopy:
+    """Tests for _safe_deepcopy error handling."""
+
+    def test_copyable_value_returned(self):
+        """Normal objects are deep-copied successfully."""
+        original = {"a": [1, 2, 3]}
+        result = _safe_deepcopy(original)
+
+        assert result == original
+        assert result is not original
+        assert result["a"] is not original["a"]
+
+    def test_non_copyable_raises_framework_error(self):
+        """Non-copyable objects raise PluginFrameworkError with diagnostics."""
+        import threading
+
+        lock = threading.Lock()
+
+        with pytest.raises(PluginFrameworkError, match="Cannot deep-copy") as exc_info:
+            _safe_deepcopy(lock)
+
+        # Verify diagnostic info includes the type name
+        assert "lock" in str(exc_info.value).lower()
+
+    def test_framework_error_chains_original(self):
+        """PluginFrameworkError chains the original exception as __cause__."""
+        import threading
+
+        lock = threading.Lock()
+
+        with pytest.raises(PluginFrameworkError) as exc_info:
+            _safe_deepcopy(lock)
+
+        assert exc_info.value.__cause__ is not None

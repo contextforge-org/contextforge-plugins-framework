@@ -1,0 +1,24 @@
+# ===============================================================
+# CI - Main Continuous Integration Pipeline
+# ===============================================================
+
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+    branches: ["main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint & Static Analysis
+    uses: ./.github/workflows/lint.yml

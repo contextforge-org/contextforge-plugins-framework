@@ -1,0 +1,10 @@
+extends: relaxed        # start from the built-in relaxed preset
+rules:
+  line-length:
+    max: 400            # allow lines up to 400 chars
+    level: warning      # keep it a warning (default); use "error" to fail
+ignore: |
+  .cache/**
+  cpex/templates/**/*.yaml
+  cpex/templates/**/*.yml
+

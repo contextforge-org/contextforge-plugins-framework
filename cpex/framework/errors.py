@@ -13,6 +13,32 @@ the base plugin layer including configurations, and contexts.
 from cpex.framework.models import PluginErrorModel, PluginViolation
 
 
+class PluginFrameworkError(Exception):
+    """An error originating from the plugin framework itself (not from a plugin).
+
+    Raised when an internal framework operation fails — for example, when
+    payload isolation cannot deep-copy a value.
+
+    Attributes:
+        message (str): Description of the framework error.
+    """
+
+    def __init__(self, message: str):
+        """Initialize a plugin framework error.
+
+        Args:
+            message: Description of what went wrong.
+
+        Examples:
+            >>> from cpex.framework.errors import PluginFrameworkError
+            >>> err = PluginFrameworkError("cannot isolate payload")
+            >>> str(err)
+            'cannot isolate payload'
+        """
+        self.message = message
+        super().__init__(self.message)
+
+
 class PluginViolationError(Exception):
     """A plugin violation error.
 
