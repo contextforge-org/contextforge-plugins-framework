@@ -10,6 +10,7 @@ Module that contains plugin client code to serve venv isolated plugins.
 
 import logging
 import os
+from pathlib import Path
 import sys
 import venv
 
@@ -67,6 +68,11 @@ class IsolatedVenvPlugin(Plugin):
     # The plugins/framework/manager.py class (PluginManager) loads and registers the plugin
     async def initialize(self) -> None:
         """Initialize the plugin's venv environment."""
+        # ensure the config is validated
+        path = Path(self.config.config.get("script_path")).resolve()
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"script_path not found: {path}")
+
         self.venv = await self.create_venv(self.config.config["venv_path"])
         self.comm = VenvProcessCommunicator(self.config.config["venv_path"])
         self.comm.install_requirements(self.config.config["requirements_file"])
