@@ -352,6 +352,19 @@ wheels = [
 ]
 
 [[package]]
+name = "check-manifest"
+version = "0.51"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "build" },
+    { name = "setuptools" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/16/e3/8ce797dfdf12d447683490107c4dcd97bb2535d7a2b031bf3f3e4c441c3d/check_manifest-0.51.tar.gz", hash = "sha256:9801c7637675755a563f33e3c48ee59a59b37a7677297c05c910c16c5b9b6d67", size = 36302, upload-time = "2025-10-15T11:15:48.007Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/02/c1/df01ef6ba1c8a2bfc201be45d0889b06f165008b240e8d1657aa665421a8/check_manifest-0.51-py3-none-any.whl", hash = "sha256:f5f35ed561012fc2115bb070e42a748ac2e034cf8904ab4dfaae893859085ca4", size = 20500, upload-time = "2025-10-15T11:15:46.058Z" },
+]
+
+[[package]]
 name = "click"
 version = "8.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -506,7 +519,7 @@ toml = [
 
 [[package]]
 name = "cpex"
-version = "0.1.0.dev6"
+version = "0.1.0.dev7"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
@@ -537,6 +550,7 @@ cli = [
 ]
 dev = [
     { name = "bandit" },
+    { name = "check-manifest" },
     { name = "interrogate" },
     { name = "mypy" },
     { name = "pyroma" },
@@ -572,6 +586,7 @@ grpc = [
 requires-dist = [
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.8.6" },
     { name = "chardet", marker = "extra == 'cli'", specifier = ">=3.0.2,<6" },
+    { name = "check-manifest", marker = "extra == 'dev'", specifier = ">=0.50" },
     { name = "cookiecutter", marker = "extra == 'cli'", specifier = ">=2.6.0" },
     { name = "cpex", extras = ["grpc", "cli"], marker = "extra == 'all'" },
     { name = "fastapi", specifier = ">=0.133.1" },

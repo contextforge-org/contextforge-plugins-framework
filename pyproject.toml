@@ -1,13 +1,14 @@
 [project]
 name = "cpex"
-version = "0.1.0.dev6"
+version = "0.1.0.dev7"
 description = "CPEX - ContextForge Plugin Extensibility Framework"
 classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development :: Libraries :: Application Frameworks",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-license-files = ["LICENSE*"]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 readme = "README.md"
 authors = [
     { name = "Fred Araujo", email = "frederico.araujo@ibm.com" },
@@ -42,14 +43,15 @@ cpex = "cpex.tools.cli:main"
 # dev dependencies
 dev = [
     "bandit>=1.8.6",
+    "check-manifest>=0.50",
     "interrogate>=1.7.0",
     "mypy>=1.18.2",
     "pyroma>=5.0",
-    "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
     "pytest-cov>=7.0.0",
     "pytest-env>=1.1.5",
     "pytest-xdist>=3.8.0",
+    "pytest>=8.4.2",
     "radon>=6.0.1",
     "ruff>=0.13.3",
     "twine>=6.2.0",
@@ -72,8 +74,8 @@ docs = [
 
 # gRPC transport support (higher performance than MCP/HTTP)
 grpc = [
-    "grpcio>=1.70.0",
     "grpcio-tools>=1.70.0",
+    "grpcio>=1.70.0",
     "protobuf>=5.29.0",
 ]
 
@@ -102,6 +104,14 @@ exclude = ["cpex/templates", "cpex/framework/observability.py", "*_pb2.py", "*_p
 line-length = 120
 exclude = [
     "cpex/templates",
+]
+
+[tool.check-manifest]
+ignore = [
+    "docs/**",
+    "tests/**",
+    ".github/**",
+    "Makefile",
 ]
 
 # Linter configuration

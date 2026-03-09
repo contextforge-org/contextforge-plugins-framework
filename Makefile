@@ -253,6 +253,11 @@ docs:
 # Building & Distribution
 # =============================================================================
 
+.PHONY: check-manifest
+check-manifest:
+	@echo "📦  Verifying MANIFEST.in completeness..."
+	@$(VENV_BIN)/check-manifest
+
 .PHONY: dist
 dist: clean
 	@echo "📦 Building distribution packages..."
@@ -278,7 +283,7 @@ sdist:
 	@echo "✅  Source distribution written to ./dist"
 
 .PHONY: verify
-verify: dist
+verify: dist check-manifest
 	@echo "🔍 Verifying package..."
 	@$(VENV_BIN)/twine check dist/*
 	@echo "✅  Package verified - ready to publish"
