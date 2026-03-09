@@ -1,6 +1,6 @@
 [project]
 name = "cpex"
-version = "0.1.0.dev7"
+version = "0.1.0.dev8"
 description = "CPEX - ContextForge Plugin Extensibility Framework"
 classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
@@ -37,6 +37,9 @@ dependencies = [
 
 [project.scripts]
 cpex = "cpex.tools.cli:main"
+
+[project.urls]
+Repository = "https://github.com/contextforge-org/contextforge-plugins-framework"
 
 [project.optional-dependencies]
 
