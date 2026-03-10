@@ -325,6 +325,32 @@ server = ExternalPluginServer(plugins=[MyPlugin(config)])
 server.run()
 ```
 
+## Isolated plugins
+
+Plugins can be run in a separate python virtual environment (venv) to prevent them from interfering with the host environment.
+
+```yaml
+  - name: "test_plugin"
+    kind: "isolated_venv"
+    version: "0.1.0"
+    hooks: ["prompt_pre_fetch", "prompt_post_fetch", "tool_pre_invoke", "tool_post_invoke"]
+    tags: ["plugin"]
+    mode: "sequential"
+    priority: 150
+    conditions:
+      # Apply to specific tools/servers
+      - server_ids: []  # Apply to all servers
+        tenant_ids: []  # Apply to all tenants
+    config:
+      # Plugin config dict passed to the plugin constructor
+      class_name: "test_plugin.plugin.TestPlugin"
+      venv_path: "plugins/test_plugin/.venv"
+      requirements_file: "plugins/test_plugin/requirements.txt"
+      # essentially the plugin folder hosting the plugin relative to the project root
+      script_path: "plugins"
+```
+
+
 ## Project Status
 
 CPEX is under active development as part of the [ContextForge](https://github.com/contextforge-org) ecosystem. The framework is designed to work across AI gateways, agent frameworks, LLM proxies, and tool servers.
