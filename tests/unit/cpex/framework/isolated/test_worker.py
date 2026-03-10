@@ -10,12 +10,13 @@ Unit tests for worker.py functions.
 import asyncio
 import json
 import sys
+from io import StringIO
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
-from cpex.framework.isolated.worker import get_environment_info, get_proper_config, process_task
+from cpex.framework.isolated.worker import get_environment_info, get_proper_config, main, process_task
 
 
 class TestWorkerFunctions:
@@ -289,6 +290,173 @@ class TestWorkerFunctions:
         call_args = mock_executor.execute_plugin.call_args
         assert call_args is not None
 
+
+class TestMainFunction:
+    """Test suite for the main() function."""
+
+    @pytest.mark.asyncio
+    @patch("sys.stdin")
+    @patch("builtins.print")
+    @patch("cpex.framework.isolated.worker.process_task")
+    async def test_main_success_with_info_task(self, mock_process_task, mock_print, mock_stdin):
+        """Test main function with successful info task."""
+        # Setup stdin with info task
+        task_data = {"task_type": "info"}
+        mock_stdin.read.return_value = json.dumps(task_data)
+
+        # Setup process_task to return a mock result
+        mock_result = MagicMock()
+        mock_result.model_dump.return_value = {
+            "status": "success",
+            "environment": {"python_version": "3.10"},
+            "message": "Environment info retrieved successfully",
+        }
+        mock_process_task.return_value = mock_result
+
+        # Run main
+        await main()
+
+        # Verify process_task was called with correct data
+        mock_process_task.assert_called_once_with(task_data)
+
+        # Verify output was printed
+        mock_print.assert_called_once()
+        printed_output = mock_print.call_args[0][0]
+        output_data = json.loads(printed_output)
+        assert output_data["status"] == "success"
+
+    @pytest.mark.asyncio
+    @patch("sys.stdin")
+    @patch("builtins.print")
+    @patch("cpex.framework.isolated.worker.process_task")
+    async def test_main_success_with_none_result(self, mock_process_task, mock_print, mock_stdin):
+        """Test main function when process_task returns None."""
+        task_data = {"task_type": "unknown"}
+        mock_stdin.read.return_value = json.dumps(task_data)
+
+        # process_task returns None for unknown task types
+        mock_process_task.return_value = None
+
+        await main()
+
+        mock_process_task.assert_called_once_with(task_data)
+        mock_print.assert_called_once()
+        printed_output = mock_print.call_args[0][0]
+        # Should print "null" for None
+        assert printed_output == "null"
+
+    @pytest.mark.asyncio
+    @patch("sys.stdin")
+    @patch("builtins.print")
+    async def test_main_json_decode_error(self, mock_print, mock_stdin):
+        """Test main function with invalid JSON input."""
+        # Setup stdin with invalid JSON
+        mock_stdin.read.return_value = "not valid json {{"
+
+        await main()
+
+        # Verify error response was printed
+        mock_print.assert_called_once()
+        printed_output = mock_print.call_args[0][0]
+        output_data = json.loads(printed_output)
+        assert output_data["status"] == "error"
+        assert output_data["message"] == "Invalid JSON input"
+
+    @pytest.mark.asyncio
+    @patch("sys.stdin")
+    @patch("builtins.print")
+    @patch("cpex.framework.isolated.worker.process_task")
+    async def test_main_unexpected_exception(self, mock_process_task, mock_print, mock_stdin):
+        """Test main function with unexpected exception during processing."""
+        task_data = {"task_type": "load_and_run_hook"}
+        mock_stdin.read.return_value = json.dumps(task_data)
+
+        # Make process_task raise an exception
+        mock_process_task.side_effect = RuntimeError("Unexpected error occurred")
+
+        await main()
+
+        # Verify error response was printed
+        mock_print.assert_called_once()
+        printed_output = mock_print.call_args[0][0]
+        output_data = json.loads(printed_output)
+        assert output_data["status"] == "error"
+        assert "Unexpected error: Unexpected error occurred" in output_data["message"]
+
+    @pytest.mark.asyncio
+    @patch("sys.stdin")
+    @patch("builtins.print")
+    @patch("cpex.framework.isolated.worker.process_task")
+    async def test_main_with_load_and_run_hook_task(self, mock_process_task, mock_print, mock_stdin):
+        """Test main function with load_and_run_hook task."""
+        config_dict = {"name": "test_plugin", "kind": "isolated_venv"}
+        task_data = {
+            "task_type": "load_and_run_hook",
+            "config": json.dumps(config_dict),
+            "script_path": "plugins",
+            "class_name": "test_plugin.TestPlugin",
+            "hook_type": "tool_pre_invoke",
+            "payload": {"name": "test_tool"},
+            "context": {"state": {}, "global_context": {}, "metadata": {}},
+        }
+        mock_stdin.read.return_value = json.dumps(task_data)
+
+        # Setup mock result
+        mock_result = MagicMock()
+        mock_result.model_dump.return_value = {
+            "continue_processing": True,
+            "payload": {"name": "test_tool", "modified": True},
+            "violations": [],
+        }
+        mock_process_task.return_value = mock_result
+
+        await main()
+
+        mock_process_task.assert_called_once_with(task_data)
+        mock_print.assert_called_once()
+        printed_output = mock_print.call_args[0][0]
+        output_data = json.loads(printed_output)
+        assert output_data["continue_processing"] is True
+
+    @pytest.mark.asyncio
+    @patch("sys.stdin")
+    @patch("builtins.print")
+    @patch("cpex.framework.isolated.worker.process_task")
+    async def test_main_with_empty_stdin(self, mock_process_task, mock_print, mock_stdin):
+        """Test main function with empty stdin."""
+        mock_stdin.read.return_value = ""
+
+        await main()
+
+        # Should handle as JSON decode error
+        mock_print.assert_called_once()
+        printed_output = mock_print.call_args[0][0]
+        output_data = json.loads(printed_output)
+        assert output_data["status"] == "error"
+        assert output_data["message"] == "Invalid JSON input"
+
+    @pytest.mark.asyncio
+    @patch("sys.stdin")
+    @patch("builtins.print")
+    @patch("cpex.framework.isolated.worker.process_task")
+    async def test_main_with_model_dump_exception(self, mock_process_task, mock_print, mock_stdin):
+        """Test main function when model_dump raises an exception."""
+        task_data = {"task_type": "info"}
+        mock_stdin.read.return_value = json.dumps(task_data)
+
+        # Setup mock result that raises exception on model_dump
+        mock_result = MagicMock()
+        mock_result.model_dump.side_effect = ValueError("Cannot serialize")
+        mock_process_task.return_value = mock_result
+
+        await main()
+
+        # Should catch the exception and return error
+        mock_print.assert_called_once()
+        printed_output = mock_print.call_args[0][0]
+        output_data = json.loads(printed_output)
+        assert output_data["status"] == "error"
+        assert "Unexpected error" in output_data["message"]
 
 
 # Made with Bob
