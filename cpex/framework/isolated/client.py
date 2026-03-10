@@ -240,27 +240,16 @@ class IsolatedVenvPlugin(Plugin):
         if not result_type:
             raise PluginError(
                 error=PluginErrorModel(
-                    message=f"Hook type '{hook_type}' not registered in hook registry",
-                    plugin_name=self.name
+                    message=f"Hook type '{hook_type}' not registered in hook registry", plugin_name=self.name
                 )
             )
 
         if not self.comm:
-            raise PluginError(
-                error=PluginErrorModel(
-                    message="Plugin comm not initialized",
-                    plugin_name=self.name
-                )
-            )
+            raise PluginError(error=PluginErrorModel(message="Plugin comm not initialized", plugin_name=self.name))
 
         return result_type
 
-    def _build_hook_task(
-        self,
-        hook_type: str,
-        payload: PluginPayload,
-        context: PluginContext
-    ) -> dict[str, Any]:
+    def _build_hook_task(self, hook_type: str, payload: PluginPayload, context: PluginContext) -> dict[str, Any]:
         """Build task dictionary for hook invocation.
 
         Args:
@@ -302,24 +291,17 @@ class IsolatedVenvPlugin(Plugin):
             loop = asyncio.get_event_loop()
             result_dict: dict[str, Any] = await loop.run_in_executor(
                 None,
-                functools.partial(self.comm.send_task,script_path="cpex/framework/isolated/worker.py",
-                task_data=task_data)
+                functools.partial(
+                    self.comm.send_task, script_path="cpex/framework/isolated/worker.py", task_data=task_data
+                ),
             )
             # Convert response to typed result
             registry = get_hook_registry()
             return registry.json_to_result(hook_type, result_dict)
 
         except PluginError:
-            logger.exception(
-                "Plugin error invoking hook '%s' for plugin '%s'",
-                hook_type,
-                self.name
-            )
+            logger.exception("Plugin error invoking hook '%s' for plugin '%s'", hook_type, self.name)
             raise
         except Exception as e:
-            logger.exception(
-                "Unexpected error invoking hook '%s' for plugin '%s'",
-                hook_type,
-                self.name
-            )
+            logger.exception("Unexpected error invoking hook '%s' for plugin '%s'", hook_type, self.name)
             raise PluginError(error=convert_exception_to_error(e, plugin_name=self.name)) from e
