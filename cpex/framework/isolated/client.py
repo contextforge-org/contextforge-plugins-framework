@@ -12,10 +12,10 @@ import hashlib
 import json
 import logging
 import os
-from pathlib import Path
 import shutil
 import sys
 import venv
+from pathlib import Path
 
 from typing_extensions import Any, Optional
 
@@ -45,31 +45,31 @@ class IsolatedVenvPlugin(Plugin):
 
     def _compute_requirements_hash(self, requirements_file: str) -> str:
         """Compute SHA256 hash of requirements file content.
-        
+
         Args:
             requirements_file: Path to the requirements file
-            
+
         Returns:
             Hexadecimal hash string
         """
         hasher = hashlib.sha256()
         req_path = Path(requirements_file)
-        
+
         if req_path.exists():
             with open(req_path, "rb") as f:
                 hasher.update(f.read())
         else:
             # If no requirements file, use empty hash
             hasher.update(b"")
-        
+
         return hasher.hexdigest()
 
     def _get_cache_metadata_path(self, venv_path: str) -> Path:
         """Get the path to the cache metadata file.
-        
+
         Args:
             venv_path: Path to the virtual environment
-            
+
         Returns:
             Path to the metadata file
         """
@@ -78,95 +78,97 @@ class IsolatedVenvPlugin(Plugin):
 
     def _is_venv_cache_valid(self, venv_path: str, requirements_file: str) -> bool:
         """Check if cached venv is valid by comparing requirements hash.
-        
+
         Args:
             venv_path: Path to the virtual environment
             requirements_file: Path to the requirements file
-            
+
         Returns:
             True if cache is valid, False otherwise
         """
         venv_path_obj = Path(venv_path)
         metadata_path = self._get_cache_metadata_path(venv_path)
-        
+
         # Check if venv directory exists
         if not venv_path_obj.exists():
             logger.debug(f"Venv path does not exist: {venv_path}")
             return False
-        
+
         # Check if metadata file exists
         if not metadata_path.exists():
             logger.debug(f"Metadata file does not exist: {metadata_path}")
             return False
-        
+
         try:
             # Load metadata
             with open(metadata_path, "r") as f:
                 metadata = json.load(f)
-            
+
             # Compute current requirements hash
             current_hash = self._compute_requirements_hash(requirements_file)
-            
+
             # Compare hashes
             cached_hash = metadata.get("requirements_hash")
             if cached_hash != current_hash:
                 logger.info(f"Requirements changed. Cached hash: {cached_hash}, Current hash: {current_hash}")
                 return False
-            
+
             logger.info(f"Valid venv cache found for {venv_path}")
             return True
-            
+
         except (json.JSONDecodeError, KeyError) as e:
             logger.warning(f"Error reading cache metadata: {e}")
             return False
 
     def _save_cache_metadata(self, venv_path: str, requirements_file: str) -> None:
         """Save cache metadata for the venv.
-        
+
         Args:
             venv_path: Path to the virtual environment
             requirements_file: Path to the requirements file
         """
         metadata_path = self._get_cache_metadata_path(venv_path)
         requirements_hash = self._compute_requirements_hash(requirements_file)
-        
+
         metadata = {
             "venv_path": str(Path(venv_path).resolve()),
             "requirements_file": str(Path(requirements_file).resolve()) if Path(requirements_file).exists() else None,
             "requirements_hash": requirements_hash,
             "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
         }
-        
+
         with open(metadata_path, "w") as f:
             json.dump(metadata, f, indent=2)
-        
+
         logger.info(f"Saved cache metadata to {metadata_path}")
 
-    async def create_venv(self, venv_path: str = ".venv", requirements_file: Optional[str] = None, use_cache: bool = True) -> None:
+    async def create_venv(
+        self, venv_path: str = ".venv", requirements_file: Optional[str] = None, use_cache: bool = True
+    ) -> None:
         """Create a new venv environment with caching support.
-        
+
         Args:
             venv_path: Path where the virtual environment should be created
             requirements_file: Path to requirements file for cache validation
             use_cache: Whether to use cached venv if available
         """
         venv_path_obj = Path(venv_path)
-        
+
         # Check if we can use cached venv
         if use_cache and requirements_file and self._is_venv_cache_valid(venv_path, requirements_file):
             logger.info(f"Using cached virtual environment at: {venv_path_obj.resolve()}")
             print(f"✓ Using cached virtual environment at: {venv_path_obj.resolve()}")
             return
-        
+
         # If cache is invalid or not using cache, remove existing venv
         if venv_path_obj.exists():
             logger.info(f"Removing existing venv at {venv_path}")
             shutil.rmtree(venv_path_obj)
-        
+
         # Check Python version
         python_version = sys.version_info
         print(f"Current Python version: {python_version.major}.{python_version.minor}.{python_version.micro}")
-        
+
         # Create the EnvBuilder with common options
         builder = venv.EnvBuilder(
             system_site_packages=True,  # Don't include system site-packages
@@ -176,7 +178,7 @@ class IsolatedVenvPlugin(Plugin):
             with_pip=True,  # Install pip in the venv
             prompt=None,  # Use default prompt (directory name)
         )
-        
+
         # Create the virtual environment
         print(f"\nCreating virtual environment at: {venv_path_obj.resolve()}")
         try:
@@ -185,11 +187,11 @@ class IsolatedVenvPlugin(Plugin):
             print("\nTo activate the virtual environment:")
             print(f"  source {venv_path}/bin/activate  # On Unix/macOS")
             print(f"  {venv_path}\\Scripts\\activate  # On Windows")
-            
+
             # Save cache metadata if requirements file is provided
             if requirements_file:
                 self._save_cache_metadata(venv_path, requirements_file)
-                
+
         except Exception as e:
             print(f"✗ Error creating virtual environment: {e}")
             raise e
@@ -205,16 +207,12 @@ class IsolatedVenvPlugin(Plugin):
 
         venv_path = self.config.config["venv_path"]
         requirements_file = self.config.config["requirements_file"]
-        
+
         # Create venv with caching support
-        self.venv = await self.create_venv(
-            venv_path=venv_path,
-            requirements_file=requirements_file,
-            use_cache=True
-        )
-        
+        self.venv = await self.create_venv(venv_path=venv_path, requirements_file=requirements_file, use_cache=True)
+
         self.comm = VenvProcessCommunicator(venv_path)
-        
+
         # Only install requirements if venv was newly created or cache was invalid
         # Check if we need to install requirements
         if not self._is_venv_cache_valid(venv_path, requirements_file):
