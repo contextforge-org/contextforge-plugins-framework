@@ -28,8 +28,7 @@ plugins:
     config:
       # Plugin config dict passed to the plugin constructor
       class_name: "test_plugin.plugin.TestPlugin"
-      venv_path: "tests/unit/cpex/fixtures/plugins/isolated/test_plugin/.venv"
-      requirements_file: "tests/unit/cpex/fixtures/plugins/isolated/test_plugin/requirements.txt"
+      requirements_file: "requirements.txt"
       # essentially the plugin folder hosting the plugin
       script_path: "tests/unit/cpex/fixtures/plugins/isolated"
 
