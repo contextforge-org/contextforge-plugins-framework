@@ -88,11 +88,9 @@ async def process_task(task_data):
         executor = PluginExecutor(None, 30)
         # retrieve the context
         context = task_data.get("context")
-        # ^^ may need to json.loads(context) before passing it to PluginContext below vv
         plugin_context = PluginContext(
             state=context.get("state"), global_context=context.get("global_context"), metadata=context.get("metadata")
         )
-        # global_context = context.get("global_context")
         result = await executor.execute_plugin(
             hook_ref, payload=task_data.get("payload"), local_context=plugin_context, violations_as_exceptions=False
         )

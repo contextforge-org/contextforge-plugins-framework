@@ -40,7 +40,13 @@ class IsolatedVenvPlugin(Plugin):
         self.implementation = "Python"
         self.comm = None
         self.script_path: str = config.config["script_path"]
-        self.cache_dir = Path.home() / ".cpex" / "venv_cache"
+        path = Path(self.config.config.get("script_path")).resolve()
+        class_root = self.config.config.get("class_name").split('.')[0]
+        cache_root = path / class_root
+        self.plugin_path = cache_root
+        if not cache_root.exists():
+            raise RuntimeError("plugin script_path does not exist")
+        self.cache_dir = cache_root / ".cpex" / "venv_cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def _compute_requirements_hash(self, requirements_file: str) -> str:
@@ -188,9 +194,6 @@ class IsolatedVenvPlugin(Plugin):
             print(f"  source {venv_path}/bin/activate  # On Unix/macOS")
             print(f"  {venv_path}\\Scripts\\activate  # On Windows")
 
-            # Save cache metadata if requirements file is provided
-            if requirements_file:
-                self._save_cache_metadata(venv_path, requirements_file)
 
         except Exception as e:
             print(f"✗ Error creating virtual environment: {e}")
@@ -202,11 +205,11 @@ class IsolatedVenvPlugin(Plugin):
         """Initialize the plugin's venv environment with caching support."""
         # ensure the config is validated
         path = Path(self.config.config.get("script_path")).resolve()
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"script_path not found: {path}")
+        if not os.path.exists(self.plugin_path):
+            raise FileNotFoundError(f"plugin path not found: {self.plugin_path}")
 
-        venv_path = self.config.config["venv_path"]
-        requirements_file = self.config.config["requirements_file"]
+        venv_path = self.plugin_path / ".venv"
+        requirements_file = self.plugin_path / self.config.config["requirements_file"]
 
         # Create venv with caching support
         self.venv = await self.create_venv(venv_path=venv_path, requirements_file=requirements_file, use_cache=True)
@@ -222,6 +225,8 @@ class IsolatedVenvPlugin(Plugin):
             self._save_cache_metadata(venv_path, requirements_file)
         else:
             logger.info("Using cached venv, skipping requirements installation")
+
+
 
     async def cleanup(self) -> None:
         """Cleanup resources, including stopping the worker process."""

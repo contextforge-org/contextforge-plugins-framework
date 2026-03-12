@@ -29,8 +29,8 @@ class TestIsolatedVenvPlugin:
     def mock_config(self, tmp_path):
         """Create a mock plugin configuration."""
         venv_path = tmp_path / ".venv"
-        script_path = "tests/unit/cpex/fixtures/plugins/isolated/test_plugin/requirements.txt"
-        requirements_file = tmp_path / "requirements.txt"
+        script_path = "tests/unit/cpex/fixtures/plugins/isolated"
+        requirements_file = tmp_path / "test_plugin" / "requirements.txt"
 
         config_dict = {
             "name": "test_plugin",

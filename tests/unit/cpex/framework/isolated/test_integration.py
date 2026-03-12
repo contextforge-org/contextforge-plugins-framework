@@ -44,8 +44,7 @@ plugins:
     hooks: ["tool_pre_invoke"]
     config:
       class_name: "test_plugin.TestPlugin"
-      venv_path: "xplugins/test_plugin/.venv"
-      requirements_file: "xplugins/test_plugin/requirements.txt"
+      requirements_file: "requirements.txt"
       script_path: "xplugins"
 """
         config_file = tmp_path / "test_config.yaml"
@@ -99,8 +98,7 @@ plugins:
             "hooks": ["tool_pre_invoke"],
             "config": {
                 "class_name": "test_plugin.TestPlugin",
-                "venv_path": str(tmp_path / ".venv"),
-                "requirements_file": "tests/unit/cpex/fixtures/plugins/isolated/test_plugin/requirements.txt",
+                "requirements_file": "requirements.txt",
                 "script_path": "tests/unit/cpex/fixtures/plugins/isolated"
             }
         }
@@ -143,9 +141,8 @@ plugins:
             "hooks": ["tool_pre_invoke"],
             "config": {
                 "class_name": "test_plugin.TestPlugin",
-                "venv_path": str(tmp_path / ".venv"),
-                "requirements_file": str(tmp_path / "requirements.txt"),
-                "script_path": str(tmp_path / "plugins")
+                "requirements_file": "requirements.txt",
+                "script_path": "tests/unit/cpex/fixtures/plugins/isolated"
             }
         }
         config = PluginConfig(**config_dict)
@@ -182,8 +179,7 @@ plugins:
             "hooks": ["tool_pre_invoke", "tool_post_invoke", "prompt_pre_fetch", "prompt_post_fetch"],
             "config": {
                 "class_name": "test_plugin.TestPlugin",
-                "venv_path": str(tmp_path / ".venv"),
-                "requirements_file": "tests/unit/cpex/fixtures/plugins/isolated/test_plugin/requirements.txt",
+                "requirements_file": "requirements.txt",
                 "script_path": "tests/unit/cpex/fixtures/plugins/isolated"
             }
         }
@@ -272,8 +268,7 @@ plugins:
             "hooks": ["tool_pre_invoke"],
             "config": {
                 "class_name": "test_plugin.TestPlugin",
-                "venv_path": str(tmp_path / ".venv"),
-                "requirements_file": "tests/unit/cpex/fixtures/plugins/isolated/test_plugin/requirements.txt",
+                "requirements_file": "requirements.txt",
                 "script_path": "tests/unit/cpex/fixtures/plugins/isolated"
             }
         }
@@ -341,8 +336,7 @@ plugins:
             "hooks": ["tool_pre_invoke"],
             "config": {
                 "class_name": "test_plugin.TestPlugin",
-                "venv_path": str(tmp_path / ".venv"),
-                "requirements_file": "tests/unit/cpex/fixtures/plugins/isolated/test_plugin/requirements.txt",
+                "requirements_file": "requirements.txt",
                 "script_path": "tests/unit/cpex/fixtures/plugins/isolated"
             }
         }

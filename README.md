@@ -344,8 +344,7 @@ Native plugins can be run in a separate python virtual environment (venv) to pre
     config:
       # Plugin config dict passed to the plugin constructor
       class_name: "test_plugin.plugin.TestPlugin"
-      venv_path: "plugins/test_plugin/.venv"
-      requirements_file: "plugins/test_plugin/requirements.txt"
+      requirements_file: "requirements.txt"
       # essentially the plugin folder hosting the plugin relative to the project root
       script_path: "plugins"
 ```
