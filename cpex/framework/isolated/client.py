@@ -203,7 +203,6 @@ class IsolatedVenvPlugin(Plugin):
     async def initialize(self) -> None:
         """Initialize the plugin's venv environment with caching support."""
         # ensure the config is validated
-        path = Path(self.config.config.get("script_path")).resolve()
         if not os.path.exists(self.plugin_path):
             raise FileNotFoundError(f"plugin path not found: {self.plugin_path}")
 
