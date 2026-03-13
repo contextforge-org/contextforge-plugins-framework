@@ -41,7 +41,7 @@ class IsolatedVenvPlugin(Plugin):
         self.comm = None
         self.script_path: str = config.config["script_path"]
         path = Path(self.config.config.get("script_path")).resolve()
-        class_root = self.config.config.get("class_name").split('.')[0]
+        class_root = self.config.config.get("class_name").split(".")[0]
         cache_root = path / class_root
         self.plugin_path = cache_root
         if not cache_root.exists():
@@ -194,7 +194,6 @@ class IsolatedVenvPlugin(Plugin):
             print(f"  source {venv_path}/bin/activate  # On Unix/macOS")
             print(f"  {venv_path}\\Scripts\\activate  # On Windows")
 
-
         except Exception as e:
             print(f"✗ Error creating virtual environment: {e}")
             raise e
@@ -225,8 +224,6 @@ class IsolatedVenvPlugin(Plugin):
             self._save_cache_metadata(venv_path, requirements_file)
         else:
             logger.info("Using cached venv, skipping requirements installation")
-
-
 
     async def cleanup(self) -> None:
         """Cleanup resources, including stopping the worker process."""
