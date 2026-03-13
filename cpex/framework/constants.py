@@ -13,6 +13,8 @@ This module stores a collection of plugin constants used throughout the framewor
 # Model constants.
 # Specialized plugin types.
 EXTERNAL_PLUGIN_TYPE = "external"
+ISOLATED_VENV_PLUGIN_TYPE = "isolated_venv"
+
 
 # MCP related constants.
 PYTHON_SUFFIX = ".py"

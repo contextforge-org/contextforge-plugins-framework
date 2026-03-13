@@ -151,7 +151,7 @@ def bootstrap(
     Args:
         destination: The directory in which to bootstrap the plugin project.
         template_url: The URL to the plugins cookiecutter template.
-        template_type: Plugin template type (native or external).
+        template_type: Plugin template type (native, external or isolated).
         vcs_ref: The version control system tag/branch/commit to use for the template.
         no_input: Use defaults without prompting.
         dry_run: Run but do not make any changes.

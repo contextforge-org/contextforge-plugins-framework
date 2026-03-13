@@ -17,7 +17,7 @@ from typing import Type, cast
 
 # First-Party
 from cpex.framework.base import Plugin
-from cpex.framework.constants import EXTERNAL_PLUGIN_TYPE
+from cpex.framework.constants import EXTERNAL_PLUGIN_TYPE, ISOLATED_VENV_PLUGIN_TYPE
 from cpex.framework.external.mcp.client import ExternalPlugin
 from cpex.framework.models import PluginConfig
 from cpex.framework.utils import import_module, parse_class_name
@@ -139,6 +139,13 @@ class PluginLoader:
                     f"External plugin '{config.name}' must have 'mcp', 'grpc', or 'unix_socket' configuration"
                 )  # pragma: no cover
 
+            await plugin.initialize()
+            return plugin
+
+        if config.kind == ISOLATED_VENV_PLUGIN_TYPE:
+            from cpex.framework.isolated.client import IsolatedVenvPlugin  # pylint: disable=import-outside-toplevel
+
+            plugin: Plugin = IsolatedVenvPlugin(config)
             await plugin.initialize()
             return plugin
 
