@@ -13,6 +13,7 @@ to be reusable across different payload types.
 # First-Party
 from cpex.framework.extensions.agent import AgentExtension, ConversationContext
 from cpex.framework.extensions.completion import CompletionExtension, StopReason, TokenUsage
+from cpex.framework.extensions.constants import SlotName
 from cpex.framework.extensions.extensions import Extensions
 from cpex.framework.extensions.framework import FrameworkExtension
 from cpex.framework.extensions.http import HttpExtension
@@ -33,7 +34,6 @@ from cpex.framework.extensions.security import (
     SubjectExtension,
     SubjectType,
 )
-from cpex.framework.extensions.constants import SlotName
 from cpex.framework.extensions.tiers import (
     AccessPolicy,
     Capability,

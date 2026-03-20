@@ -388,11 +388,19 @@ class TierViolationError(Exception):
         tier: MutabilityTier,
         detail: str,
     ) -> None:
+        """Initialise a tier violation error.
+
+        Args:
+            plugin_name: Name of the offending plugin.
+            slot: The extension slot that was violated.
+            tier: The mutability tier of the slot.
+            detail: Description of the violation.
+        """
         self.plugin_name = plugin_name
         self.slot = slot
         self.tier = tier
         self.detail = detail
-        super().__init__(f"Plugin '{plugin_name}' violated {tier.value} tier on " f"'{slot}': {detail}")
+        super().__init__(f"Plugin '{plugin_name}' violated {tier.value} tier on '{slot}': {detail}")
 
 
 def _resolve_slot(ext: Extensions | None, dot_path: str) -> Any:

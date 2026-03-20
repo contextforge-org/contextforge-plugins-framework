@@ -19,7 +19,7 @@ compose them into the typed content-part hierarchy for message serialization.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Annotated, Iterator, Literal, TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Annotated, Any, Iterator, Literal, Union
 
 # Third-Party
 from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag, model_validator
@@ -263,6 +263,14 @@ class Resource(BaseModel):
 
     @model_validator(mode="after")
     def _check_content_blob_exclusion(self) -> Resource:
+        """Ensure content and blob are mutually exclusive.
+
+        Returns:
+            The validated Resource instance.
+
+        Raises:
+            ValueError: If both content and blob are set.
+        """
         if self.content is not None and self.blob is not None:
             raise ValueError("Resource cannot have both 'content' and 'blob' set")
         return self
@@ -309,6 +317,14 @@ class ResourceReference(BaseModel):
 
     @model_validator(mode="after")
     def _check_range_consistency(self) -> ResourceReference:
+        """Ensure range_end is not less than range_start.
+
+        Returns:
+            The validated ResourceReference instance.
+
+        Raises:
+            ValueError: If range_end < range_start.
+        """
         if self.range_start is not None and self.range_end is not None:
             if self.range_end < self.range_start:
                 raise ValueError(f"range_end ({self.range_end}) must be >= range_start ({self.range_start})")

@@ -40,6 +40,8 @@ from pydantic import BaseModel, RootModel
 from cpex.framework.base import HookRef, Plugin
 from cpex.framework.constants import EXTERNAL_PLUGIN_TYPE
 from cpex.framework.errors import PluginError, PluginViolationError, convert_exception_to_error
+from cpex.framework.extensions.extensions import Extensions
+from cpex.framework.extensions.tiers import filter_extensions
 from cpex.framework.hooks.policies import DefaultHookPolicy, HookPayloadPolicy, apply_policy
 from cpex.framework.loader.config import ConfigLoader
 from cpex.framework.loader.plugin import PluginLoader
@@ -55,8 +57,6 @@ from cpex.framework.models import (
     PluginPayload,
     PluginResult,
 )
-from cpex.framework.extensions.extensions import Extensions
-from cpex.framework.extensions.tiers import filter_extensions
 from cpex.framework.observability import ObservabilityProvider, current_trace_id
 from cpex.framework.registry import PluginInstanceRegistry
 from cpex.framework.settings import settings
@@ -650,7 +650,11 @@ class PluginExecutor:
     ) -> tuple[PluginResult, dict]:
         """Schedule fire-and-forget tasks and build a pipeline-halting result."""
         self._fire_and_forget_tasks(
-            fire_and_forget_refs, payload, global_context, res_local_contexts, fire_and_forget_semaphore,
+            fire_and_forget_refs,
+            payload,
+            global_context,
+            res_local_contexts,
+            fire_and_forget_semaphore,
             extensions=extensions,
         )
         if hook_type == HTTP_AUTH_CHECK_PERMISSION_HOOK and decision_plugin_name:

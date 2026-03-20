@@ -30,6 +30,14 @@ class SlotName(str, Enum):
     """
 
     def __str__(self) -> str:
+        """Return the enum value as a plain string.
+
+        Overrides the default ``StrEnum.__str__`` which renders as
+        ``ClassName.MEMBER`` in Python 3.11+.
+
+        Returns:
+            The raw string value of the enum member.
+        """
         return self.value
 
     REQUEST = "request"

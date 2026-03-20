@@ -1241,6 +1241,17 @@ class PluginConfig(BaseModel):
     @field_validator("capabilities", mode="before")
     @classmethod
     def _validate_capabilities(cls, v: Any) -> frozenset[str]:
+        """Validate that all declared capabilities are known.
+
+        Args:
+            v: Raw capabilities value from the config.
+
+        Returns:
+            A validated frozenset of capability strings.
+
+        Raises:
+            ValueError: If an unknown capability is declared.
+        """
         # First-Party
         from cpex.framework.extensions.tiers import Capability  # pylint: disable=import-outside-toplevel
 
