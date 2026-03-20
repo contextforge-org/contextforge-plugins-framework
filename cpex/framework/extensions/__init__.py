@@ -17,7 +17,12 @@ from cpex.framework.extensions.extensions import Extensions
 from cpex.framework.extensions.framework import FrameworkExtension
 from cpex.framework.extensions.http import HttpExtension
 from cpex.framework.extensions.llm import LLMExtension
-from cpex.framework.extensions.mcp import MCPExtension, PromptMetadata, ResourceMetadata, ToolMetadata
+from cpex.framework.extensions.mcp import (
+    MCPExtension,
+    PromptMetadata,
+    ResourceMetadata,
+    ToolMetadata,
+)
 from cpex.framework.extensions.provenance import ProvenanceExtension
 from cpex.framework.extensions.request import RequestExtension
 from cpex.framework.extensions.security import (
@@ -28,9 +33,19 @@ from cpex.framework.extensions.security import (
     SubjectExtension,
     SubjectType,
 )
+from cpex.framework.extensions.constants import SlotName
+from cpex.framework.extensions.tiers import (
+    AccessPolicy,
+    Capability,
+    MutabilityTier,
+    TierViolationError,
+)
 
 __all__ = [
+    "AccessPolicy",
+    "SlotName",
     "AgentExtension",
+    "Capability",
     "CompletionExtension",
     "ConversationContext",
     "DataPolicy",
@@ -39,6 +54,7 @@ __all__ = [
     "HttpExtension",
     "LLMExtension",
     "MCPExtension",
+    "MutabilityTier",
     "ObjectSecurityProfile",
     "PromptMetadata",
     "ProvenanceExtension",
@@ -49,6 +65,7 @@ __all__ = [
     "StopReason",
     "SubjectExtension",
     "SubjectType",
+    "TierViolationError",
     "TokenUsage",
     "ToolMetadata",
 ]

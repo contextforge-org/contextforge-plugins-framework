@@ -137,10 +137,16 @@ _ACTION_MAP: dict[ViewKind, ViewAction] = {
 }
 
 # Kinds whose action depends on message direction (role)
-_DIRECTION_DEPENDENT_KINDS = frozenset({
-    ViewKind.TEXT, ViewKind.THINKING,
-    ViewKind.IMAGE, ViewKind.VIDEO, ViewKind.AUDIO, ViewKind.DOCUMENT,
-})
+_DIRECTION_DEPENDENT_KINDS = frozenset(
+    {
+        ViewKind.TEXT,
+        ViewKind.THINKING,
+        ViewKind.IMAGE,
+        ViewKind.VIDEO,
+        ViewKind.AUDIO,
+        ViewKind.DOCUMENT,
+    }
+)
 
 # Sensitive headers stripped during serialization
 _SENSITIVE_HEADERS = frozenset({"authorization", "cookie", "x-api-key"})

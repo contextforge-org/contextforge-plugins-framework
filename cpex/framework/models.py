@@ -1192,6 +1192,8 @@ class PluginConfig(BaseModel):
         grpc (Optional[GRPCClientConfig]): Client-side gRPC configuration (gateway connecting to plugin).
     """
 
+    model_config = ConfigDict(frozen=True)
+
     name: str
     description: Optional[str] = None
     author: Optional[str] = None
@@ -1227,10 +1229,33 @@ class PluginConfig(BaseModel):
 
     conditions: list[PluginCondition] = Field(default_factory=list)  # When to apply
     applied_to: Optional[AppliedTo] = None  # Fields to apply to.
+    capabilities: frozenset[str] = Field(
+        default_factory=frozenset,
+        description="Declared capabilities (e.g., 'read_headers', 'append_labels').",
+    )
     config: Optional[dict[str, Any]] = None
     mcp: Optional[MCPClientConfig] = None
     grpc: Optional[GRPCClientConfig] = None
     unix_socket: Optional[UnixSocketClientConfig] = None
+
+    @field_validator("capabilities", mode="before")
+    @classmethod
+    def _validate_capabilities(cls, v: Any) -> frozenset[str]:
+        # First-Party
+        from cpex.framework.extensions.tiers import Capability  # pylint: disable=import-outside-toplevel
+
+        if isinstance(v, (list, set, frozenset)):
+            known = {c.value for c in Capability}
+            for cap in v:
+                if cap not in known:
+                    raise ValueError(f"Unknown capability: {cap!r}. Known: {sorted(known)}")
+            return frozenset(v)
+        return frozenset()
+
+    @field_serializer("capabilities")
+    def serialize_capabilities(self, value: frozenset[str]) -> list[str]:
+        """Serialize frozenset for JSON compatibility."""
+        return sorted(value)
 
     @model_validator(mode="after")
     def check_url_or_script_filled(self) -> Self:  # pylint: disable=bad-classmethod-argument

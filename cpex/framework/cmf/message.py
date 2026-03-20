@@ -832,7 +832,7 @@ class Message(BaseModel):
         role: Who is speaking.
         content: List of typed content parts (multimodal).
         channel: Optional output classification.
-        extensions: Contextual metadata (identity, security, governance, etc.).
+        extensions: Optional contextual metadata (identity, security, governance).
 
     Examples:
         >>> msg = Message(

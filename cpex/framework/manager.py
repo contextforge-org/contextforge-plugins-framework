@@ -38,6 +38,7 @@ from pydantic import BaseModel, RootModel
 
 # First-Party
 from cpex.framework.base import HookRef, Plugin
+from cpex.framework.constants import EXTERNAL_PLUGIN_TYPE
 from cpex.framework.errors import PluginError, PluginViolationError, convert_exception_to_error
 from cpex.framework.hooks.policies import DefaultHookPolicy, HookPayloadPolicy, apply_policy
 from cpex.framework.loader.config import ConfigLoader
@@ -54,6 +55,8 @@ from cpex.framework.models import (
     PluginPayload,
     PluginResult,
 )
+from cpex.framework.extensions.extensions import Extensions
+from cpex.framework.extensions.tiers import filter_extensions
 from cpex.framework.observability import ObservabilityProvider, current_trace_id
 from cpex.framework.registry import PluginInstanceRegistry
 from cpex.framework.settings import settings
@@ -137,6 +140,7 @@ class PluginExecutor:
         hook_type: str,
         local_contexts: Optional[PluginContextTable] = None,
         violations_as_exceptions: bool = False,
+        extensions: Optional[Extensions] = None,
     ) -> tuple[PluginResult, PluginContextTable | None]:
         """Execute plugins in priority order with timeout protection.
 
@@ -147,6 +151,7 @@ class PluginExecutor:
             hook_type: The hook type identifier (e.g., "tool_pre_invoke").
             local_contexts: Optional existing contexts from previous hook executions.
             violations_as_exceptions: Raise violations as exceptions rather than as returns.
+            extensions: Optional extensions to filter and pass to plugins that accept them.
 
         Returns:
             A tuple containing:
@@ -214,6 +219,7 @@ class PluginExecutor:
             allow_blocking=True,
             fire_and_forget_refs=fire_and_forget_refs,
             fire_and_forget_semaphore=fire_and_forget_semaphore,
+            extensions=extensions,
         )
         if halt_result is not None:
             return halt_result
@@ -236,6 +242,7 @@ class PluginExecutor:
             decision_plugin_name=decision_plugin_name,
             apply_modifications=True,
             allow_blocking=False,
+            extensions=extensions,
         )
         current_payload, decision_plugin_name = self._serial_phase_state
 
@@ -255,6 +262,7 @@ class PluginExecutor:
             decision_plugin_name=decision_plugin_name,
             apply_modifications=False,
             allow_blocking=False,
+            extensions=extensions,
         )
         current_payload, decision_plugin_name = self._serial_phase_state
 
@@ -275,6 +283,7 @@ class PluginExecutor:
                     violations_as_exceptions,
                     global_context,
                     combined_metadata,
+                    extensions=extensions,
                 )
                 if concurrent_semaphore:
                     coro = self._with_semaphore(concurrent_semaphore, coro)
@@ -317,11 +326,17 @@ class PluginExecutor:
                         fire_and_forget_semaphore,
                         hook_type,
                         decision_plugin_name,
+                        extensions=extensions,
                     )
 
         # FIRE_AND_FORGET: fire-and-forget background tasks (fires last with final payload snapshot)
         self._fire_and_forget_tasks(
-            fire_and_forget_refs, payload, global_context, res_local_contexts, fire_and_forget_semaphore
+            fire_and_forget_refs,
+            payload,
+            global_context,
+            res_local_contexts,
+            fire_and_forget_semaphore,
+            extensions=extensions,
         )
 
         if hook_type == HTTP_AUTH_CHECK_PERMISSION_HOOK and decision_plugin_name:
@@ -412,6 +427,7 @@ class PluginExecutor:
         allow_blocking: bool,
         fire_and_forget_refs: Optional[list[HookRef]] = None,
         fire_and_forget_semaphore: Optional[asyncio.Semaphore] = None,
+        extensions: Optional[Extensions] = None,
     ) -> Optional[tuple[PluginResult, PluginContextTable | None]]:
         """Run a serial execution phase (SEQUENTIAL, TRANSFORM, or AUDIT).
 
@@ -449,6 +465,7 @@ class PluginExecutor:
                 violations_as_exceptions,
                 global_context,
                 combined_metadata,
+                extensions=extensions,
             )
 
             if result.modified_payload is not None:
@@ -494,6 +511,7 @@ class PluginExecutor:
                         fire_and_forget_semaphore,
                         hook_type,
                         decision_plugin_name,
+                        extensions=extensions,
                     )
                 else:
                     logger.warning(
@@ -628,10 +646,12 @@ class PluginExecutor:
         fire_and_forget_semaphore: Optional[asyncio.Semaphore],
         hook_type: str,
         decision_plugin_name: Optional[str],
+        extensions: Optional[Extensions] = None,
     ) -> tuple[PluginResult, dict]:
         """Schedule fire-and-forget tasks and build a pipeline-halting result."""
         self._fire_and_forget_tasks(
-            fire_and_forget_refs, payload, global_context, res_local_contexts, fire_and_forget_semaphore
+            fire_and_forget_refs, payload, global_context, res_local_contexts, fire_and_forget_semaphore,
+            extensions=extensions,
         )
         if hook_type == HTTP_AUTH_CHECK_PERMISSION_HOOK and decision_plugin_name:
             combined_metadata[DECISION_PLUGIN_METADATA_KEY] = decision_plugin_name
@@ -664,6 +684,7 @@ class PluginExecutor:
         global_context: GlobalContext,
         res_local_contexts: dict,
         semaphore: Optional[asyncio.Semaphore],
+        extensions: Optional[Extensions] = None,
     ) -> None:
         """Schedule all FIRE_AND_FORGET plugins as fire-and-forget background tasks.
 
@@ -688,7 +709,9 @@ class PluginExecutor:
             )
             local_context = PluginContext(global_context=tmp_gc)
             res_local_contexts[local_context_key] = local_context
-            asyncio.create_task(self._run_fire_and_forget_task(ref, task_input, local_context, semaphore))
+            asyncio.create_task(
+                self._run_fire_and_forget_task(ref, task_input, local_context, semaphore, extensions=extensions)
+            )
 
     async def _run_fire_and_forget_task(
         self,
@@ -696,6 +719,7 @@ class PluginExecutor:
         payload: PluginPayload,
         local_context: PluginContext,
         semaphore: Optional[asyncio.Semaphore],
+        extensions: Optional[Extensions] = None,
     ) -> None:
         """Execute a plugin as a fire-and-forget background task.
 
@@ -705,9 +729,9 @@ class PluginExecutor:
         try:
             if semaphore:
                 async with semaphore:
-                    await self._execute_with_timeout(hook_ref, payload, local_context)
+                    await self._execute_with_timeout(hook_ref, payload, local_context, extensions=extensions)
             else:
-                await self._execute_with_timeout(hook_ref, payload, local_context)
+                await self._execute_with_timeout(hook_ref, payload, local_context, extensions=extensions)
         except Exception:
             logger.error("Plugin %s failed in fire-and-forget mode (ignored)", hook_ref.plugin_ref.name)
             if hook_ref.plugin_ref.on_error == OnError.DISABLE:
@@ -722,6 +746,7 @@ class PluginExecutor:
         violations_as_exceptions: bool,
         global_context: Optional[GlobalContext] = None,
         combined_metadata: Optional[dict[str, Any]] = None,
+        extensions: Optional[Extensions] = None,
     ) -> PluginResult:
         """Execute a single plugin with timeout protection.
 
@@ -732,6 +757,7 @@ class PluginExecutor:
             violations_as_exceptions: Raise violations as exceptions rather than as returns.
             global_context: Shared context for all plugins containing request metadata.
             combined_metadata: combination of the metadata of all plugins.
+            extensions: Optional extensions to filter and pass to plugins that accept them.
 
         Returns:
             A tuple containing:
@@ -745,7 +771,7 @@ class PluginExecutor:
         """
         try:
             # Execute plugin with timeout protection
-            result = await self._execute_with_timeout(hook_ref, payload, local_context)
+            result = await self._execute_with_timeout(hook_ref, payload, local_context, extensions=extensions)
             # Merge global state for modes that participate in the pipeline chain.
             # AUDIT and FIRE_AND_FORGET operate on isolated snapshots and should not
             # mutate shared state.
@@ -870,7 +896,11 @@ class PluginExecutor:
         return PluginResult(continue_processing=True)
 
     async def _execute_with_timeout(
-        self, hook_ref: HookRef, payload: PluginPayload, context: PluginContext
+        self,
+        hook_ref: HookRef,
+        payload: PluginPayload,
+        context: PluginContext,
+        extensions: Optional[Extensions] = None,
     ) -> PluginResult:
         """Execute a plugin with timeout protection.
 
@@ -878,6 +908,7 @@ class PluginExecutor:
             hook_ref: Reference to the hook and plugin to execute.
             payload: Payload to process.
             context: Plugin execution context.
+            extensions: Optional extensions to filter and pass if the plugin accepts them.
 
         Returns:
             Result from plugin execution.
@@ -916,7 +947,11 @@ class PluginExecutor:
 
         # Execute plugin
         try:
-            result = await asyncio.wait_for(hook_ref.hook(payload, context), timeout=self.timeout)
+            if hook_ref.accepts_extensions:
+                filtered = filter_extensions(extensions, hook_ref.plugin_ref.capabilities)
+                result = await asyncio.wait_for(hook_ref.hook(payload, context, filtered), timeout=self.timeout)
+            else:
+                result = await asyncio.wait_for(hook_ref.hook(payload, context), timeout=self.timeout)
         except Exception:
             if span_id is not None:
                 try:
@@ -1263,7 +1298,15 @@ class PluginManager:
                         # Fully instantiate enabled plugins
                         plugin = await self._loader.load_and_instantiate_plugin(plugin_config)
                         if plugin:
-                            self._registry.register(plugin)
+                            # For external plugins, initialize() merges the remote
+                            # config (mode, hooks, etc.) so the post-init config is
+                            # authoritative.  For internal plugins the original YAML
+                            # config is already complete.
+                            if plugin_config.kind == EXTERNAL_PLUGIN_TYPE:
+                                trusted = plugin.config.model_copy()
+                            else:
+                                trusted = plugin_config
+                            self._registry.register(plugin, trusted_config=trusted)
                             loaded_count += 1
                             logger.info("Loaded plugin: %s (mode: %s)", plugin_config.name, plugin_config.mode)
                         else:
@@ -1330,6 +1373,7 @@ class PluginManager:
         global_context: GlobalContext,
         local_contexts: Optional[PluginContextTable] = None,
         violations_as_exceptions: bool = False,
+        extensions: Optional[Extensions] = None,
     ) -> tuple[PluginResult, PluginContextTable | None]:
         """Invoke a set of plugins configured for the hook point in priority order.
 
@@ -1339,6 +1383,7 @@ class PluginManager:
             global_context: Shared context for all plugins with request metadata.
             local_contexts: Optional existing contexts from previous hook executions.
             violations_as_exceptions: Raise violations as exceptions rather than as returns.
+            extensions: Optional extensions to filter and pass to plugins that accept them.
 
         Returns:
             A tuple containing:
@@ -1361,7 +1406,13 @@ class PluginManager:
 
         # Execute plugins
         result = await self._get_executor().execute(
-            hook_refs, payload, global_context, hook_type, local_contexts, violations_as_exceptions
+            hook_refs,
+            payload,
+            global_context,
+            hook_type,
+            local_contexts,
+            violations_as_exceptions,
+            extensions=extensions,
         )
 
         return result

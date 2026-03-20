@@ -560,6 +560,7 @@ class ExternalHookRef(HookRef):
         """
         self._plugin_ref = plugin_ref
         self._hook = hook
+        self._accepts_extensions = False  # External plugins use invoke_hook(), not direct method calls
         if hasattr(plugin_ref.plugin, INVOKE_HOOK):
             self._func: Callable[[PluginPayload, PluginContext], Awaitable[PluginResult]] = partial(
                 plugin_ref.plugin.invoke_hook, hook
