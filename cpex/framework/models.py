@@ -12,6 +12,7 @@ the base plugin layer including configurations, and contexts.
 # Standard
 import logging
 import os
+import re
 from enum import Enum, StrEnum
 from pathlib import Path
 from typing import Any, Generic, List, Optional, Self, TypeVar, Union
@@ -1655,9 +1656,6 @@ class PluginPackageInfo(BaseModel):
             if not pypi_package.strip():
                 raise ValueError("PyPI package name cannot be empty or whitespace")
 
-            # Check for valid characters
-            import re
-
             if not re.match(r"^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$", pypi_package):
                 raise ValueError(
                     f"Invalid PyPI package name '{pypi_package}'. "
@@ -1690,8 +1688,6 @@ class PluginPackageInfo(BaseModel):
                 raise ValueError("Git repository URL cannot be empty or whitespace")
 
             # Support common Git URL formats: https://, git://, ssh://, git@
-            import re
-
             git_url_pattern = re.compile(
                 r"^(https?://|git://|git@)" r"[a-zA-Z0-9._-]+" r"(/|:)" r"[a-zA-Z0-9._/-]+" r"(\.git)?$"
             )
@@ -1729,8 +1725,6 @@ class PluginPackageInfo(BaseModel):
 
             # Git refs can contain alphanumeric characters, hyphens, underscores, slashes, and periods
             # Commit hashes are typically 7-40 hex characters
-            import re
-
             if not re.match(r"^[a-zA-Z0-9._/-]+$", git_branch_tag_commit):
                 raise ValueError(
                     f"Invalid Git branch/tag/commit '{git_branch_tag_commit}'. "
@@ -1770,8 +1764,6 @@ class PluginPackageInfo(BaseModel):
                 raise ValueError("Version constraint cannot be empty or whitespace")
 
             # Validate semantic version constraint format (e.g., ">=1.0.0,<2.0.0", "~=1.2.3", "==1.0.0")
-            import re
-
             # Pattern for version specifiers: operator + optional space + version number
             version_pattern = re.compile(r"^(==|!=|<=|>=|<|>|~=|===)\s*" r"\d+(\.\d+)*" r"([a-zA-Z0-9._-]*)?$")
 
