@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Location: ./cpex/framework/isolated/server.py
+"""Location: ./cpex/framework/isolated/worker.py
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
 Authors: Ted Habeck, Fred Araujo
