@@ -177,9 +177,9 @@ class IsolatedVenvPlugin(Plugin):
 
         # Create the EnvBuilder with common options
         builder = venv.EnvBuilder(
-            system_site_packages=True,  # Don't include system site-packages
+            system_site_packages=False,  # Don't include system site-packages
             clear=False,  # Don't clear existing venv if it exists
-            symlinks=False,  # Use symlinks (recommended on Unix-like systems)
+            symlinks=True,  # Use symlinks (recommended on Unix-like systems)
             upgrade=False,  # Don't upgrade existing venv
             with_pip=True,  # Install pip in the venv
             prompt=None,  # Use default prompt (directory name)
@@ -210,7 +210,7 @@ class IsolatedVenvPlugin(Plugin):
         requirements_file = self.plugin_path / self.config.config["requirements_file"]
 
         # Create venv with caching support
-        self.venv = await self.create_venv(venv_path=venv_path, requirements_file=requirements_file, use_cache=True)
+        await self.create_venv(venv_path=venv_path, requirements_file=requirements_file, use_cache=True)
 
         self.comm = VenvProcessCommunicator(venv_path)
 
