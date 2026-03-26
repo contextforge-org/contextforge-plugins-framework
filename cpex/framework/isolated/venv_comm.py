@@ -62,9 +62,10 @@ class VenvProcessCommunicator:
         """
         requirements_path = Path(requirements_file)
         if requirements_path.exists():
-            rc = subprocess.check_call([self.python_executable, "-m", "pip", "install", "-r", requirements_file])
-            if rc != 0:
-                raise Exception(f"Failed to install requirements from {requirements_file}")
+            try:
+                subprocess.check_call([self.python_executable, "-m", "pip", "install", "-r", requirements_file])
+            except Exception as e:
+                raise RuntimeError(f"Failed to install requirements from {requirements_file}") from e
 
     def start_worker(self, script_path: str) -> None:
         """
@@ -103,7 +104,7 @@ class VenvProcessCommunicator:
 
         except Exception as e:
             self.running = False
-            raise RuntimeError(f"Failed to start worker process: {e}")
+            raise RuntimeError(f"Failed to start worker process: {e}") from e
 
     def _read_stderr(self) -> None:
         """Background thread to read and log stderr from worker process."""
