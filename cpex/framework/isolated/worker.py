@@ -13,11 +13,12 @@ import hashlib
 import importlib.metadata
 import json
 import logging
+import os
 import platform
 import sys
 from pathlib import Path
 from types import ModuleType
-from typing import Type, cast
+from typing import List, Type, cast
 
 from cpex.framework.base import HookRef, Plugin, PluginRef
 from cpex.framework.constants import HOOK_TYPE
@@ -70,11 +71,12 @@ def get_environment_info():
     }
 
 
-def get_proper_config(name, module_path):
+def get_proper_config(name):
     """
     Load a config which has all it's proper decorations
     """
-    plugin_loader_config = ConfigLoader.load_config(Path(f"{module_path}/config.yaml").resolve(), use_jinja=False)
+    plugin_config_file = os.environ.get("PLUGINS_CONFIG_FILE", "plugins/config.yaml")
+    plugin_loader_config = ConfigLoader.load_config(Path(plugin_config_file).resolve(), use_jinja=False)
     plugins: list[dict] = []
     config = None
     if plugin_loader_config.plugins:
@@ -102,21 +104,18 @@ async def process_task(task_data, tp: TaskProcessor):
         # relative path from project root.
         json_config = task_data.get("config")
         config_raw = json.loads(json_config)
-        module_path: str = task_data.get("script_path")
-        
-        # Security: Validate module_path to prevent directory traversal
-        if ".." in module_path or module_path.startswith("/"):
-            raise ValueError(f"Invalid module_path: '{module_path}' - path traversal not allowed")
-        
-        if tp.module_path_hash != tp.compute_hash(module_path) or tp.config_hash != tp.compute_hash(json_config):
-            # pull the resolved plugin path and only add the module path if it has the same root
+        module_paths: List[str] = task_data.get("plugin_dirs")
+        for module_path in module_paths:
             path = Path(module_path).resolve()
             resolved_module_path = str(path)
             if path.exists():
                 sys.path.append(resolved_module_path)
             else:
                 raise RuntimeError(f"plugin module_path '{resolved_module_path}' does not exist.")
-            config = get_proper_config(config_raw.get("name"), module_path)
+
+        if tp.config_hash != tp.compute_hash(json_config):
+            # pull the resolved plugin path and only add the module path if it has the same root
+            config = get_proper_config(config_raw.get("name"))
             hook_type = task_data.get(HOOK_TYPE)
             cls_name: str = task_data.get("class_name")
             mod_name, n_cls_name = parse_class_name(cls_name)

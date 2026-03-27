@@ -23,8 +23,6 @@ plugins:
       # Plugin config dict passed to the plugin constructor
       class_name: "{{ cookiecutter.plugin_slug }}.plugin.{{ class_name }}"
       requirements_file: "requirements.txt"
-      # essentially the plugin folder hosting the plugin
-      script_path: "{{ cookiecutter.plugin_slug }}"
 
 # Plugin directories to scan
 plugin_dirs:

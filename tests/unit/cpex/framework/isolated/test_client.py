@@ -29,7 +29,6 @@ class TestIsolatedVenvPlugin:
     def mock_config(self, tmp_path):
         """Create a mock plugin configuration."""
         venv_path = tmp_path / ".venv"
-        script_path = "tests/unit/cpex/fixtures/plugins/isolated"
         requirements_file = tmp_path / "test_plugin" / "requirements.txt"
 
         config_dict = {
@@ -43,7 +42,6 @@ class TestIsolatedVenvPlugin:
                 "class_name": "test_plugin.TestPlugin",
                 "venv_path": venv_path,
                 "requirements_file": requirements_file,
-                "script_path": script_path
             }
         }
 
@@ -63,11 +61,10 @@ class TestIsolatedVenvPlugin:
         )
         return plugin_context
 
-    def test_init(self, plugin, mock_config):
+    def test_init(self, plugin):
         """Test plugin initialization."""
         assert plugin.name == "test_plugin"
         assert plugin.implementation == "Python"
-        assert plugin.script_path == mock_config.config["script_path"]
         assert plugin.comm is None
 
     @pytest.mark.asyncio

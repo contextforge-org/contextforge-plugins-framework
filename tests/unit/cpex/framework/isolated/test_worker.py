@@ -22,6 +22,14 @@ from cpex.framework.isolated.worker import TaskProcessor, get_environment_info, 
 class TestWorkerFunctions:
     """Test suite for worker.py functions."""
 
+    @pytest.fixture
+    def mock_plugin_dirs(self, tmp_path):
+        """ensure that the plugins directory exists"""
+        plugin_dirs = tmp_path / "plugins"
+        tmp = Path(plugin_dirs)
+        tmp.mkdir(parents=True, exist_ok=True)
+        return [str(plugin_dirs.resolve())]
+
     def test_get_environment_info(self):
         """Test getting environment information."""
         info = get_environment_info()
@@ -48,7 +56,7 @@ class TestWorkerFunctions:
         mock_config.plugins = [mock_plugin]
         mock_load_config.return_value = mock_config
 
-        result = get_proper_config("test_plugin", "plugins")
+        result = get_proper_config("test_plugin")
 
         assert result is not None
         assert result.name == "test_plugin"
@@ -63,7 +71,7 @@ class TestWorkerFunctions:
         mock_config.plugins = [mock_plugin]
         mock_load_config.return_value = mock_config
 
-        result = get_proper_config("test_plugin", "plugins")
+        result = get_proper_config("test_plugin")
 
         assert result is None
 
@@ -74,7 +82,7 @@ class TestWorkerFunctions:
         mock_config.plugins = None
         mock_load_config.return_value = mock_config
 
-        result = get_proper_config("test_plugin", "plugins")
+        result = get_proper_config("test_plugin")
 
         assert result is None
 
@@ -95,7 +103,7 @@ class TestWorkerFunctions:
     @patch("cpex.framework.isolated.worker.get_proper_config")
     @patch("cpex.framework.isolated.worker.importlib.import_module")
     @patch("cpex.framework.isolated.worker.PluginExecutor")
-    async def test_process_task_load_and_run_hook_success(self, mock_executor_class, mock_import, mock_get_config):
+    async def test_process_task_load_and_run_hook_success(self, mock_executor_class, mock_import, mock_get_config, mock_plugin_dirs):
         """Test processing load_and_run_hook task successfully."""
         # Setup mock config
         mock_config = MagicMock()
@@ -127,7 +135,7 @@ class TestWorkerFunctions:
         task_data = {
             "task_type": "load_and_run_hook",
             "config": json.dumps(config_dict),
-            "script_path": "plugins",
+            "plugin_dirs": mock_plugin_dirs,
             "class_name": "test_plugin.TestPlugin",
             "hook_type": "tool_pre_invoke",
             "payload": {"name": "test_tool", "args": {}},
@@ -150,7 +158,6 @@ class TestWorkerFunctions:
         task_data = {
             "task_type": "load_and_run_hook",
             "config": json.dumps(config_dict),
-            "script_path": "plugins",
             "class_name": "test_plugin.TestPlugin",
             "hook_type": "tool_pre_invoke",
             "payload": {},
@@ -164,7 +171,7 @@ class TestWorkerFunctions:
     @pytest.mark.asyncio
     @patch("cpex.framework.isolated.worker.get_proper_config")
     @patch("cpex.framework.isolated.worker.importlib.import_module")
-    async def test_process_task_load_and_run_hook_import_error(self, mock_import, mock_get_config):
+    async def test_process_task_load_and_run_hook_import_error(self, mock_import, mock_get_config, mock_plugin_dirs):
         """Test processing load_and_run_hook task with import error."""
         mock_config = MagicMock()
         mock_get_config.return_value = mock_config
@@ -175,8 +182,8 @@ class TestWorkerFunctions:
         task_data = {
             "task_type": "load_and_run_hook",
             "config": json.dumps(config_dict),
-            "script_path": "plugins",
             "class_name": "test_plugin.TestPlugin",
+            "plugin_dirs": mock_plugin_dirs,
             "hook_type": "tool_pre_invoke",
             "payload": {},
             "context": {"state": {}, "global_context": {}, "metadata": {}},
@@ -189,7 +196,7 @@ class TestWorkerFunctions:
     @patch("cpex.framework.isolated.worker.get_proper_config")
     @patch("cpex.framework.isolated.worker.importlib.import_module")
     @patch("cpex.framework.isolated.worker.PluginExecutor")
-    async def test_process_task_with_different_hook_types(self, mock_executor_class, mock_import, mock_get_config):
+    async def test_process_task_with_different_hook_types(self, mock_executor_class, mock_import, mock_get_config, mock_plugin_dirs):
         """Test processing tasks with different hook types."""
         # Setup mocks
         mock_config = MagicMock()
@@ -222,7 +229,7 @@ class TestWorkerFunctions:
             task_data = {
                 "task_type": "load_and_run_hook",
                 "config": json.dumps(config_dict),
-                "script_path": "plugins",
+                "plugin_dirs": mock_plugin_dirs,
                 "class_name": "test_plugin.TestPlugin",
                 "hook_type": hook_type,
                 "payload": {},
@@ -244,7 +251,7 @@ class TestWorkerFunctions:
     @patch("cpex.framework.isolated.worker.get_proper_config")
     @patch("cpex.framework.isolated.worker.importlib.import_module")
     @patch("cpex.framework.isolated.worker.PluginExecutor")
-    async def test_process_task_with_metadata(self, mock_executor_class, mock_import, mock_get_config):
+    async def test_process_task_with_metadata(self, mock_executor_class, mock_import, mock_get_config, mock_plugin_dirs):
         """Test processing task with metadata in context."""
         mock_config = MagicMock()
         mock_get_config.return_value = mock_config
@@ -273,8 +280,8 @@ class TestWorkerFunctions:
         task_data = {
             "task_type": "load_and_run_hook",
             "config": json.dumps(config_dict),
-            "script_path": "plugins",
             "class_name": "test_plugin.TestPlugin",
+            "plugin_dirs": mock_plugin_dirs,
             "hook_type": "tool_pre_invoke",
             "payload": {"name": "test_tool"},
             "context": {
@@ -402,7 +409,6 @@ class TestMainFunction:
         task_data = {
             "task_type": "load_and_run_hook",
             "config": json.dumps(config_dict),
-            "script_path": "plugins",
             "class_name": "test_plugin.TestPlugin",
             "hook_type": "tool_pre_invoke",
             "payload": {"name": "test_tool"},

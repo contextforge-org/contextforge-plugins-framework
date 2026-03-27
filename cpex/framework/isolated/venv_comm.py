@@ -87,6 +87,7 @@ class VenvProcessCommunicator:
                 text=True,
                 bufsize=1,  # Line buffered
                 cwd=os.getcwd(),
+                env={'PLUGINS_CONFIG_FILE': os.environ.get("PLUGINS_CONFIG_FILE", "plugins/config.yaml")}
             )
 
             self.running = True

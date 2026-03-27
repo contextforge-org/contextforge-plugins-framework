@@ -67,10 +67,7 @@ plugins:
         # Create manager
         manager = PluginManager(integration_config_path)
         
-        # This will fail because the config path doesn't exist in the test environment
-        # but we can test the structure
-        with pytest.raises(RuntimeError):
-            await manager.initialize()
+        await manager.initialize()
 
     @pytest.mark.asyncio
     @patch("cpex.framework.isolated.client.VenvProcessCommunicator")

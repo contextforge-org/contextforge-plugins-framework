@@ -17,6 +17,7 @@ import os
 import shutil
 import sys
 import venv
+import yaml
 from pathlib import Path
 
 from typing_extensions import Any, Optional
@@ -26,6 +27,7 @@ from cpex.framework.constants import CONTEXT, HOOK_TYPE, PAYLOAD, PLUGIN_NAME
 from cpex.framework.errors import PluginError, convert_exception_to_error
 from cpex.framework.hooks.registry import get_hook_registry
 from cpex.framework.isolated.venv_comm import VenvProcessCommunicator
+from cpex.framework.loader.config import ConfigLoader
 from cpex.framework.models import PluginConfig, PluginContext, PluginErrorModel, PluginPayload, PluginResult
 
 logger = logging.getLogger(__name__)
@@ -39,13 +41,16 @@ class IsolatedVenvPlugin(Plugin):
         super().__init__(config)
         self.implementation = "Python"
         self.comm = None
-        self.script_path: str = config.config["script_path"]
-        path = Path(self.config.config.get("script_path")).resolve()
+        tmp  = os.environ.get("PLUGINS_CONFIG_FILE","plugins/config.yaml")
+        plugin_loader_config = ConfigLoader.load_config(Path(tmp).resolve(), use_jinja=False)
+        self.plugin_dirs = plugin_loader_config.plugin_dirs
+        # use the first plugin dir specified in the plugin configuration file.
+        path = Path(self.plugin_dirs[0]).resolve()
         class_root = self.config.config.get("class_name").split(".")[0]
         cache_root = path / class_root
         self.plugin_path = cache_root
         if not cache_root.exists():
-            raise RuntimeError("plugin script_path does not exist")
+            raise RuntimeError(f"plugin path does not exist: {str(cache_root)}")
         self.cache_dir: Path = cache_root / ".cpex" / "venv_cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -269,7 +274,6 @@ class IsolatedVenvPlugin(Plugin):
             Task dictionary ready for transmission
         """
         # Cache config lookups
-        script_path = self.config.config["script_path"]
         class_name = self.config.config["class_name"]
         safe_config = self.config.get_safe_config()
 
@@ -279,7 +283,7 @@ class IsolatedVenvPlugin(Plugin):
 
         return {
             "task_type": "load_and_run_hook",
-            "script_path": script_path,
+            "plugin_dirs": self.plugin_dirs,
             "class_name": class_name,
             "config": safe_config,
             HOOK_TYPE: hook_type,
