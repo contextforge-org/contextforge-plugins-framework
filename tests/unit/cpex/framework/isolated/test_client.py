@@ -100,7 +100,7 @@ class TestIsolatedVenvPlugin:
     @patch.object(IsolatedVenvPlugin, "create_venv")
     async def test_initialize_success(self, mock_create_venv, mock_comm_class, plugin):
         """Test successful plugin initialization."""
-        mock_create_venv.return_value = None
+        mock_create_venv.return_value = True
         mock_comm = MagicMock()
         mock_comm_class.return_value = mock_comm
 
@@ -641,7 +641,7 @@ class TestIsolatedVenvPlugin:
     async def test_initialize_with_invalid_cache(self, mock_save_metadata, mock_cache_valid, mock_create_venv, mock_comm_class, plugin):
         """Test initialize with invalid cache installs requirements."""
         mock_cache_valid.return_value = False
-        mock_create_venv.return_value = None
+        mock_create_venv.return_value = True
         mock_comm = MagicMock()
         mock_comm_class.return_value = mock_comm
         

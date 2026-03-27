@@ -150,7 +150,7 @@ class IsolatedVenvPlugin(Plugin):
 
     async def create_venv(
         self, venv_path: str = ".venv", requirements_file: Optional[str] = None, use_cache: bool = True
-    ) -> None:
+    ) -> bool:
         """Create a new venv environment with caching support.
 
         Args:
@@ -164,7 +164,7 @@ class IsolatedVenvPlugin(Plugin):
         if use_cache and requirements_file and self._is_venv_cache_valid(venv_path, requirements_file):
             logger.info("Using cached virtual environment at: %s", venv_path_obj.resolve())
             print(f"✓ Using cached virtual environment at: {venv_path_obj.resolve()}")
-            return
+            return False
 
         # If cache is invalid or not using cache, remove existing venv
         if venv_path_obj.exists():
@@ -193,7 +193,7 @@ class IsolatedVenvPlugin(Plugin):
             print("\nTo activate the virtual environment:")
             print(f"  source {venv_path}/bin/activate  # On Unix/macOS")
             print(f"  {venv_path}\\Scripts\\activate  # On Windows")
-
+            return True
         except Exception as e:
             print(f"✗ Error creating virtual environment: {e}")
             raise
@@ -210,14 +210,14 @@ class IsolatedVenvPlugin(Plugin):
         requirements_file = self.plugin_path / self.config.config["requirements_file"]
 
         # Create venv with caching support
-        await self.create_venv(venv_path=venv_path, requirements_file=requirements_file, use_cache=True)
+        new_venv = await self.create_venv(venv_path=venv_path, requirements_file=requirements_file, use_cache=True)
 
         self.comm = VenvProcessCommunicator(venv_path)
 
         # Only install requirements if venv was newly created or cache was invalid
         # Check if we need to install requirements
-        if not self._is_venv_cache_valid(venv_path, requirements_file):
-            logger.info("Installing requirements in new venv")
+        if new_venv:
+            logger.info("Installing requirements in venv")
             self.comm.install_requirements(requirements_file)
             # Save metadata after successful installation
             self._save_cache_metadata(venv_path, requirements_file)
