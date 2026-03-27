@@ -17,7 +17,6 @@ import os
 import shutil
 import sys
 import venv
-import yaml
 from pathlib import Path
 
 from typing_extensions import Any, Optional
@@ -41,7 +40,7 @@ class IsolatedVenvPlugin(Plugin):
         super().__init__(config)
         self.implementation = "Python"
         self.comm = None
-        tmp  = os.environ.get("PLUGINS_CONFIG_FILE","plugins/config.yaml")
+        tmp = os.environ.get("PLUGINS_CONFIG_FILE", "plugins/config.yaml")
         plugin_loader_config = ConfigLoader.load_config(Path(tmp).resolve(), use_jinja=False)
         self.plugin_dirs = plugin_loader_config.plugin_dirs
         # use the first plugin dir specified in the plugin configuration file.
