@@ -116,7 +116,7 @@ class IsolatedVenvPlugin(Plugin):
             # Compare hashes
             cached_hash = metadata.get("requirements_hash")
             if cached_hash != current_hash:
-                logger.info("Requirements changed. Cached hash: %s, Current hash: %s",cached_hash, current_hash)
+                logger.info("Requirements changed. Cached hash: %s, Current hash: %s", cached_hash, current_hash)
                 return False
 
             logger.info("Valid venv cache found for %s", venv_path)

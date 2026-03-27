@@ -9,6 +9,7 @@ Module that contains plugin server code to invoke hooks in native plugins.
 """
 
 import asyncio
+import hashlib
 import importlib.metadata
 import json
 import logging
@@ -26,6 +27,39 @@ from cpex.framework.models import PluginContext
 from cpex.framework.utils import parse_class_name
 
 logger = logging.getLogger(__name__)
+
+
+class TaskProcessor:
+    """
+    A Caching task processor that only reloads the plugin if the config has changed.
+    """
+
+    config_hash: str
+    module_path_hash: str
+    hook_ref: HookRef | None
+    executor: PluginExecutor | None
+
+    def __init__(self) -> None:
+        """Initialize defaults."""
+        hasher = hashlib.sha256()
+        hasher.update(b"")
+        self.config_hash = hasher.hexdigest()
+        self.module_path_hash = self.config_hash
+        self.hook_ref = None
+        self.executor = None
+
+    def compute_hash(self, json_config_or_module_path: str):
+        """Compute the hash of the supplied string"""
+        hasher = hashlib.sha256()
+        hasher.update(json_config_or_module_path.encode())
+        return hasher.hexdigest()
+
+    def initialize(self, hook_ref: HookRef, executor: PluginExecutor, json_config: str, module_path: str):
+        """Assign locals, and compute hashes."""
+        self.hook_ref = hook_ref
+        self.executor = executor
+        self.config_hash = self.compute_hash(json_config_or_module_path=json_config)
+        self.module_path_hash = self.compute_hash(json_config_or_module_path=module_path)
 
 
 def get_environment_info():
@@ -55,7 +89,7 @@ def get_proper_config(name, module_path):
     return None
 
 
-async def process_task(task_data):
+async def process_task(task_data, tp: TaskProcessor):
     """Process the task received from parent."""
     task_type = task_data.get("task_type")
 
@@ -71,28 +105,33 @@ async def process_task(task_data):
         json_config = task_data.get("config")
         config_raw = json.loads(json_config)
         module_path: str = task_data.get("script_path")
-        sys.path.append(str(Path(module_path).resolve()))
-        config = get_proper_config(config_raw.get("name"), module_path)
-        hook_type = task_data.get(HOOK_TYPE)
-        cls_name: str = task_data.get("class_name")
-        mod_name, n_cls_name = parse_class_name(cls_name)
-        module: ModuleType = importlib.import_module(mod_name)
-        # cool, we found the module, and verified it implemented the hook type.
-        class_ = getattr(module, n_cls_name)
-        plugin_type = cast(Type[Plugin], class_)
-        plugin = plugin_type(config)
-        await plugin.initialize()
-        # now invoke the hook
-        plugin_ref = PluginRef(plugin)
-        hook_ref = HookRef(hook_type, plugin_ref)
-        executor = PluginExecutor(None, 30)
+        if tp.module_path_hash != tp.compute_hash(module_path) or tp.config_hash != tp.compute_hash(json_config):
+            sys.path.append(str(Path(module_path).resolve()))
+            config = get_proper_config(config_raw.get("name"), module_path)
+            hook_type = task_data.get(HOOK_TYPE)
+            cls_name: str = task_data.get("class_name")
+            mod_name, n_cls_name = parse_class_name(cls_name)
+            module: ModuleType = importlib.import_module(mod_name)
+            # cool, we found the module, and verified it implemented the hook type.
+            class_ = getattr(module, n_cls_name)
+            plugin_type = cast(Type[Plugin], class_)
+            plugin = plugin_type(config)
+            await plugin.initialize()
+            # now invoke the hook
+            plugin_ref = PluginRef(plugin)
+            hook_ref = HookRef(hook_type, plugin_ref)
+            executor = PluginExecutor(None, 30)
+            tp.initialize(hook_ref=hook_ref, executor=executor, json_config=json_config, module_path=module_path)
         # retrieve the context
         context = task_data.get("context")
         plugin_context = PluginContext(
             state=context.get("state"), global_context=context.get("global_context"), metadata=context.get("metadata")
         )
-        result = await executor.execute_plugin(
-            hook_ref, payload=task_data.get("payload"), local_context=plugin_context, violations_as_exceptions=False
+        result = await tp.executor.execute_plugin(
+            hookref=tp.hook_ref,
+            payload=task_data.get("payload"),
+            local_context=plugin_context,
+            violations_as_exceptions=False,
         )
         return result
 
@@ -102,6 +141,8 @@ async def main():
     logger.info("Worker process started, waiting for tasks...")
 
     try:
+        # Cache the plugin so that it only has to be initialized once
+        tp = TaskProcessor()
         # Continuously read and process tasks
         while True:
             try:
@@ -125,7 +166,7 @@ async def main():
                     break
 
                 # Process the task
-                response = await process_task(task_data)
+                response = await process_task(task_data, tp)
 
                 # Serialize response
                 if response:

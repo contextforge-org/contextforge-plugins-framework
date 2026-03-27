@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
-from cpex.framework.isolated.worker import get_environment_info, get_proper_config, main, process_task
+from cpex.framework.isolated.worker import TaskProcessor, get_environment_info, get_proper_config, main, process_task
 
 
 class TestWorkerFunctions:
@@ -81,9 +81,10 @@ class TestWorkerFunctions:
     @pytest.mark.asyncio
     async def test_process_task_info(self):
         """Test processing info task."""
-        task_data = {"task_type": "info"}
-
-        result = await process_task(task_data)
+        config_dict = {"name": "test_plugin", "kind": "isolated_venv", "config": {}}
+        task_data = {"task_type": "info", "config": json.dumps(config_dict)}
+        tp = TaskProcessor()
+        result = await process_task(task_data, tp)
 
         assert result["status"] == "success"
         assert "environment" in result
@@ -132,8 +133,8 @@ class TestWorkerFunctions:
             "payload": {"name": "test_tool", "args": {}},
             "context": {"state": {}, "global_context": {"request_id": "req-123"}, "metadata": {}},
         }
-
-        result = await process_task(task_data)
+        tp = TaskProcessor()
+        result = await process_task(task_data, tp=tp)
 
         assert result is not None
         mock_plugin_instance.initialize.assert_called_once()
@@ -155,10 +156,10 @@ class TestWorkerFunctions:
             "payload": {},
             "context": {"state": {}, "global_context": {}, "metadata": {}},
         }
-
+        tp = TaskProcessor()
         # Should raise an error or return None
         with pytest.raises((AttributeError, TypeError)):
-            await process_task(task_data)
+            await process_task(task_data, tp)
 
     @pytest.mark.asyncio
     @patch("cpex.framework.isolated.worker.get_proper_config")
@@ -180,9 +181,9 @@ class TestWorkerFunctions:
             "payload": {},
             "context": {"state": {}, "global_context": {}, "metadata": {}},
         }
-
+        tp = TaskProcessor()
         with pytest.raises(ImportError):
-            await process_task(task_data)
+            await process_task(task_data, tp)
 
     @pytest.mark.asyncio
     @patch("cpex.framework.isolated.worker.get_proper_config")
@@ -214,6 +215,7 @@ class TestWorkerFunctions:
         mock_executor_class.return_value = mock_executor
 
         hook_types = ["tool_pre_invoke", "tool_post_invoke", "prompt_pre_fetch", "prompt_post_fetch"]
+        tp = TaskProcessor()
 
         for hook_type in hook_types:
             config_dict = {"name": "test_plugin", "kind": "isolated_venv"}
@@ -226,17 +228,16 @@ class TestWorkerFunctions:
                 "payload": {},
                 "context": {"state": {}, "global_context": {"request_id": "req-123"}, "metadata": {}},
             }
-
-            result = await process_task(task_data)
+            result = await process_task(task_data, tp)
             assert result is not None
 
     @pytest.mark.asyncio
     async def test_process_task_unknown_task_type(self):
         """Test processing task with unknown task type."""
         task_data = {"task_type": "unknown_type"}
-
+        tp = TaskProcessor()
         # Should return None or handle gracefully
-        result = await process_task(task_data)
+        result = await process_task(task_data, tp)
         assert result is None
 
     @pytest.mark.asyncio
@@ -282,8 +283,9 @@ class TestWorkerFunctions:
                 "metadata": {"custom": "data"},
             },
         }
+        tp = TaskProcessor()
 
-        result = await process_task(task_data)
+        result = await process_task(task_data, tp)
 
         assert result is not None
         # Verify executor was called with proper context
