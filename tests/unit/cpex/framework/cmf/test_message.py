@@ -489,7 +489,6 @@ class TestMessage:
         assert msg.role == Role.USER
         assert msg.schema_version == "2.0"
         assert msg.channel is None
-        assert msg.extensions is None
         assert len(msg.content) == 1
 
     def test_empty_content(self):

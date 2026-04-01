@@ -130,7 +130,6 @@ class PluginExecutor:
             default_hook_policy if default_hook_policy else settings.default_hook_policy
         )
         self._runtime_disabled: set[str] = set()
-        self._serial_phase_state: tuple[Optional[PluginPayload], Optional[str]] = (None, None)
 
     async def execute(
         self,
@@ -190,6 +189,7 @@ class PluginExecutor:
         res_local_contexts = {}
         combined_metadata: dict[str, Any] = {}
         current_payload: PluginPayload | None = None
+        current_extensions: Extensions | None = None
         decision_plugin_name: Optional[str] = None
 
         sequential_refs, transform_refs, audit_refs, concurrent_refs, fire_and_forget_refs = self._group_by_mode(
@@ -202,7 +202,7 @@ class PluginExecutor:
         concurrent_semaphore = asyncio.Semaphore(pool) if pool else None
 
         # SEQUENTIAL: sequential, chained execution — can halt pipeline
-        halt_result = await self._run_serial_phase(
+        halt_result, (current_payload, decision_plugin_name, current_extensions) = await self._run_serial_phase(
             hook_refs=sequential_refs,
             mode_label="SEQUENTIAL",
             payload=payload,
@@ -217,17 +217,16 @@ class PluginExecutor:
             decision_plugin_name=decision_plugin_name,
             apply_modifications=True,
             allow_blocking=True,
+            current_extensions=current_extensions,
             fire_and_forget_refs=fire_and_forget_refs,
             fire_and_forget_semaphore=fire_and_forget_semaphore,
             extensions=extensions,
         )
         if halt_result is not None:
             return halt_result
-        # Update mutable state from sequential phase
-        current_payload, decision_plugin_name = self._serial_phase_state
 
         # TRANSFORM: serial, chained execution — can modify payloads but cannot halt pipeline
-        await self._run_serial_phase(
+        _, (current_payload, decision_plugin_name, current_extensions) = await self._run_serial_phase(
             hook_refs=transform_refs,
             mode_label="TRANSFORM",
             payload=payload,
@@ -242,12 +241,12 @@ class PluginExecutor:
             decision_plugin_name=decision_plugin_name,
             apply_modifications=True,
             allow_blocking=False,
+            current_extensions=current_extensions,
             extensions=extensions,
         )
-        current_payload, decision_plugin_name = self._serial_phase_state
 
         # AUDIT: serial execution — observe-only (no modifications, no blocking)
-        await self._run_serial_phase(
+        _, (current_payload, decision_plugin_name, current_extensions) = await self._run_serial_phase(
             hook_refs=audit_refs,
             mode_label="AUDIT",
             payload=payload,
@@ -262,9 +261,9 @@ class PluginExecutor:
             decision_plugin_name=decision_plugin_name,
             apply_modifications=False,
             allow_blocking=False,
+            current_extensions=current_extensions,
             extensions=extensions,
         )
-        current_payload, decision_plugin_name = self._serial_phase_state
 
         # CONCURRENT: parallel execution with fail-fast on first blocking result
         if concurrent_refs:
@@ -344,7 +343,11 @@ class PluginExecutor:
 
         return (
             PluginResult(
-                continue_processing=True, modified_payload=current_payload, violation=None, metadata=combined_metadata
+                continue_processing=True,
+                modified_payload=current_payload,
+                modified_extensions=current_extensions,
+                violation=None,
+                metadata=combined_metadata,
             ),
             res_local_contexts,
         )
@@ -425,10 +428,14 @@ class PluginExecutor:
         decision_plugin_name: Optional[str],
         apply_modifications: bool,
         allow_blocking: bool,
+        current_extensions: Optional[Extensions] = None,
         fire_and_forget_refs: Optional[list[HookRef]] = None,
         fire_and_forget_semaphore: Optional[asyncio.Semaphore] = None,
         extensions: Optional[Extensions] = None,
-    ) -> Optional[tuple[PluginResult, PluginContextTable | None]]:
+    ) -> tuple[
+        Optional[tuple[PluginResult, PluginContextTable | None]],
+        tuple[Optional[PluginPayload], Optional[str], Optional[Extensions]],
+    ]:
         """Run a serial execution phase (SEQUENTIAL, TRANSFORM, or AUDIT).
 
         Args:
@@ -450,8 +457,8 @@ class PluginExecutor:
             fire_and_forget_semaphore: Semaphore for fire-and-forget tasks (only used when allow_blocking=True).
 
         Returns:
-            A halt result tuple if the pipeline was halted, or None to continue.
-            Updates ``self._serial_phase_state`` with the latest (current_payload, decision_plugin_name).
+            A tuple of (halt_result, phase_state). halt_result is None if pipeline continues.
+            phase_state is (current_payload, decision_plugin_name, current_extensions).
         """
         for hook_ref in hook_refs:
             local_context = self._prepare_plugin_context(hook_ref, global_context, local_contexts, res_local_contexts)
@@ -489,6 +496,10 @@ class PluginExecutor:
                         mode_label.lower(),
                     )
 
+            # Accumulate modified_extensions (last writer wins)
+            if result.modified_extensions is not None:
+                current_extensions = result.modified_extensions
+
             if not result.continue_processing:
                 violation_detail = f": [{result.violation.code}] {result.violation.reason}" if result.violation else ""
                 if allow_blocking:
@@ -499,8 +510,8 @@ class PluginExecutor:
                         hook_type,
                         violation_detail,
                     )
-                    self._serial_phase_state = (current_payload, decision_plugin_name)
-                    return self._build_halt_result(
+                    state = (current_payload, decision_plugin_name, current_extensions)
+                    halt = self._build_halt_result(
                         current_payload,
                         result.violation,
                         combined_metadata,
@@ -513,6 +524,7 @@ class PluginExecutor:
                         decision_plugin_name,
                         extensions=extensions,
                     )
+                    return halt, state
                 else:
                     logger.warning(
                         "%s plugin %s returned continue_processing=False on hook %s%s; "
@@ -523,8 +535,7 @@ class PluginExecutor:
                         violation_detail,
                     )
 
-        self._serial_phase_state = (current_payload, decision_plugin_name)
-        return None
+        return None, (current_payload, decision_plugin_name, current_extensions)
 
     def _apply_payload_modification(
         self,

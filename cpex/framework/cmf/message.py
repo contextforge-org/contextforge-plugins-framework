@@ -896,12 +896,8 @@ class Message(BaseModel):
     role: Role = Field(description="Who is speaking.")
     content: list[ContentPartUnion] = Field(default_factory=list, description="List of typed content parts.")
     channel: Channel | None = Field(default=None, description="Optional output classification.")
-    extensions: Extensions | None = Field(
-        default=None,
-        description="Contextual metadata (identity, security, governance, etc.).",
-    )
 
-    def iter_views(self, hook: str | None = None) -> Iterator[MessageView]:
+    def iter_views(self, hook: str | None = None, extensions: Extensions | None = None) -> Iterator[MessageView]:
         """Decompose this message into individually addressable MessageViews.
 
         Yields one MessageView per content part. Each view provides a
@@ -938,7 +934,7 @@ class Message(BaseModel):
         """
         from cpex.framework.cmf.view import iter_views  # pylint: disable=import-outside-toplevel
 
-        return iter_views(self, hook=hook)
+        return iter_views(self, hook=hook, extensions=extensions)
 
 
 if TYPE_CHECKING:

@@ -455,7 +455,7 @@ class HookRef:
 
                 # Check for @hook decorator metadata
                 metadata = get_hook_metadata(method)
-                if metadata and metadata.hook_type == hook:
+                if metadata and metadata.matches(hook):
                     self._func = method
                     break
 

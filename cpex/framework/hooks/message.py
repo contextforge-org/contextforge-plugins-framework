@@ -24,10 +24,12 @@ from cpex.framework.models import PluginPayload, PluginResult
 
 
 class MessageHookType(str, Enum):
-    """Message hook points.
+    """Message hook points — metadata on MessagePayload.
 
     The hook type indicates *where* in the pipeline the evaluation
-    is happening, enabling plugins to register for specific locations.
+    is happening. This is carried as metadata on the MessagePayload
+    so plugins can inspect it, but is NOT the hook type used for
+    dispatch. See CmfHookType for dispatch hook types.
 
     Attributes:
         EVALUATE: Generic message evaluation.
@@ -56,6 +58,37 @@ class MessageHookType(str, Enum):
     PROMPT_POST_FETCH = "prompt_post_fetch"
     RESOURCE_PRE_FETCH = "resource_pre_fetch"
     RESOURCE_POST_FETCH = "resource_post_fetch"
+
+
+class CmfHookType(str, Enum):
+    """CMF hook types — dispatch targets for CMF-based plugins.
+
+    These are the hook types that CMF plugins register for. They
+    parallel the legacy hook types (tool_pre_invoke, etc.) but use
+    MessagePayload instead of typed payloads like ToolPreInvokePayload.
+
+    This enables a clean migration path:
+    - Legacy plugins register for "tool_pre_invoke" and get ToolPreInvokePayload
+    - CMF plugins register for "cmf.tool_pre_invoke" and get MessagePayload
+    - The gateway fires both at the same interception point
+
+    The gateway converts legacy payloads to CMF Messages at each point.
+
+    Examples:
+        >>> CmfHookType.TOOL_PRE_INVOKE
+        <CmfHookType.TOOL_PRE_INVOKE: 'cmf.tool_pre_invoke'>
+        >>> CmfHookType.TOOL_PRE_INVOKE.value
+        'cmf.tool_pre_invoke'
+    """
+
+    TOOL_PRE_INVOKE = "cmf.tool_pre_invoke"
+    TOOL_POST_INVOKE = "cmf.tool_post_invoke"
+    LLM_INPUT = "cmf.llm_input"
+    LLM_OUTPUT = "cmf.llm_output"
+    RESOURCE_PRE_FETCH = "cmf.resource_pre_fetch"
+    RESOURCE_POST_FETCH = "cmf.resource_post_fetch"
+    PROMPT_PRE_FETCH = "cmf.prompt_pre_fetch"
+    PROMPT_POST_FETCH = "cmf.prompt_post_fetch"
 
 
 class MessagePayload(PluginPayload):
@@ -98,14 +131,22 @@ def _register_message_hooks() -> None:
 
     Called at module load time. Idempotent — skips registration
     if the hook is already registered.
+
+    Registers both the generic EVALUATE hook and all CMF-specific hooks.
     """
     # First-Party
     from cpex.framework.hooks.registry import get_hook_registry  # pylint: disable=import-outside-toplevel
 
     registry = get_hook_registry()
 
+    # Generic message evaluation hook (legacy)
     if not registry.is_registered(MessageHookType.EVALUATE):
         registry.register_hook(MessageHookType.EVALUATE, MessagePayload, MessageResult)
+
+    # CMF-specific hooks — same payload/result type, different dispatch points
+    for cmf_hook in CmfHookType:
+        if not registry.is_registered(cmf_hook):
+            registry.register_hook(cmf_hook, MessagePayload, MessageResult)
 
 
 _register_message_hooks()

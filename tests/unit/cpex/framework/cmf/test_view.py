@@ -87,8 +87,8 @@ def simple_assistant_msg():
 
 @pytest.fixture
 def full_msg():
-    """A message with full extensions populated."""
-    return Message(
+    """A message and extensions (separated per CMF design)."""
+    msg = Message(
         role=Role.ASSISTANT,
         content=[
             ToolCallContentPart(
@@ -100,58 +100,59 @@ def full_msg():
                 ),
             ),
         ],
-        extensions=Extensions(
-            request=RequestExtension(
-                environment="production",
-                request_id="req-001",
+    )
+    ext = Extensions(
+        request=RequestExtension(
+            environment="production",
+            request_id="req-001",
+        ),
+        agent=AgentExtension(
+            input="Show me Alice's compensation",
+            session_id="sess-001",
+            conversation_id="conv-001",
+            turn=2,
+            agent_id="main-agent",
+            parent_agent_id="orchestrator",
+        ),
+        http=HttpExtension(
+            headers={
+                "Authorization": "Bearer secret-token",
+                "Cookie": "session=abc",
+                "X-Request-ID": "req-001",
+                "Content-Type": "application/json",
+            },
+        ),
+        security=SecurityExtension(
+            labels=frozenset({"CONFIDENTIAL"}),
+            classification="confidential",
+            subject=SubjectExtension(
+                id="user-alice",
+                type=SubjectType.USER,
+                roles=frozenset({"admin", "hr-manager"}),
+                permissions=frozenset({"read:compensation", "tools.execute"}),
+                teams=frozenset({"hr-team"}),
             ),
-            agent=AgentExtension(
-                input="Show me Alice's compensation",
-                session_id="sess-001",
-                conversation_id="conv-001",
-                turn=2,
-                agent_id="main-agent",
-                parent_agent_id="orchestrator",
-            ),
-            http=HttpExtension(
-                headers={
-                    "Authorization": "Bearer secret-token",
-                    "Cookie": "session=abc",
-                    "X-Request-ID": "req-001",
-                    "Content-Type": "application/json",
-                },
-            ),
-            security=SecurityExtension(
-                labels=frozenset({"CONFIDENTIAL"}),
-                classification="confidential",
-                subject=SubjectExtension(
-                    id="user-alice",
-                    type=SubjectType.USER,
-                    roles=frozenset({"admin", "hr-manager"}),
-                    permissions=frozenset({"read:compensation", "tools.execute"}),
-                    teams=frozenset({"hr-team"}),
+            objects={
+                "get_compensation": ObjectSecurityProfile(
+                    managed_by="tool",
+                    permissions=["read:compensation"],
+                    trust_domain="internal",
+                    data_scope=["salary", "bonus"],
                 ),
-                objects={
-                    "get_compensation": ObjectSecurityProfile(
-                        managed_by="tool",
-                        permissions=["read:compensation"],
-                        trust_domain="internal",
-                        data_scope=["salary", "bonus"],
+            },
+            data={
+                "get_compensation": DataPolicy(
+                    apply_labels=["PII", "financial"],
+                    denied_actions=["export", "forward", "log_raw"],
+                    retention=RetentionPolicy(
+                        policy="session",
+                        max_age_seconds=3600,
                     ),
-                },
-                data={
-                    "get_compensation": DataPolicy(
-                        apply_labels=["PII", "financial"],
-                        denied_actions=["export", "forward", "log_raw"],
-                        retention=RetentionPolicy(
-                            policy="session",
-                            max_age_seconds=3600,
-                        ),
-                    ),
-                },
-            ),
+                ),
+            },
         ),
     )
+    return msg, ext
 
 
 # ---------------------------------------------------------------------------
@@ -603,38 +604,38 @@ class TestFlatAccessors:
     """Tests for capability-gated flat accessors."""
 
     def test_base_tier(self, full_msg):
-        view = list(iter_views(full_msg))[0]
+        view = list(iter_views(full_msg[0], extensions=full_msg[1]))[0]
         assert view.environment == "production"
         assert view.request_id == "req-001"
 
     def test_subject(self, full_msg):
-        view = list(iter_views(full_msg))[0]
+        view = list(iter_views(full_msg[0], extensions=full_msg[1]))[0]
         assert view.subject.id == "user-alice"
         assert view.subject.type == SubjectType.USER
 
     def test_roles(self, full_msg):
-        view = list(iter_views(full_msg))[0]
+        view = list(iter_views(full_msg[0], extensions=full_msg[1]))[0]
         assert "admin" in view.roles
         assert "hr-manager" in view.roles
 
     def test_permissions(self, full_msg):
-        view = list(iter_views(full_msg))[0]
+        view = list(iter_views(full_msg[0], extensions=full_msg[1]))[0]
         assert "read:compensation" in view.permissions
 
     def test_teams(self, full_msg):
-        view = list(iter_views(full_msg))[0]
+        view = list(iter_views(full_msg[0], extensions=full_msg[1]))[0]
         assert "hr-team" in view.teams
 
     def test_headers(self, full_msg):
-        view = list(iter_views(full_msg))[0]
+        view = list(iter_views(full_msg[0], extensions=full_msg[1]))[0]
         assert view.headers["Content-Type"] == "application/json"
 
     def test_labels(self, full_msg):
-        view = list(iter_views(full_msg))[0]
+        view = list(iter_views(full_msg[0], extensions=full_msg[1]))[0]
         assert "CONFIDENTIAL" in view.labels
 
     def test_agent_accessors(self, full_msg):
-        view = list(iter_views(full_msg))[0]
+        view = list(iter_views(full_msg[0], extensions=full_msg[1]))[0]
         assert view.agent_input == "Show me Alice's compensation"
         assert view.session_id == "sess-001"
         assert view.conversation_id == "conv-001"
@@ -643,7 +644,7 @@ class TestFlatAccessors:
         assert view.parent_agent_id == "orchestrator"
 
     def test_object_profile(self, full_msg):
-        view = list(iter_views(full_msg))[0]
+        view = list(iter_views(full_msg[0], extensions=full_msg[1]))[0]
         assert view.object is not None
         assert view.object.managed_by == "tool"
         assert view.object.permissions == ["read:compensation"]
@@ -651,7 +652,7 @@ class TestFlatAccessors:
         assert view.object.data_scope == ["salary", "bonus"]
 
     def test_data_policy(self, full_msg):
-        view = list(iter_views(full_msg))[0]
+        view = list(iter_views(full_msg[0], extensions=full_msg[1]))[0]
         assert view.data_policy is not None
         assert "PII" in view.data_policy.apply_labels
         assert "export" in view.data_policy.denied_actions
@@ -684,13 +685,13 @@ class TestFlatAccessors:
                 ToolCallContentPart(content=ToolCall(tool_call_id="tc1", name="tool_a", arguments={})),
                 ToolCallContentPart(content=ToolCall(tool_call_id="tc2", name="tool_b", arguments={})),
             ],
-            extensions=Extensions(
-                security=SecurityExtension(
-                    objects={"tool_a": ObjectSecurityProfile(managed_by="host")},
-                ),
+        )
+        ext = Extensions(
+            security=SecurityExtension(
+                objects={"tool_a": ObjectSecurityProfile(managed_by="host")},
             ),
         )
-        views = list(iter_views(msg))
+        views = list(iter_views(msg, extensions=ext))
         assert views[0].object is not None
         assert views[0].object.managed_by == "host"
         assert views[1].object is None
@@ -705,44 +706,44 @@ class TestHelperMethods:
     """Tests for helper methods on MessageView."""
 
     def test_has_role(self, full_msg):
-        view = list(iter_views(full_msg))[0]
+        view = list(iter_views(full_msg[0], extensions=full_msg[1]))[0]
         assert view.has_role("admin") is True
         assert view.has_role("viewer") is False
 
     def test_has_permission(self, full_msg):
-        view = list(iter_views(full_msg))[0]
+        view = list(iter_views(full_msg[0], extensions=full_msg[1]))[0]
         assert view.has_permission("read:compensation") is True
         assert view.has_permission("write:users") is False
 
     def test_has_label(self, full_msg):
-        view = list(iter_views(full_msg))[0]
+        view = list(iter_views(full_msg[0], extensions=full_msg[1]))[0]
         assert view.has_label("CONFIDENTIAL") is True
         assert view.has_label("SECRET") is False
 
     def test_has_header(self, full_msg):
-        view = list(iter_views(full_msg))[0]
+        view = list(iter_views(full_msg[0], extensions=full_msg[1]))[0]
         assert view.has_header("Content-Type") is True
         assert view.has_header("content-type") is True
         assert view.has_header("X-Missing") is False
 
     def test_get_header_case_insensitive(self, full_msg):
-        view = list(iter_views(full_msg))[0]
+        view = list(iter_views(full_msg[0], extensions=full_msg[1]))[0]
         assert view.get_header("content-type") == "application/json"
         assert view.get_header("CONTENT-TYPE") == "application/json"
 
     def test_get_header_default(self, full_msg):
-        view = list(iter_views(full_msg))[0]
+        view = list(iter_views(full_msg[0], extensions=full_msg[1]))[0]
         assert view.get_header("X-Missing") is None
         assert view.get_header("X-Missing", "fallback") == "fallback"
 
     def test_get_arg(self, full_msg):
-        view = list(iter_views(full_msg))[0]
+        view = list(iter_views(full_msg[0], extensions=full_msg[1]))[0]
         assert view.get_arg("employee_id") == "emp-42"
         assert view.get_arg("missing") is None
         assert view.get_arg("missing", "default") == "default"
 
     def test_has_arg(self, full_msg):
-        view = list(iter_views(full_msg))[0]
+        view = list(iter_views(full_msg[0], extensions=full_msg[1]))[0]
         assert view.has_arg("employee_id") is True
         assert view.has_arg("missing") is False
 
@@ -752,7 +753,7 @@ class TestHelperMethods:
         assert view.has_arg("anything") is False
 
     def test_matches_uri_pattern(self, full_msg):
-        view = list(iter_views(full_msg))[0]
+        view = list(iter_views(full_msg[0], extensions=full_msg[1]))[0]
         assert view.matches_uri_pattern("tool://hr-server/*") is True
         assert view.matches_uri_pattern("tool://hr-server/get_*") is True
         assert view.matches_uri_pattern("tool://other/*") is False
@@ -917,7 +918,7 @@ class TestSerialization:
         assert d["uri"] == "tool://_/execute_sql"
 
     def test_to_dict_strips_sensitive_headers(self, full_msg):
-        view = list(iter_views(full_msg))[0]
+        view = list(iter_views(full_msg[0], extensions=full_msg[1]))[0]
         d = view.to_dict()
         headers = d["extensions"].get("headers", {})
         assert "Authorization" not in headers
@@ -925,7 +926,7 @@ class TestSerialization:
         assert "Content-Type" in headers
 
     def test_to_dict_includes_extensions(self, full_msg):
-        view = list(iter_views(full_msg))[0]
+        view = list(iter_views(full_msg[0], extensions=full_msg[1]))[0]
         d = view.to_dict()
         ext = d["extensions"]
         assert ext["environment"] == "production"
@@ -942,7 +943,7 @@ class TestSerialization:
         assert "size_bytes" not in d
 
     def test_to_dict_exclude_context(self, full_msg):
-        view = list(iter_views(full_msg))[0]
+        view = list(iter_views(full_msg[0], extensions=full_msg[1]))[0]
         d = view.to_dict(include_context=False)
         assert "extensions" not in d
 

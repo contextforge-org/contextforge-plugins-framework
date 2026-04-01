@@ -210,7 +210,7 @@ class MessageView:
         True
     """
 
-    __slots__ = ("_part", "_kind", "_message", "_hook")
+    __slots__ = ("_part", "_kind", "_message", "_extensions", "_hook")
 
     def __init__(
         self,
@@ -218,19 +218,23 @@ class MessageView:
         kind: ViewKind,
         message: Message,
         hook: str | None = None,
+        extensions: Any = None,
     ) -> None:
         """Initialize a MessageView.
 
         Args:
             part: The underlying content part.
             kind: The kind of content.
-            message: The parent message (for role and extensions access).
+            message: The parent message (for role access).
             hook: The hook location where this view is being evaluated
                 (e.g., "llm_input", "tool_post_invoke"). None if unset.
+            extensions: The Extensions object, passed separately from the
+                message for capability-gated filtering.
         """
         self._part = part
         self._kind = kind
         self._message = message
+        self._extensions = extensions
         self._hook = hook
 
     # =========================================================================
@@ -631,8 +635,8 @@ class MessageView:
     # =========================================================================
 
     def _ext(self) -> Any:
-        """Get the message extensions, or None."""
-        return self._message.extensions
+        """Get the extensions, or None."""
+        return self._extensions
 
     # --- Base tier (no capability required) ---
 
@@ -1169,7 +1173,7 @@ class MessageView:
 # ---------------------------------------------------------------------------
 
 
-def iter_views(message: Message, hook: str | None = None) -> Iterator[MessageView]:
+def iter_views(message: Message, hook: str | None = None, extensions: Any = None) -> Iterator[MessageView]:
     """Iterate over a message yielding one MessageView per content part.
 
     Memory-efficient: views are yielded one at a time and hold only
@@ -1216,4 +1220,4 @@ def iter_views(message: Message, hook: str | None = None) -> Iterator[MessageVie
         if kind is None:
             logger.warning("Unknown content type %r in iter_views", part.content_type)
             raise ValueError(f"Unknown content type: {part.content_type!r}")
-        yield MessageView(part, kind, message, hook=hook)
+        yield MessageView(part, kind, message, hook=hook, extensions=extensions)

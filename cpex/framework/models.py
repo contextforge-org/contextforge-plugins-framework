@@ -40,6 +40,7 @@ from cpex.framework.constants import (
     UDS,
     URL,
 )
+from cpex.framework.extensions.extensions import Extensions
 from cpex.framework.settings import (
     get_client_mtls_settings,
     get_grpc_client_mtls_settings,
@@ -1455,6 +1456,8 @@ class PluginResult(BaseModel, Generic[T]):
     Attributes:
             continue_processing (bool): Whether to stop processing.
             modified_payload (Optional[Any]): The modified payload if the plugin is a transformer.
+            modified_extensions (Optional[Extensions]): Modified extensions returned by the plugin
+                (e.g., updated HTTP headers from token delegation, appended security labels).
             violation (Optional[PluginViolation]): violation object.
             metadata (Optional[dict[str, Any]]): additional metadata.
 
@@ -1483,6 +1486,7 @@ class PluginResult(BaseModel, Generic[T]):
 
     continue_processing: bool = True
     modified_payload: Optional[T] = None
+    modified_extensions: Optional[Extensions] = None
     violation: Optional[PluginViolation] = None
     metadata: Optional[dict[str, Any]] = Field(default_factory=dict)
 

@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 # First-Party
 from cpex.framework.extensions.agent import AgentExtension
 from cpex.framework.extensions.completion import CompletionExtension
+from cpex.framework.extensions.delegation import DelegationExtension
 from cpex.framework.extensions.framework import FrameworkExtension
 from cpex.framework.extensions.http import HttpExtension
 from cpex.framework.extensions.llm import LLMExtension
@@ -82,6 +83,7 @@ class Extensions(BaseModel):
     agent: AgentExtension | None = Field(default=None, description="Agent execution context.")
     http: HttpExtension | None = Field(default=None, description="HTTP request context.")
     security: SecurityExtension | None = Field(default=None, description="Security labels and identity.")
+    delegation: DelegationExtension | None = Field(default=None, description="Delegation chain state.")
     mcp: MCPExtension | None = Field(default=None, description="MCP entity metadata.")
     completion: CompletionExtension | None = Field(default=None, description="LLM completion information.")
     provenance: ProvenanceExtension | None = Field(default=None, description="Origin and threading.")
