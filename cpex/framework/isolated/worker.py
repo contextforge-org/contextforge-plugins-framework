@@ -23,6 +23,7 @@ from typing import List, Type, cast
 from cpex.framework.base import HookRef, Plugin, PluginRef
 from cpex.framework.constants import HOOK_TYPE
 from cpex.framework.loader.config import ConfigLoader
+from cpex.framework.loader.plugin import ALLOWED_PLUGIN_DIRS
 from cpex.framework.manager import PluginExecutor
 from cpex.framework.models import PluginContext
 from cpex.framework.utils import parse_class_name
@@ -109,7 +110,11 @@ async def process_task(task_data, tp: TaskProcessor):
             path = Path(module_path).resolve()
             resolved_module_path = str(path)
             if path.exists():
-                sys.path.append(resolved_module_path)
+                if resolved_module_path not in sys.path:
+                    if resolved_module_path.startswith(tuple(ALLOWED_PLUGIN_DIRS)):
+                        sys.path.append(resolved_module_path)
+                    else:
+                        raise RuntimeError(f"plugin module_path '{resolved_module_path}' not in allowed plugin dirs.")
             else:
                 raise RuntimeError(f"plugin module_path '{resolved_module_path}' does not exist.")
 

@@ -7,10 +7,10 @@ Authors: Ted Habeck
 Unit tests for worker.py functions.
 """
 
-import asyncio
 import json
+import os
+import shutil
 import sys
-from io import StringIO
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
@@ -23,12 +23,17 @@ class TestWorkerFunctions:
     """Test suite for worker.py functions."""
 
     @pytest.fixture
-    def mock_plugin_dirs(self, tmp_path):
+    def mock_plugin_dirs(self):
         """ensure that the plugins directory exists"""
-        plugin_dirs = tmp_path / "plugins"
-        tmp = Path(plugin_dirs)
+        plugin_dirs = Path(os.getcwd()) / "tmp" / "plugins"
+        tmp = plugin_dirs
         tmp.mkdir(parents=True, exist_ok=True)
         return [str(plugin_dirs.resolve())]
+
+    def cleanup_mock_plugin_dirs(self):
+        """Test cleanup for the mock plugin directories."""
+        plugin_root = Path(os.getcwd()) / "tmp"
+        shutil.rmtree(plugin_root.resolve())
 
     def test_get_environment_info(self):
         """Test getting environment information."""
@@ -147,6 +152,7 @@ class TestWorkerFunctions:
         assert result is not None
         mock_plugin_instance.initialize.assert_called_once()
         mock_executor.execute_plugin.assert_called_once()
+        self.cleanup_mock_plugin_dirs()
 
     @pytest.mark.asyncio
     @patch("cpex.framework.isolated.worker.get_proper_config")
@@ -237,6 +243,7 @@ class TestWorkerFunctions:
             }
             result = await process_task(task_data, tp)
             assert result is not None
+        self.cleanup_mock_plugin_dirs()
 
     @pytest.mark.asyncio
     async def test_process_task_unknown_task_type(self):
@@ -298,6 +305,7 @@ class TestWorkerFunctions:
         # Verify executor was called with proper context
         call_args = mock_executor.execute_plugin.call_args
         assert call_args is not None
+        self.cleanup_mock_plugin_dirs()
 
 
 class TestMainFunction:
