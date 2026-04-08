@@ -166,8 +166,7 @@ class IsolatedVenvPlugin(Plugin):
 
         # Check if we can use cached venv
         if use_cache and requirements_file and self._is_venv_cache_valid(venv_path, requirements_file):
-            logger.info("Using cached virtual environment at: %s", venv_path_obj.resolve())
-            print(f"✓ Using cached virtual environment at: {venv_path_obj.resolve()}")
+            logger.info("✓ Using cached virtual environment at: %s", venv_path_obj.resolve())
             return False
 
         # If cache is invalid or not using cache, remove existing venv
@@ -177,7 +176,7 @@ class IsolatedVenvPlugin(Plugin):
 
         # Check Python version
         python_version = sys.version_info
-        print(f"Current Python version: {python_version.major}.{python_version.minor}.{python_version.micro}")
+        logger.info(f"Current Python version: {python_version.major}.{python_version.minor}.{python_version.micro}")
 
         # Create the EnvBuilder with common options
         builder = venv.EnvBuilder(
@@ -190,16 +189,16 @@ class IsolatedVenvPlugin(Plugin):
         )
 
         # Create the virtual environment
-        print(f"\nCreating virtual environment at: {venv_path_obj.resolve()}")
+        logger.info(f"\nCreating virtual environment at: {venv_path_obj.resolve()}")
         try:
             builder.create(venv_path)
-            print("✓ Virtual environment created successfully!")
-            print("\nTo activate the virtual environment:")
-            print(f"  source {venv_path}/bin/activate  # On Unix/macOS")
-            print(f"  {venv_path}\\Scripts\\activate  # On Windows")
+            logger.info("✓ Virtual environment created successfully!")
+            logger.info("\nTo activate the virtual environment:")
+            logger.info(f"  source {venv_path}/bin/activate  # On Unix/macOS")
+            logger.info(f"  {venv_path}\\Scripts\\activate  # On Windows")
             return True
         except Exception as e:
-            print(f"✗ Error creating virtual environment: {e}")
+            logger.error(f"✗ Error creating virtual environment: {e}")
             raise
 
     # Called by plugins/framework/loader/plugin.py load_and_instantiate_plugin()
@@ -211,7 +210,31 @@ class IsolatedVenvPlugin(Plugin):
             raise FileNotFoundError(f"plugin path not found: {self.plugin_path}")
 
         venv_path = self.plugin_path / ".venv"
-        requirements_file = self.plugin_path / self.config.config["requirements_file"]
+        
+        # Prevent directory traversal: ensure requirements_file stays within plugin_path
+        requirements_file_input = self.config.config["requirements_file"]
+        
+        # Handle both relative and absolute paths
+        if isinstance(requirements_file_input, Path):
+            requirements_file = requirements_file_input
+        else:
+            requirements_file = Path(requirements_file_input)
+        
+        # If it's a relative path, resolve it relative to plugin_path
+        if not requirements_file.is_absolute():
+            requirements_file = (self.plugin_path / requirements_file).resolve()
+        else:
+            # If absolute, resolve it to normalize
+            requirements_file = requirements_file.resolve()
+        
+        # Validate that the resolved path is within plugin_path (security check)
+        try:
+            requirements_file.relative_to(self.plugin_path.resolve())
+        except ValueError:
+            raise RuntimeError(
+                f"Invalid requirements_file path: {requirements_file_input}. "
+                f"Path must be within plugin directory: {self.plugin_path}"
+            )
 
         # Create venv with caching support
         new_venv = await self.create_venv(venv_path=venv_path, requirements_file=requirements_file, use_cache=True)
