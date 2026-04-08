@@ -28,8 +28,15 @@ class TestIsolatedVenvPlugin:
     @pytest.fixture
     def mock_config(self, tmp_path):
         """Create a mock plugin configuration."""
+        # Create the test_plugin directory structure
+        plugin_dir = tmp_path / "test_plugin"
+        plugin_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create requirements.txt file
+        requirements_file = plugin_dir / "requirements.txt"
+        requirements_file.write_text("pytest>=7.0.0\n")
+        
         venv_path = tmp_path / ".venv"
-        requirements_file = tmp_path / "test_plugin" / "requirements.txt"
 
         config_dict = {
             "name": "test_plugin",
@@ -41,16 +48,19 @@ class TestIsolatedVenvPlugin:
             "config": {
                 "class_name": "test_plugin.TestPlugin",
                 "venv_path": venv_path,
-                "requirements_file": requirements_file,
+                "requirements_file": "requirements.txt",  # Use relative path
             }
         }
 
         return PluginConfig(**config_dict)
 
     @pytest.fixture
-    def plugin(self, mock_config):
+    def plugin(self, mock_config, tmp_path):
         """Create an IsolatedVenvPlugin instance."""
-        return IsolatedVenvPlugin(mock_config)
+        plugin_instance = IsolatedVenvPlugin(mock_config)
+        # Override plugin_path to use tmp_path for testing
+        plugin_instance.plugin_path = tmp_path / "test_plugin"
+        return plugin_instance
 
     @pytest.fixture
     def plugin_context(self):
