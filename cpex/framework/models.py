@@ -299,6 +299,21 @@ class PluginCondition(BaseModel):
     user_patterns: Optional[list[str]] = None
     content_types: Optional[list[str]] = None
 
+    @field_validator("content_types")
+    @classmethod
+    def normalize_content_types(cls, value: list[str] | None) -> list[str] | None:
+        """Pre-normalize content types during initialization.
+
+        Args:
+            value: List of content types to normalize.
+
+        Returns:
+            Normalized list of content types (base type without parameters).
+        """
+        if value:
+            return [ct.split(";", maxsplit=1)[0].strip().lower() for ct in value]
+        return value
+
     @field_serializer("server_ids", "tenant_ids", "tools", "prompts", "resources", "agents")
     def serialize_set(self, value: set[str] | None) -> list[str] | None:
         """Serialize set objects in PluginCondition for MCP.
@@ -1562,6 +1577,7 @@ class GlobalContext(BaseModel):
             user (str): user ID associated with the request.
             tenant_id (str): tenant ID.
             server_id (str): server ID.
+            content_type (Optional[str]): Content-Type header from the request.
             metadata (Optional[dict[str,Any]]): a global shared metadata across plugins (Read-only from plugin's perspective).
             state (Optional[dict[str,Any]]): a global shared state across plugins.
 
@@ -1581,14 +1597,40 @@ class GlobalContext(BaseModel):
         '123'
         >>> c.server_id
         'srv1'
+        >>> ctx3 = GlobalContext(request_id="req-789", content_type="application/json")
+        >>> ctx3.content_type
+        'application/json'
     """
 
     request_id: str
     user: Optional[Union[str, dict[str, Any]]] = None
     tenant_id: Optional[str] = None
     server_id: Optional[str] = None
+    content_type: Optional[str] = None
     state: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("content_type")
+    @classmethod
+    def validate_content_type(cls, value: str | None) -> str | None:
+        """Validate content type length and character safety.
+
+        Args:
+            value: str of content type.
+
+        Raises:
+            ValueError: if value is length > 200 or contains non-printable characters.
+
+        Returns:
+            validated content type.
+        """
+        if value is None:
+            return value
+        if len(value) > 200:
+            raise ValueError("Content-Type header too long")
+        if not value.isprintable():
+            raise ValueError("Content-Type contains invalid characters")
+        return value
 
 
 class PluginContext(BaseModel):
