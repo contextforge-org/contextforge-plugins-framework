@@ -51,6 +51,7 @@ from cpex.framework.models import (
     Config,
     GlobalContext,
     OnError,
+    PluginConfigOverride,
     PluginContext,
     PluginContextTable,
     PluginErrorModel,
@@ -1605,3 +1606,302 @@ class PluginManager:
         if not isinstance(payload, PluginPayload):
             raise ValueError(f"When payload_as_json=False, payload must be a PluginPayload, got {type(payload)}")
         return await self._get_executor().execute_plugin(hook_ref, payload, context, violations_as_exceptions)
+
+
+_DEFAULT_CONTEXT_ID = "__global__"
+
+
+class TenantPluginManager(PluginManager):
+    """PluginManager with per-context configuration overrides.
+
+    Each instance has independent state (Borg pattern is disabled).
+    Fully compatible with PluginManager API.
+
+    Examples:
+        >>> from cpex.framework.models import Config
+        >>> config = Config(plugins=[])
+        >>> tpm = TenantPluginManager(config=config)
+        >>> tpm.initialized
+        False
+    """
+
+    def enable_borg(self) -> None:
+        """Opt out of Borg singleton — each tenant instance manages its own state."""
+
+    def __init__(  # pylint: disable=super-init-not-called
+        self,
+        config: Union[str, Config],
+        timeout: int = DEFAULT_PLUGIN_TIMEOUT,
+        observability: Optional[ObservabilityProvider] = None,
+        hook_policies: Optional[dict[str, HookPayloadPolicy]] = None,
+    ):
+        """Initialize a TenantPluginManager with independent state.
+
+        Bypasses PluginManager.__init__ entirely — Borg logic doesn't apply here.
+        Each TenantPluginManager is fully independent.
+
+        Args:
+            config: Plugin configuration (path or Config object).
+            timeout: Per-plugin call timeout in seconds.
+            observability: Optional observability provider.
+            hook_policies: Optional hook payload policy map.
+        """
+        if isinstance(config, Config):
+            self._config_path = None
+            self._config = config
+        else:
+            self._config_path = config
+            self._config = ConfigLoader.load_config(config)
+
+        self._executor = PluginExecutor(
+            config=self._config,
+            timeout=timeout,
+            observability=observability,
+            hook_policies=hook_policies,
+        )
+        self._initialized = False
+        self._registry = PluginInstanceRegistry()
+        self._loader = PluginLoader()
+        self._async_lock: asyncio.Lock | None = None
+
+
+class TenantPluginManagerFactory:
+    """Factory for context-scoped TenantPluginManager instances.
+
+    Caches per-context instances and ensures async-safe initialization.
+    The context can represent any scoping mechanism: server, tenant, user,
+    organization, or any other identifier requiring isolated plugin configuration.
+
+    Examples:
+        >>> factory = TenantPluginManagerFactory(
+        ...     yaml_path="tests/unit/cpex/fixtures/configs/valid_no_plugin.yaml"
+        ... )
+        >>> factory.observability is None
+        True
+    """
+
+    def __init__(
+        self,
+        yaml_path: str,
+        timeout: int = DEFAULT_PLUGIN_TIMEOUT,
+        observability: Optional[ObservabilityProvider] = None,
+        hook_policies: Optional[dict[str, HookPayloadPolicy]] = None,
+    ):
+        """Initialize the TenantPluginManagerFactory.
+
+        Args:
+            yaml_path: Path to the base plugin configuration YAML file.
+            timeout: Per-plugin call timeout in seconds.
+            observability: Optional observability provider.
+            hook_policies: Optional hook payload policy map.
+        """
+        self._base_config = ConfigLoader.load_config(yaml_path)
+        self._timeout = timeout
+        self._observability = observability
+        self._hook_policies = hook_policies
+        self._managers: dict[str, TenantPluginManager] = {}
+        self._inflight: dict[str, asyncio.Task[TenantPluginManager]] = {}
+        self._lock = asyncio.Lock()
+
+    @property
+    def observability(self) -> Optional[ObservabilityProvider]:
+        """Get the current observability provider."""
+        return self._observability
+
+    @observability.setter
+    def observability(self, value: Optional[ObservabilityProvider]) -> None:
+        """Set the observability provider for all future tenant managers."""
+        self._observability = value
+
+    async def get_manager(self, context_id: Optional[str] = None) -> TenantPluginManager:
+        """Get or create a TenantPluginManager for the given context.
+
+        Args:
+            context_id: Context identifier (server, tenant, etc.). Defaults to __global__.
+
+        Returns:
+            TenantPluginManager: The manager instance for this context.
+        """
+        context_id = context_id or _DEFAULT_CONTEXT_ID
+
+        async with self._lock:
+            existing = self._managers.get(context_id)
+            if existing is not None:
+                return existing
+
+            inflight = self._inflight.get(context_id)
+            if inflight is None:
+                inflight = asyncio.create_task(self._build_manager(context_id))
+                self._inflight[context_id] = inflight
+
+        try:
+            manager = await inflight
+
+            # Re-check cache under the lock: reload_tenant may have evicted
+            # and replaced the entry between the await completing and here.
+            async with self._lock:
+                return self._managers.get(context_id, manager)
+
+        finally:
+            async with self._lock:
+                if self._inflight.get(context_id) is inflight:
+                    self._inflight.pop(context_id, None)
+
+    async def _build_manager(self, context_id: str) -> TenantPluginManager:
+        """Build, initialise, and cache a TenantPluginManager for the given context.
+
+        Fetches any DB overrides for ``context_id``, merges them with the base
+        config, constructs a :class:`TenantPluginManager`, and stores it in the
+        cache.  Shuts down any previously cached manager for the same context.
+
+        Args:
+            context_id: Identifier for the tenant/server context.
+
+        Returns:
+            TenantPluginManager: Manager for ``context_id``.
+
+        Raises:
+            asyncio.CancelledError: If the manager build task is cancelled.
+            Exception: If manager initialization fails, the manager is shut down before re-raising.
+        """
+        manager = None
+        try:
+            new_config = await self.get_config_from_db(context_id)
+            config = self._merge_tenant_config(new_config)
+
+            manager = TenantPluginManager(
+                config=config,
+                timeout=self._timeout,
+                observability=self._observability,
+                hook_policies=self._hook_policies,
+            )
+            await manager.initialize()
+
+            async with self._lock:
+                old = self._managers.get(context_id)
+                self._managers[context_id] = manager
+
+            if old is not None and old is not manager:
+                try:
+                    await old.shutdown()
+                except Exception:
+                    logger.warning("Failed to shutdown old manager for context_id=%s", context_id)
+
+            return manager
+
+        except asyncio.CancelledError:
+            if manager is not None:
+                try:
+                    await manager.shutdown()
+                except Exception:
+                    logger.warning("Failed to shutdown cancelled manager for context_id=%s", context_id)
+            raise
+        except Exception:
+            if manager is not None:
+                try:
+                    await manager.shutdown()
+                except Exception:
+                    logger.warning("Failed to shutdown manager after error for context_id=%s", context_id)
+            raise
+
+    def _merge_tenant_config(self, tenant_cfg_override: Optional[list[PluginConfigOverride]]) -> Config:
+        """Merge context-specific plugin configuration overrides with base configuration.
+
+        Args:
+            tenant_cfg_override: List of plugin configuration overrides for this context.
+
+        Returns:
+            Config: Merged configuration with context-specific overrides applied.
+        """
+        if tenant_cfg_override is None:
+            return self._base_config
+
+        override_map = {p.name: p for p in tenant_cfg_override}
+        merged_plugins = []
+
+        for plugin in self._base_config.plugins or []:
+            override = override_map.get(plugin.name)
+            if not override:
+                merged_plugins.append(plugin)
+                continue
+            merged_config = {**(plugin.config or {}), **(override.config or {})}
+            merged_plugins.append(
+                plugin.model_copy(
+                    update={
+                        "config": merged_config,
+                        "mode": override.mode if override.mode is not None else plugin.mode,
+                        "priority": override.priority if override.priority is not None else plugin.priority,
+                    }
+                )
+            )
+        return self._base_config.model_copy(update={"plugins": merged_plugins}, deep=True)
+
+    async def reload_tenant(self, context_id: str) -> TenantPluginManager:
+        """Evict and rebuild the cached manager for the given context.
+
+        Args:
+            context_id: Identifier for the tenant/server context to reload.
+
+        Returns:
+            TenantPluginManager: Rebuilt manager for ``context_id``.
+        """
+        async with self._lock:
+            old = self._managers.pop(context_id, None)
+
+            inflight = self._inflight.get(context_id)
+            if inflight is not None:
+                inflight.cancel()
+                self._inflight.pop(context_id, None)
+
+            inflight = asyncio.create_task(self._build_manager(context_id))
+            self._inflight[context_id] = inflight
+
+        if old is not None:
+            try:
+                await old.shutdown()
+            except Exception:
+                logger.exception("Failed to shutdown old manager for context_id=%s", context_id)
+
+        try:
+            return await inflight
+        finally:
+            async with self._lock:
+                if self._inflight.get(context_id) is inflight:
+                    self._inflight.pop(context_id, None)
+
+    async def shutdown(self) -> None:
+        """Shut down all cached managers and cancel any in-flight build tasks."""
+        async with self._lock:
+            managers = list(self._managers.values())
+            inflight = list(self._inflight.values())
+            self._managers.clear()
+            self._inflight.clear()
+
+        for task in inflight:
+            task.cancel()
+
+        if inflight:
+            await asyncio.gather(*inflight, return_exceptions=True)
+
+        for manager in managers:
+            try:
+                await manager.shutdown()
+            except Exception:
+                logger.exception("Failed to shutdown plugin manager")
+
+    async def get_config_from_db(self, context_id: str) -> Optional[list[PluginConfigOverride]]:  # pylint: disable=unused-argument
+        """Get plugin configuration overrides from database for a specific context.
+
+        This method should be overridden by subclasses to fetch context-specific
+        plugin configuration overrides from the database. The returned overrides will
+        be merged with the base configuration.
+
+        Args:
+            context_id: The context identifier to fetch overrides for (e.g., server ID,
+                tenant ID, user ID, organization ID).
+
+        Returns:
+            Optional[list[PluginConfigOverride]]: List of plugin configuration overrides,
+                or None if no overrides exist for this context.
+        """
+        return None
