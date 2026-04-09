@@ -1421,6 +1421,7 @@ class PluginResult(BaseModel, Generic[T]):
             modified_payload (Optional[Any]): The modified payload if the plugin is a transformer.
             violation (Optional[PluginViolation]): violation object.
             metadata (Optional[dict[str, Any]]): additional metadata.
+            retry_delay_ms (int): Milliseconds the gateway should wait before retrying the tool call.
 
      Examples:
         >>> result = PluginResult()
@@ -1443,12 +1444,16 @@ class PluginResult(BaseModel, Generic[T]):
         >>> r2 = PluginResult(continue_processing=False)
         >>> r2.continue_processing
         False
+        >>> r3 = PluginResult(retry_delay_ms=500)
+        >>> r3.retry_delay_ms
+        500
     """
 
     continue_processing: bool = True
     modified_payload: Optional[T] = None
     violation: Optional[PluginViolation] = None
     metadata: Optional[dict[str, Any]] = Field(default_factory=dict)
+    retry_delay_ms: int = 0
 
 
 class GlobalContext(BaseModel):

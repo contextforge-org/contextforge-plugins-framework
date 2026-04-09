@@ -128,6 +128,7 @@ class PluginExecutor:
         )
         self._runtime_disabled: set[str] = set()
         self._serial_phase_state: tuple[Optional[PluginPayload], Optional[str]] = (None, None)
+        self._max_retry_delay_ms: int = 0
 
     async def execute(
         self,
@@ -186,6 +187,7 @@ class PluginExecutor:
         combined_metadata: dict[str, Any] = {}
         current_payload: PluginPayload | None = None
         decision_plugin_name: Optional[str] = None
+        self._max_retry_delay_ms = 0
 
         sequential_refs, transform_refs, audit_refs, concurrent_refs, fire_and_forget_refs = self._group_by_mode(
             hook_refs, payload, hook_type, global_context
@@ -283,6 +285,8 @@ class PluginExecutor:
             for completed_coro in asyncio.as_completed(concurrent_tasks):
                 result, idx = await completed_coro
                 ref, _, _ = concurrent_ctx_list[idx]
+                # Propagate retry signal from concurrent plugins
+                self._max_retry_delay_ms = max(self._max_retry_delay_ms, result.retry_delay_ms)
                 if result.modified_payload is not None:
                     logger.debug(
                         "CONCURRENT plugin %s returned modified_payload on hook %s; "
@@ -329,7 +333,11 @@ class PluginExecutor:
 
         return (
             PluginResult(
-                continue_processing=True, modified_payload=current_payload, violation=None, metadata=combined_metadata
+                continue_processing=True,
+                modified_payload=current_payload,
+                violation=None,
+                metadata=combined_metadata,
+                retry_delay_ms=self._max_retry_delay_ms,
             ),
             res_local_contexts,
         )
@@ -450,6 +458,9 @@ class PluginExecutor:
                 global_context,
                 combined_metadata,
             )
+
+            # Propagate retry signal — take the largest delay requested by any plugin
+            self._max_retry_delay_ms = max(self._max_retry_delay_ms, result.retry_delay_ms)
 
             if result.modified_payload is not None:
                 if apply_modifications:
