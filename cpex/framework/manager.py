@@ -129,6 +129,10 @@ class PluginExecutor:
         self._runtime_disabled: set[str] = set()
         self._serial_phase_state: tuple[Optional[PluginPayload], Optional[str]] = (None, None)
         self._max_retry_delay_ms: int = 0
+        self._hook_chain_executed: int = 0
+        self._hook_chain_skipped: int = 0
+        self._hook_chain_stopped_by: Optional[str] = None
+        self._hook_chain_span_id: Optional[str] = None
 
     async def execute(
         self,
@@ -188,6 +192,26 @@ class PluginExecutor:
         current_payload: PluginPayload | None = None
         decision_plugin_name: Optional[str] = None
         self._max_retry_delay_ms = 0
+        self._hook_chain_executed = 0
+        self._hook_chain_skipped = 0
+        self._hook_chain_stopped_by = None
+
+        # Start hook-chain observability span
+        trace_id = current_trace_id.get()
+        self._hook_chain_span_id = None
+        if trace_id and self.observability:
+            try:
+                self._hook_chain_span_id = self.observability.start_span(
+                    trace_id=trace_id,
+                    name="plugin.hook.invoke",
+                    kind="internal",
+                    attributes={
+                        "plugin.hook.type": hook_type,
+                        "plugin.chain.length": len(hook_refs),
+                    },
+                )
+            except Exception as e:
+                logger.debug("Hook-chain observability start_span failed: %s", e)
 
         sequential_refs, transform_refs, audit_refs, concurrent_refs, fire_and_forget_refs = self._group_by_mode(
             hook_refs, payload, hook_type, global_context
@@ -218,6 +242,7 @@ class PluginExecutor:
             fire_and_forget_semaphore=fire_and_forget_semaphore,
         )
         if halt_result is not None:
+            self._end_hook_chain_span(status="ok")
             return halt_result
         # Update mutable state from sequential phase
         current_payload, decision_plugin_name = self._serial_phase_state
@@ -285,6 +310,7 @@ class PluginExecutor:
             for completed_coro in asyncio.as_completed(concurrent_tasks):
                 result, idx = await completed_coro
                 ref, _, _ = concurrent_ctx_list[idx]
+                self._hook_chain_executed += 1
                 # Propagate retry signal from concurrent plugins
                 self._max_retry_delay_ms = max(self._max_retry_delay_ms, result.retry_delay_ms)
                 if result.modified_payload is not None:
@@ -310,7 +336,8 @@ class PluginExecutor:
                         if not task.done():
                             task.cancel()
                     await asyncio.gather(*concurrent_tasks, return_exceptions=True)
-                    return self._build_halt_result(
+                    self._hook_chain_stopped_by = ref.plugin_ref.name
+                    halt = self._build_halt_result(
                         current_payload,
                         result.violation,
                         combined_metadata,
@@ -322,6 +349,8 @@ class PluginExecutor:
                         hook_type,
                         decision_plugin_name,
                     )
+                    self._end_hook_chain_span(status="ok")
+                    return halt
 
         # FIRE_AND_FORGET: fire-and-forget background tasks (fires last with final payload snapshot)
         self._fire_and_forget_tasks(
@@ -330,6 +359,8 @@ class PluginExecutor:
 
         if hook_type == HTTP_AUTH_CHECK_PERMISSION_HOOK and decision_plugin_name:
             combined_metadata[DECISION_PLUGIN_METADATA_KEY] = decision_plugin_name
+
+        self._end_hook_chain_span(status="ok")
 
         return (
             PluginResult(
@@ -371,16 +402,19 @@ class PluginExecutor:
             # Skip statically disabled plugins
             if ref.plugin_ref.mode == PluginMode.DISABLED:
                 logger.debug("Skipping plugin %s — statically disabled", ref.plugin_ref.name)
+                self._hook_chain_skipped += 1
                 continue
             # Skip runtime-disabled plugins
             if ref.plugin_ref.name in self._runtime_disabled:
                 logger.debug("Skipping plugin %s — runtime-disabled after previous error", ref.plugin_ref.name)
+                self._hook_chain_skipped += 1
                 continue
             # Check conditions
             if ref.plugin_ref.conditions and not payload_matches(
                 payload, hook_type, ref.plugin_ref.conditions, global_context
             ):
                 logger.debug("Skipping plugin %s - conditions not met", ref.plugin_ref.name)
+                self._hook_chain_skipped += 1
                 continue
             # Bucket by mode
             if ref.plugin_ref.mode == PluginMode.SEQUENTIAL:
@@ -401,6 +435,24 @@ class PluginExecutor:
         fire_and_forget_refs.sort(key=lambda r: r.plugin_ref.priority)
 
         return sequential_refs, transform_refs, audit_refs, concurrent_refs, fire_and_forget_refs
+
+    def _end_hook_chain_span(self, status: str = "ok") -> None:
+        """End the hook-chain observability span with accumulated counters."""
+        if self._hook_chain_span_id is not None and self.observability:
+            try:
+                self.observability.end_span(
+                    span_id=self._hook_chain_span_id,
+                    status=status,
+                    attributes={
+                        "plugin.executed_count": self._hook_chain_executed,
+                        "plugin.skipped_count": self._hook_chain_skipped,
+                        "plugin.chain.stopped": self._hook_chain_stopped_by is not None,
+                        "plugin.chain.stopped_by": self._hook_chain_stopped_by or "",
+                    },
+                )
+            except Exception as e:
+                logger.debug("Hook-chain observability end_span failed: %s", e)
+            self._hook_chain_span_id = None
 
     async def _run_serial_phase(
         self,
@@ -458,6 +510,7 @@ class PluginExecutor:
                 global_context,
                 combined_metadata,
             )
+            self._hook_chain_executed += 1
 
             # Propagate retry signal — take the largest delay requested by any plugin
             self._max_retry_delay_ms = max(self._max_retry_delay_ms, result.retry_delay_ms)
@@ -494,6 +547,7 @@ class PluginExecutor:
                         violation_detail,
                     )
                     self._serial_phase_state = (current_payload, decision_plugin_name)
+                    self._hook_chain_stopped_by = hook_ref.plugin_ref.name
                     return self._build_halt_result(
                         current_payload,
                         result.violation,
