@@ -13,7 +13,6 @@ import hashlib
 import importlib.metadata
 import json
 import logging
-import os
 import platform
 import sys
 from pathlib import Path
@@ -70,6 +69,7 @@ def get_environment_info():
         "installed_packages": [str(d) for d in importlib.metadata.entry_points()][:10],  # First 10 packages
     }
 
+
 async def process_task(task_data, tp: TaskProcessor):
     """Process the task received from parent."""
     task_type = task_data.get("task_type")
@@ -114,7 +114,9 @@ async def process_task(task_data, tp: TaskProcessor):
             plugin_ref = PluginRef(plugin)
             hook_ref = HookRef(hook_type, plugin_ref)
             executor = PluginExecutor(None, 30)
-            tp.initialize(hook_ref=hook_ref, executor=executor, json_config=json_config, module_path=resolved_module_path)
+            tp.initialize(
+                hook_ref=hook_ref, executor=executor, json_config=json_config, module_path=resolved_module_path
+            )
         # retrieve the context
         context = task_data.get("context")
         plugin_context = PluginContext(
