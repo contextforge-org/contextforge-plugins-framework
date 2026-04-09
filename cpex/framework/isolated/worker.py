@@ -186,7 +186,7 @@ async def main():
                 error_response = {
                     "status": "error",
                     "message": f"Invalid JSON input: {str(e)}",
-                    "request_id": task_data.get("request_id", "unknown") if "task_data" in locals() else "unknown",
+                    "request_id": "unknown",
                 }
                 print(json.dumps(error_response), flush=True)
 
