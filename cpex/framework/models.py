@@ -1502,6 +1502,7 @@ class PluginResult(BaseModel, Generic[T]):
             background_tasks (list[asyncio.Task]): asyncio.Task handles for any FIRE_AND_FORGET
                 plugins scheduled during this invocation. Use ``wait_for_background_tasks()``
                 to await them and collect any errors. This field is excluded from model serialization.
+            retry_delay_ms (int): Milliseconds the gateway should wait before retrying the tool call.
 
      Examples:
         >>> result = PluginResult()
@@ -1524,6 +1525,9 @@ class PluginResult(BaseModel, Generic[T]):
         >>> r2 = PluginResult(continue_processing=False)
         >>> r2.continue_processing
         False
+        >>> r3 = PluginResult(retry_delay_ms=500)
+        >>> r3.retry_delay_ms
+        500
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -1534,6 +1538,7 @@ class PluginResult(BaseModel, Generic[T]):
     violation: Optional[PluginViolation] = None
     metadata: Optional[dict[str, Any]] = Field(default_factory=dict)
     background_tasks: list[asyncio.Task] = Field(default_factory=list, exclude=True)
+    retry_delay_ms: int = 0
 
     async def wait_for_background_tasks(self) -> "list[PluginErrorModel]":
         """Await all FIRE_AND_FORGET background tasks and return any errors.
@@ -1548,7 +1553,6 @@ class PluginResult(BaseModel, Generic[T]):
             return []
         results = await asyncio.gather(*self.background_tasks, return_exceptions=True)
         return [r for r in results if isinstance(r, PluginErrorModel)]
-
 
 class GlobalContext(BaseModel):
     """The global context, which shared across all plugins.

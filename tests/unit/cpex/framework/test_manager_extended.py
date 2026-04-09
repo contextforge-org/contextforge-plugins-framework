@@ -1114,3 +1114,61 @@ async def test_manager_initialize_skips_plugin_load_errors_when_configured():
 
     await manager.shutdown()
     PluginManager.reset()
+
+
+@pytest.mark.asyncio
+async def test_plugin_result_retry_delay_ms():
+    """PluginResult should accept and default retry_delay_ms."""
+    result = PluginResult()
+    assert result.retry_delay_ms == 0
+
+    result2 = PluginResult(retry_delay_ms=500)
+    assert result2.retry_delay_ms == 500
+
+    # Serialization roundtrip
+    data = result2.model_dump()
+    assert data["retry_delay_ms"] == 500
+
+
+@pytest.mark.asyncio
+async def test_executor_propagates_retry_delay_ms():
+    """Executor should propagate the maximum retry_delay_ms across plugins."""
+
+    class RetryPlugin(Plugin):
+        async def prompt_pre_fetch(self, payload, context):
+            return PluginResult(retry_delay_ms=200)
+
+    class RetryPlugin2(Plugin):
+        async def prompt_pre_fetch(self, payload, context):
+            return PluginResult(retry_delay_ms=500)
+
+    manager = PluginManager("./tests/unit/cpex/fixtures/configs/valid_no_plugin.yaml")
+    await manager.initialize()
+
+    config1 = PluginConfig(
+        name="RetryPlugin1", description="Test", author="Test", version="1.0",
+        tags=["test"], kind="RetryPlugin", mode=PluginMode.SEQUENTIAL,
+        hooks=["prompt_pre_fetch"], config={},
+    )
+    config2 = PluginConfig(
+        name="RetryPlugin2", description="Test", author="Test", version="1.0",
+        tags=["test"], kind="RetryPlugin2", mode=PluginMode.SEQUENTIAL,
+        hooks=["prompt_pre_fetch"], config={},
+    )
+    plugin1 = RetryPlugin(config1)
+    plugin2 = RetryPlugin2(config2)
+
+    prompt = PromptPrehookPayload(prompt_id="123", name="test", args={})
+    global_context = GlobalContext(request_id="1")
+
+    with patch.object(manager._registry, "get_hook_refs_for_hook") as mock_get:
+        hook_ref1 = HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(plugin1))
+        hook_ref2 = HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(plugin2))
+        mock_get.return_value = [hook_ref1, hook_ref2]
+
+        result, _ = await manager.invoke_hook(PromptHookType.PROMPT_PRE_FETCH, prompt, global_context=global_context)
+
+        # Should propagate the maximum retry delay (500)
+        assert result.retry_delay_ms == 500
+
+    await manager.shutdown()
