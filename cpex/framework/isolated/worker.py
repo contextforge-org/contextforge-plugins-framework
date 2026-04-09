@@ -22,7 +22,6 @@ from typing import List, Type, cast
 
 from cpex.framework.base import HookRef, Plugin, PluginRef
 from cpex.framework.constants import HOOK_TYPE
-from cpex.framework.loader.config import ConfigLoader
 from cpex.framework.loader.plugin import ALLOWED_PLUGIN_DIRS
 from cpex.framework.manager import PluginExecutor
 from cpex.framework.models import PluginConfig, PluginContext
@@ -115,7 +114,7 @@ async def process_task(task_data, tp: TaskProcessor):
             plugin_ref = PluginRef(plugin)
             hook_ref = HookRef(hook_type, plugin_ref)
             executor = PluginExecutor(None, 30)
-            tp.initialize(hook_ref=hook_ref, executor=executor, json_config=json_config, module_path=module_path)
+            tp.initialize(hook_ref=hook_ref, executor=executor, json_config=json_config, module_path=resolved_module_path)
         # retrieve the context
         context = task_data.get("context")
         plugin_context = PluginContext(
