@@ -833,7 +833,12 @@ async def test_manager_initialization_edge_cases():
     )
 
     # Mock the loader to return None (covers lines 495-496)
-    with patch.object(manager2._loader, "load_and_instantiate_plugin", return_value=None):
+    # Explicitly enable fail_on_plugin_error so the RuntimeError is raised
+    with (
+        patch.object(manager2._loader, "load_and_instantiate_plugin", return_value=None),
+        patch("cpex.framework.manager.settings") as mock_settings,
+    ):
+        mock_settings.fail_on_plugin_error = True
         with pytest.raises(RuntimeError, match="Plugin initialization failed: FailingPlugin"):
             await manager2.initialize()
 
@@ -1104,3 +1109,24 @@ async def test_manager_tool_post_invoke_coverage():
         assert result.modified_payload.result["original"] == "data"
 
     await manager.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_manager_initialize_skips_plugin_load_errors_when_configured():
+    """Startup should continue when plugin init fails and fail_on_plugin_error is false."""
+    PluginManager.reset()
+    manager = PluginManager("./tests/unit/cpex/fixtures/configs/valid_single_plugin.yaml")
+
+    with (
+        patch.object(manager._loader, "load_and_instantiate_plugin", side_effect=RuntimeError("plugin offline")),
+        patch("cpex.framework.manager.logger") as mock_logger,
+    ):
+        await manager.initialize()
+
+    mock_logger.warning.assert_called_with("Skipping plugin %s because fail_on_plugin_error is disabled", "ReplaceBadWordsPlugin")
+
+    assert manager.initialized is True
+    assert manager.plugin_count == 0
+
+    await manager.shutdown()
+    PluginManager.reset()
