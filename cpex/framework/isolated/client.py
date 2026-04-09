@@ -26,7 +26,6 @@ from cpex.framework.constants import CONTEXT, HOOK_TYPE, PAYLOAD, PLUGIN_NAME
 from cpex.framework.errors import PluginError, convert_exception_to_error
 from cpex.framework.hooks.registry import get_hook_registry
 from cpex.framework.isolated.venv_comm import VenvProcessCommunicator
-from cpex.framework.loader.config import ConfigLoader
 from cpex.framework.models import PluginConfig, PluginContext, PluginErrorModel, PluginPayload, PluginResult
 
 logger = logging.getLogger(__name__)
@@ -35,14 +34,12 @@ logger = logging.getLogger(__name__)
 class IsolatedVenvPlugin(Plugin):
     """IsolatedVenvPlugin class."""
 
-    def __init__(self, config: PluginConfig) -> None:
+    def __init__(self, config: PluginConfig, plugin_dirs) -> None:
         """Initialize the plugin's venv environment."""
         super().__init__(config)
         self.implementation = "Python"
         self.comm = None
-        tmp = os.environ.get("PLUGINS_CONFIG_FILE", "plugins/config.yaml")
-        plugin_loader_config = ConfigLoader.load_config(Path(tmp).resolve(), use_jinja=False)
-        self.plugin_dirs = plugin_loader_config.plugin_dirs
+        self.plugin_dirs = plugin_dirs
         # use the first plugin dir specified in the plugin configuration file.
         path = Path(self.plugin_dirs[0]).resolve()
         class_root = self.config.config.get("class_name").split(".")[0]
@@ -210,23 +207,23 @@ class IsolatedVenvPlugin(Plugin):
             raise FileNotFoundError(f"plugin path not found: {self.plugin_path}")
 
         venv_path = self.plugin_path / ".venv"
-        
+
         # Prevent directory traversal: ensure requirements_file stays within plugin_path
         requirements_file_input = self.config.config["requirements_file"]
-        
+
         # Handle both relative and absolute paths
         if isinstance(requirements_file_input, Path):
             requirements_file = requirements_file_input
         else:
             requirements_file = Path(requirements_file_input)
-        
+
         # If it's a relative path, resolve it relative to plugin_path
         if not requirements_file.is_absolute():
             requirements_file = (self.plugin_path / requirements_file).resolve()
         else:
             # If absolute, resolve it to normalize
             requirements_file = requirements_file.resolve()
-        
+
         # Validate that the resolved path is within plugin_path (security check)
         try:
             requirements_file.relative_to(self.plugin_path.resolve())

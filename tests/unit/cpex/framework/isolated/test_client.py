@@ -57,7 +57,7 @@ class TestIsolatedVenvPlugin:
     @pytest.fixture
     def plugin(self, mock_config, tmp_path):
         """Create an IsolatedVenvPlugin instance."""
-        plugin_instance = IsolatedVenvPlugin(mock_config)
+        plugin_instance = IsolatedVenvPlugin(mock_config, plugin_dirs=[tmp_path])
         # Override plugin_path to use tmp_path for testing
         plugin_instance.plugin_path = tmp_path / "test_plugin"
         return plugin_instance

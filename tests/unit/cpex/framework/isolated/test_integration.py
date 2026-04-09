@@ -13,11 +13,13 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
+import yaml
 
 from cpex.framework import GlobalContext, PluginManager
 from cpex.framework.hooks.tools import ToolPreInvokePayload
 from cpex.framework.isolated.client import IsolatedVenvPlugin
-from cpex.framework.models import PluginConfig
+from cpex.framework.loader.plugin import ALLOWED_PLUGIN_DIRS
+from cpex.framework.models import Config, PluginConfig
 
 
 class TestIsolatedPluginIntegration:
@@ -26,28 +28,22 @@ class TestIsolatedPluginIntegration:
     @pytest.fixture
     def integration_config_path(self, tmp_path):
         """Create a temporary config file for integration testing."""
-        config_content = """
-plugin_dirs:
-  - "xplugins"
 
-plugin_settings:
-  parallel_execution_within_band: true
-  plugin_timeout: 30
-  fail_on_plugin_error: false
-
-plugins:
-  - name: "test_isolated_plugin"
-    kind: "isolated_venv"
-    description: "Test isolated plugin"
-    version: "1.0.0"
-    author: "Test"
-    hooks: ["tool_pre_invoke"]
-    config:
-      class_name: "test_plugin.TestPlugin"
-      requirements_file: "requirements.txt"
-      script_path: "xplugins"
-"""
-        config_file = tmp_path / "test_config.yaml"
+        cfg = Config(plugins=[PluginConfig(name="test_isolated_plugin", kind="isolated_venv",description="Test isolated plugin",version="1.0.0",author="Test",hooks=["tool_pre_invoke"],
+                                     config={
+                                      "class_name": "test_plugin.TestPlugin",
+                                      "requirements_file": "requirements.txt"
+        })],plugin_dirs=[str((tmp_path / "xplugins").resolve())],
+        plugin_settings={
+            "parallel_execution_within_band": True,
+            "plugin_timeout": 30,
+            "fail_on_plugin_error": False
+        })
+        config_file = tmp_path / "xplugins" / "test_config.yaml"
+        class_root = tmp_path / "xplugins" / "test_plugin"
+        class_root.mkdir(parents=True, exist_ok=True)
+        dumped_cfg = cfg.model_dump(mode="json")
+        config_content = yaml.safe_dump(dumped_cfg, default_flow_style=False)
         config_file.write_text(config_content)
         return str(config_file)
 
@@ -55,7 +51,7 @@ plugins:
     @patch("cpex.framework.isolated.client.VenvProcessCommunicator")
     @patch.object(IsolatedVenvPlugin, "create_venv")
     async def test_plugin_manager_with_isolated_plugin(
-        self, mock_create_venv, mock_comm_class, integration_config_path
+        self, mock_create_venv, mock_comm_class, integration_config_path, tmp_path
     ):
         """Test PluginManager loading and initializing an isolated plugin."""
         # Setup mocks
@@ -63,11 +59,11 @@ plugins:
         mock_comm = MagicMock()
         mock_comm.install_requirements = MagicMock()
         mock_comm_class.return_value = mock_comm
-        
-        # Create manager
-        manager = PluginManager(integration_config_path)
-        
-        await manager.initialize()
+        with patch('cpex.framework.loader.plugin.ALLOWED_PLUGIN_DIRS', { str((tmp_path / "xplugins" ).resolve())}):
+            # Create manager
+            manager = PluginManager(integration_config_path)
+            
+            await manager.initialize()
 
     @pytest.mark.asyncio
     @patch("cpex.framework.isolated.client.VenvProcessCommunicator")
@@ -96,35 +92,39 @@ plugins:
             "config": {
                 "class_name": "test_plugin.TestPlugin",
                 "requirements_file": "requirements.txt",
-                "script_path": "tests/unit/cpex/fixtures/plugins/isolated"
             }
         }
+        resolved_plugin_path = (tmp_path / "xplugins" ).resolve()
+        plugin_root = resolved_plugin_path / "test_plugin"
+        plugin_root.mkdir(parents=True, exist_ok=True)
+        # resolved_plugin_path.mkdir(parents=True, exist_ok=True)
+        with patch('cpex.framework.loader.plugin.ALLOWED_PLUGIN_DIRS', { str(resolved_plugin_path) }):
 
-        config = PluginConfig(**config_dict)
-        
-        # Create and initialize plugin
-        plugin = IsolatedVenvPlugin(config)
-        
-        with patch("cpex.framework.isolated.client.get_hook_registry") as mock_registry:
-            from cpex.framework.hooks.tools import ToolPreInvokeResult
-            mock_reg = MagicMock()
-            mock_reg.get_result_type.return_value = ToolPreInvokeResult
-            mock_reg.json_to_result = MagicMock()
-            mock_reg.json_to_result.return_value = ToolPreInvokeResult(continue_processing=True)
-            mock_registry.return_value = mock_reg
+            config = PluginConfig(**config_dict)
             
-            await plugin.initialize()
+            # Create and initialize plugin
+            plugin = IsolatedVenvPlugin(config, plugin_dirs=[resolved_plugin_path])
             
-            # Invoke hook
-            payload = ToolPreInvokePayload(name="test_tool", args={})
-            global_ctx = GlobalContext(request_id="req-123")
-            from cpex.framework.models import PluginContext
-            context = PluginContext(global_context=global_ctx)
-            
-            result = await plugin.invoke_hook("tool_pre_invoke", payload, context)
-            
-            assert result is not None
-            assert result.continue_processing is True
+            with patch("cpex.framework.isolated.client.get_hook_registry") as mock_registry:
+                from cpex.framework.hooks.tools import ToolPreInvokeResult
+                mock_reg = MagicMock()
+                mock_reg.get_result_type.return_value = ToolPreInvokeResult
+                mock_reg.json_to_result = MagicMock()
+                mock_reg.json_to_result.return_value = ToolPreInvokeResult(continue_processing=True)
+                mock_registry.return_value = mock_reg
+                
+                await plugin.initialize()
+                
+                # Invoke hook
+                payload = ToolPreInvokePayload(name="test_tool", args={})
+                global_ctx = GlobalContext(request_id="req-123")
+                from cpex.framework.models import PluginContext
+                context = PluginContext(global_context=global_ctx)
+                
+                result = await plugin.invoke_hook("tool_pre_invoke", payload, context)
+                
+                assert result is not None
+                assert result.continue_processing is True
 
     @pytest.mark.asyncio
     async def test_isolated_plugin_error_handling(self, tmp_path):
@@ -139,11 +139,15 @@ plugins:
             "config": {
                 "class_name": "test_plugin.TestPlugin",
                 "requirements_file": "requirements.txt",
-                "script_path": "tests/unit/cpex/fixtures/plugins/isolated"
             }
         }
         config = PluginConfig(**config_dict)
-        plugin = IsolatedVenvPlugin(config)
+        resolved_plugin_path = (tmp_path / "xplugins" ).resolve()
+        cache_root = resolved_plugin_path / "test_plugin"
+        cache_root.mkdir(parents=True, exist_ok=True)
+        # resolved_plugin_path.mkdir(parents=True, exist_ok=True)
+
+        plugin = IsolatedVenvPlugin(config, plugin_dirs=[str(resolved_plugin_path)])
         
         # Try to invoke hook without initialization
         from cpex.framework.errors import PluginError
@@ -182,7 +186,11 @@ plugins:
         }
 
         config = PluginConfig(**config_dict)
-        plugin = IsolatedVenvPlugin(config)
+        resolved_plugin_path = (tmp_path / "xplugins" ).resolve()
+        cache_root = resolved_plugin_path / "test_plugin"
+        cache_root.mkdir(parents=True, exist_ok=True)
+
+        plugin = IsolatedVenvPlugin(config, plugin_dirs=[str(resolved_plugin_path)])
         
         await plugin.initialize()
         
@@ -266,11 +274,14 @@ plugins:
             "config": {
                 "class_name": "test_plugin.TestPlugin",
                 "requirements_file": "requirements.txt",
-                "script_path": "tests/unit/cpex/fixtures/plugins/isolated"
             }
         }
         config = PluginConfig(**config_dict)
-        plugin = IsolatedVenvPlugin(config)
+        resolved_plugin_path = (tmp_path / "xplugins" ).resolve()
+        cache_root = resolved_plugin_path / "test_plugin"
+        cache_root.mkdir(parents=True, exist_ok=True)
+
+        plugin = IsolatedVenvPlugin(config, plugin_dirs=[str(resolved_plugin_path)])
         
         await plugin.initialize()
         
@@ -334,11 +345,14 @@ plugins:
             "config": {
                 "class_name": "test_plugin.TestPlugin",
                 "requirements_file": "requirements.txt",
-                "script_path": "tests/unit/cpex/fixtures/plugins/isolated"
             }
         }
         config = PluginConfig(**config_dict)
-        plugin = IsolatedVenvPlugin(config)
+        resolved_plugin_path = (tmp_path / "xplugins" ).resolve()
+        cache_root = resolved_plugin_path / "test_plugin"
+        cache_root.mkdir(parents=True, exist_ok=True)
+
+        plugin = IsolatedVenvPlugin(config, plugin_dirs=[str(resolved_plugin_path)])
         
         await plugin.initialize()
         

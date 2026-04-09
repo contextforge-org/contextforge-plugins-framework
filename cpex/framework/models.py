@@ -1329,17 +1329,7 @@ class PluginConfig(BaseModel):
         """
         # Get the base serialization from Pydantic
         data = self.model_dump(mode="json", exclude_none=False, exclude_unset=False)
-
-        # Explicitly remove any validator methods or callables that might have been included
-        # These are the @model_validator decorated methods that should not be serialized
-        methods_to_exclude = {
-            "_migrate_legacy_modes",
-            "check_url_or_script_filled",
-            "check_config_and_external",
-        }
-
-        # Filter out any methods or callables from the serialized data
-        return {k: v for k, v in data.items() if k not in methods_to_exclude and not callable(v)}
+        return data
 
 
 class PluginManifest(BaseModel):
