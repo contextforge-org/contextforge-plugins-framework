@@ -34,6 +34,7 @@ from cpex.framework.extensions.constants import (
     FIELD_LABELS,
     FIELD_LLM,
     FIELD_MCP,
+    FIELD_META,
     FIELD_OBJECTS,
     FIELD_PERMISSIONS,
     FIELD_PROVENANCE,
@@ -154,6 +155,7 @@ _SLOT_REGISTRY: dict[str, SlotPolicy] = {
     SlotName.LLM: SlotPolicy(MutabilityTier.IMMUTABLE),
     SlotName.FRAMEWORK: SlotPolicy(MutabilityTier.IMMUTABLE),
     SlotName.MCP: SlotPolicy(MutabilityTier.IMMUTABLE),
+    SlotName.META: SlotPolicy(MutabilityTier.IMMUTABLE),
     # Capability-gated, immutable
     SlotName.AGENT: SlotPolicy(
         MutabilityTier.IMMUTABLE,
@@ -347,6 +349,8 @@ def filter_extensions(
         fields[FIELD_FRAMEWORK] = extensions.framework
     if extensions.mcp is not None:
         fields[FIELD_MCP] = extensions.mcp
+    if extensions.meta is not None:
+        fields[FIELD_META] = extensions.meta
     if extensions.custom is not None:
         fields[FIELD_CUSTOM] = extensions.custom
 

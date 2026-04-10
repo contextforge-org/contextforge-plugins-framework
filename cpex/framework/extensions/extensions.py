@@ -24,6 +24,7 @@ from cpex.framework.extensions.framework import FrameworkExtension
 from cpex.framework.extensions.http import HttpExtension
 from cpex.framework.extensions.llm import LLMExtension
 from cpex.framework.extensions.mcp import MCPExtension
+from cpex.framework.extensions.meta import MetaExtension
 from cpex.framework.extensions.provenance import ProvenanceExtension
 from cpex.framework.extensions.request import RequestExtension
 from cpex.framework.extensions.security import SecurityExtension
@@ -49,6 +50,7 @@ class Extensions(BaseModel):
         provenance: Source, message ID, parent ID (immutable).
         llm: Model identity and capabilities (immutable).
         framework: Agentic framework context (immutable).
+        meta: Host-provided operational metadata — tags, scope, properties (immutable).
         custom: Custom extensions (mutable).
 
     Examples:
@@ -89,4 +91,5 @@ class Extensions(BaseModel):
     provenance: ProvenanceExtension | None = Field(default=None, description="Origin and threading.")
     llm: LLMExtension | None = Field(default=None, description="Model identity and capabilities.")
     framework: FrameworkExtension | None = Field(default=None, description="Agentic framework context.")
+    meta: MetaExtension | None = Field(default=None, description="Host-provided operational metadata.")
     custom: dict[str, Any] | None = Field(default=None, description="Custom extensions (mutable).")

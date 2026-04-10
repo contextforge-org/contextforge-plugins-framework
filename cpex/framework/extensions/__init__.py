@@ -24,6 +24,7 @@ from cpex.framework.extensions.mcp import (
     ResourceMetadata,
     ToolMetadata,
 )
+from cpex.framework.extensions.meta import MetaExtension
 from cpex.framework.extensions.provenance import ProvenanceExtension
 from cpex.framework.extensions.request import RequestExtension
 from cpex.framework.extensions.security import (
@@ -54,6 +55,7 @@ __all__ = [
     "HttpExtension",
     "LLMExtension",
     "MCPExtension",
+    "MetaExtension",
     "MutabilityTier",
     "ObjectSecurityProfile",
     "PromptMetadata",
