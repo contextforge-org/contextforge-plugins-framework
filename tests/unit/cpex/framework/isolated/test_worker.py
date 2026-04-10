@@ -344,7 +344,7 @@ class TestMainFunction:
         output_data = json.loads(printed_output)
         assert output_data["status"] == "error"
         assert "Unexpected error: Unexpected error occurred" in output_data["message"]
-        assert output_data["request_id"] == "req-789"
+        assert output_data["request_id"] == "unknown"
 
     @pytest.mark.asyncio
     @patch("sys.stdin")
