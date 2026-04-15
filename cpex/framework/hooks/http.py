@@ -18,7 +18,7 @@ from pydantic import RootModel, field_validator
 from cpex.framework.models import PluginPayload, PluginResult
 
 
-class HttpHeaderPayload(RootModel[dict[str, str]]):
+class HttpHeaderPayload(RootModel[dict[str, str]], PluginPayload):
     """An HTTP dictionary of headers used in the pre/post HTTP forwarding hooks."""
 
     def __iter__(self):  # type: ignore[no-untyped-def]
@@ -114,7 +114,7 @@ class HttpPreRequestPayload(PluginPayload):
                 "use extensions.http.headers instead. "
                 "This field will be removed in a future release.",
                 DeprecationWarning,
-                stacklevel=2,
+                stacklevel=4,
             )
         return v
 
@@ -164,7 +164,7 @@ class HttpAuthResolveUserPayload(PluginPayload):
                 "use extensions.http.headers instead. "
                 "This field will be removed in a future release.",
                 DeprecationWarning,
-                stacklevel=2,
+                stacklevel=4,
             )
         return v
 

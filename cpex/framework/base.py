@@ -526,14 +526,6 @@ class HookRef:
 
         return len(params)
 
-        # ========== OPTIONAL: Type Hint Validation ==========
-        # Uncomment to enable strict type checking of payload and return types.
-        # This validates that type hints match the expected types from the hook registry.
-        # Pros: Catches type errors at plugin load time instead of runtime
-        # Cons: Requires all plugins to have type hints, adds validation overhead
-        #
-        # self._validate_type_hints(hook, func, params, plugin_name)
-
     def _validate_type_hints(self, hook: str, func: Callable, params: list, plugin_name: str) -> None:
         """Validate that type hints match expected payload and result types.
 

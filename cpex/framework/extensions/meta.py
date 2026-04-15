@@ -55,6 +55,8 @@ class MetaExtension(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    tags: frozenset[str] = Field(default_factory=frozenset, description="Entity tags for routing and policy group inheritance.")
+    tags: frozenset[str] = Field(
+        default_factory=frozenset, description="Entity tags for routing and policy group inheritance."
+    )
     scope: str | None = Field(default=None, description="Host-defined grouping (opaque string for matching).")
     properties: dict[str, str] = Field(default_factory=dict, description="Arbitrary key-value metadata.")

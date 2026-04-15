@@ -890,7 +890,7 @@ class Message(BaseModel):
         'get_weather'
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     schema_version: str = Field(default="2.0", description="Message schema version.")
     role: Role = Field(description="Who is speaking.")

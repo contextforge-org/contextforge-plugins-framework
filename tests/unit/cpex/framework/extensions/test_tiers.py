@@ -98,10 +98,12 @@ class TestAccessPolicy:
 
 class TestCapability:
     def test_all_values(self):
-        assert len(Capability) == 10  # noqa: PLR2004
+        assert len(Capability) == 12  # noqa: PLR2004
         assert Capability.READ_SUBJECT.value == "read_subject"
         assert Capability.APPEND_LABELS.value == "append_labels"
         assert Capability.WRITE_HEADERS.value == "write_headers"
+        assert Capability.READ_DELEGATION.value == "read_delegation"
+        assert Capability.APPEND_DELEGATION.value == "append_delegation"
 
     def test_string_enum(self):
         assert Capability("read_agent") == Capability.READ_AGENT

@@ -31,6 +31,7 @@ Examples:
 import asyncio
 import logging
 import threading
+from dataclasses import dataclass
 from typing import Any, Literal, Optional, Union
 
 # Third-Party
@@ -73,6 +74,24 @@ CONTEXT_MAX_AGE = 3600  # 1 hour
 HTTP_AUTH_CHECK_PERMISSION_HOOK = "http_auth_check_permission"
 DECISION_PLUGIN_METADATA_KEY = "_decision_plugin"
 RESERVED_INTERNAL_METADATA_KEYS = frozenset({DECISION_PLUGIN_METADATA_KEY})
+
+
+@dataclass
+class PhaseState:
+    """State accumulated during a serial execution phase.
+
+    Replaces the nested tuple return type from _run_serial_phase,
+    improving readability and self-documentation.
+
+    Attributes:
+        payload: The current effective payload (may be modified by plugins).
+        decision_plugin: Name of the last plugin that modified the payload.
+        extensions: The current extensions (may be modified by plugins).
+    """
+
+    payload: Optional[PluginPayload] = None
+    decision_plugin: Optional[str] = None
+    extensions: Optional[Extensions] = None
 
 
 class PluginTimeoutError(Exception):
@@ -202,7 +221,7 @@ class PluginExecutor:
         concurrent_semaphore = asyncio.Semaphore(pool) if pool else None
 
         # SEQUENTIAL: sequential, chained execution — can halt pipeline
-        halt_result, (current_payload, decision_plugin_name, current_extensions) = await self._run_serial_phase(
+        halt_result, phase = await self._run_serial_phase(
             hook_refs=sequential_refs,
             mode_label="SEQUENTIAL",
             payload=payload,
@@ -222,11 +241,14 @@ class PluginExecutor:
             fire_and_forget_semaphore=fire_and_forget_semaphore,
             extensions=extensions,
         )
+        current_payload = phase.payload
+        decision_plugin_name = phase.decision_plugin
+        current_extensions = phase.extensions
         if halt_result is not None:
             return halt_result
 
         # TRANSFORM: serial, chained execution — can modify payloads but cannot halt pipeline
-        _, (current_payload, decision_plugin_name, current_extensions) = await self._run_serial_phase(
+        _, phase = await self._run_serial_phase(
             hook_refs=transform_refs,
             mode_label="TRANSFORM",
             payload=payload,
@@ -244,9 +266,12 @@ class PluginExecutor:
             current_extensions=current_extensions,
             extensions=extensions,
         )
+        current_payload = phase.payload
+        decision_plugin_name = phase.decision_plugin
+        current_extensions = phase.extensions
 
         # AUDIT: serial execution — observe-only (no modifications, no blocking)
-        _, (current_payload, decision_plugin_name, current_extensions) = await self._run_serial_phase(
+        _, phase = await self._run_serial_phase(
             hook_refs=audit_refs,
             mode_label="AUDIT",
             payload=payload,
@@ -434,7 +459,7 @@ class PluginExecutor:
         extensions: Optional[Extensions] = None,
     ) -> tuple[
         Optional[tuple[PluginResult, PluginContextTable | None]],
-        tuple[Optional[PluginPayload], Optional[str], Optional[Extensions]],
+        PhaseState,
     ]:
         """Run a serial execution phase (SEQUENTIAL, TRANSFORM, or AUDIT).
 
@@ -458,7 +483,6 @@ class PluginExecutor:
 
         Returns:
             A tuple of (halt_result, phase_state). halt_result is None if pipeline continues.
-            phase_state is (current_payload, decision_plugin_name, current_extensions).
         """
         for hook_ref in hook_refs:
             local_context = self._prepare_plugin_context(hook_ref, global_context, local_contexts, res_local_contexts)
@@ -510,7 +534,9 @@ class PluginExecutor:
                         hook_type,
                         violation_detail,
                     )
-                    state = (current_payload, decision_plugin_name, current_extensions)
+                    state = PhaseState(
+                        payload=current_payload, decision_plugin=decision_plugin_name, extensions=current_extensions
+                    )
                     halt = self._build_halt_result(
                         current_payload,
                         result.violation,
@@ -535,7 +561,9 @@ class PluginExecutor:
                         violation_detail,
                     )
 
-        return None, (current_payload, decision_plugin_name, current_extensions)
+        return None, PhaseState(
+            payload=current_payload, decision_plugin=decision_plugin_name, extensions=current_extensions
+        )
 
     def _apply_payload_modification(
         self,

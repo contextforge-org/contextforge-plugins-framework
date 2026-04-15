@@ -49,6 +49,7 @@ class SlotName(str, Enum):
     AGENT = "agent"
     HTTP = "http"
     META = "meta"
+    DELEGATION = "delegation"
     CUSTOM = "custom"
 
     # Security sub-fields
@@ -78,6 +79,7 @@ FIELD_MCP: str = "mcp"
 FIELD_AGENT: str = "agent"
 FIELD_HTTP: str = "http"
 FIELD_META: str = "meta"
+FIELD_DELEGATION: str = "delegation"
 FIELD_CUSTOM: str = "custom"
 FIELD_SECURITY: str = "security"
 

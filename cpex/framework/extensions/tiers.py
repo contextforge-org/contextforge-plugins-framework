@@ -29,6 +29,7 @@ from cpex.framework.extensions.constants import (
     FIELD_COMPLETION,
     FIELD_CUSTOM,
     FIELD_DATA,
+    FIELD_DELEGATION,
     FIELD_FRAMEWORK,
     FIELD_HTTP,
     FIELD_LABELS,
@@ -82,6 +83,10 @@ class Capability(str, Enum):
         WRITE_HEADERS: Read + write access to HTTP headers.
         READ_LABELS: Read access to security labels.
         APPEND_LABELS: Read + append-only access to security labels.
+        READ_LABELS: Read access to security labels.
+        APPEND_LABELS: Read + append-only access to security labels.
+        READ_DELEGATION: Read access to DelegationExtension (chain, depth, origin, actor).
+        APPEND_DELEGATION: Read + append-only access to the delegation chain.
     """
 
     READ_SUBJECT = "read_subject"
@@ -94,12 +99,15 @@ class Capability(str, Enum):
     WRITE_HEADERS = "write_headers"
     READ_LABELS = "read_labels"
     APPEND_LABELS = "append_labels"
+    READ_DELEGATION = "read_delegation"
+    APPEND_DELEGATION = "append_delegation"
 
 
 # Write/append capabilities that imply their read counterpart.
 _WRITE_IMPLIES_READ: dict[Capability, Capability] = {
     Capability.WRITE_HEADERS: Capability.READ_HEADERS,
     Capability.APPEND_LABELS: Capability.READ_LABELS,
+    Capability.APPEND_DELEGATION: Capability.READ_DELEGATION,
 }
 
 # Subject sub-field capabilities that imply read_subject.
@@ -204,6 +212,16 @@ _SLOT_REGISTRY: dict[str, SlotPolicy] = {
         access=AccessPolicy.CAPABILITY_GATED,
         read_cap=Capability.READ_HEADERS,
         write_cap=Capability.WRITE_HEADERS,
+    ),
+    # Delegation — monotonic (chain grows, never shrinks), capability-gated.
+    # Contains identity-adjacent information (subject IDs, audiences, scopes).
+    # Framework controls chain growth via with_new_hop(); merge validates
+    # monotonic growth (new chain must be superset of original).
+    SlotName.DELEGATION: SlotPolicy(
+        MutabilityTier.MONOTONIC,
+        access=AccessPolicy.CAPABILITY_GATED,
+        read_cap=Capability.READ_DELEGATION,
+        write_cap=Capability.APPEND_DELEGATION,
     ),
     # Unrestricted, mutable — no capability gate
     SlotName.CUSTOM: SlotPolicy(MutabilityTier.MUTABLE),
@@ -351,6 +369,10 @@ def filter_extensions(
         fields[FIELD_MCP] = extensions.mcp
     if extensions.meta is not None:
         fields[FIELD_META] = extensions.meta
+    # Capability-gated: delegation
+    if extensions.delegation is not None:
+        if _has_read_access(_slot_registry[SlotName.DELEGATION], capabilities):
+            fields[FIELD_DELEGATION] = extensions.delegation
     if extensions.custom is not None:
         fields[FIELD_CUSTOM] = extensions.custom
 
@@ -587,6 +609,39 @@ def merge_extensions(
         merged_sec = _merge_security(original.security, plugin_output.security, capabilities, plugin_name)
         if merged_sec is not None:
             updates[FIELD_SECURITY] = merged_sec
+
+    # Delegation — monotonic (chain must grow, never shrink), requires append_delegation
+    if (
+        Capability.APPEND_DELEGATION.value in capabilities
+        and plugin_output.delegation is not None
+        and original.delegation is not None
+        and plugin_output.delegation != original.delegation
+    ):
+        # Validate monotonic: new chain must be a superset (longer or equal, same prefix)
+        orig_chain = original.delegation.chain
+        new_chain = plugin_output.delegation.chain
+        if len(new_chain) < len(orig_chain):
+            raise TierViolationError(
+                plugin_name,
+                FIELD_DELEGATION,
+                MutabilityTier.MONOTONIC,
+                f"shrank delegation chain (was {len(orig_chain)} hops, now {len(new_chain)})",
+            )
+        if new_chain[: len(orig_chain)] != orig_chain:
+            raise TierViolationError(
+                plugin_name,
+                FIELD_DELEGATION,
+                MutabilityTier.MONOTONIC,
+                "modified existing delegation chain hops",
+            )
+        updates[FIELD_DELEGATION] = plugin_output.delegation
+    elif (
+        Capability.APPEND_DELEGATION.value in capabilities
+        and plugin_output.delegation is not None
+        and original.delegation is None
+    ):
+        # First delegation — accept (requires append_delegation capability)
+        updates[FIELD_DELEGATION] = plugin_output.delegation
 
     # Custom — mutable, no capability gate
     if plugin_output.custom != original.custom:

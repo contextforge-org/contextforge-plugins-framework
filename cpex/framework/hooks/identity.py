@@ -22,7 +22,7 @@ from enum import Enum
 from typing import Any
 
 # Third-Party
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 # First-Party
 from cpex.framework.extensions.delegation import DelegationExtension
@@ -81,9 +81,13 @@ class IdentityPayload(PluginPayload):
         ... )
         >>> payload.source
         'bearer'
+        >>> str(payload.raw_token)
+        '**********'
+        >>> payload.raw_token.get_secret_value()
+        'eyJhbGciOi...'
     """
 
-    raw_token: str = Field(description="Raw credential string.")
+    raw_token: SecretStr = Field(description="Raw credential string. Redacted on serialization.")
     source: str = Field(
         default="bearer",
         description="Credential source: bearer, mtls, api_key, custom.",
@@ -212,7 +216,9 @@ class DelegationPayload(PluginPayload):
     trust_domain: str | None = Field(default=None, description="Trust domain.")
     auth_enforced_by: str = Field(default="caller", description="Auth enforcement: caller, target, both.")
     route_attenuation: AttenuationConfig | None = Field(default=None, description="Scope attenuation config.")
-    bearer_token: str | None = Field(default=None, description="Caller's current bearer token.")
+    bearer_token: SecretStr | None = Field(
+        default=None, description="Caller's current bearer token. Redacted on serialization."
+    )
 
 
 class DelegationResult(PluginPayload):

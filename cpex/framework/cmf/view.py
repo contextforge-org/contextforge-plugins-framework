@@ -734,6 +734,13 @@ class MessageView:
 
         Capability: read_headers.
 
+        .. note::
+           This returns raw headers including sensitive values
+           (Authorization, Cookie, X-API-Key). This is by design —
+           plugins with ``read_headers`` capability are trusted to
+           see them. Sensitive headers are only stripped in
+           ``to_dict()`` serialization, not in direct property access.
+
         Returns:
             Read-only mapping of header name to value.
         """

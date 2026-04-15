@@ -13,7 +13,7 @@ See: docs/delegation-hooks-design.md
 """
 
 # Standard
-from datetime import datetime
+from datetime import UTC, datetime
 
 # Third-Party
 from pydantic import BaseModel, ConfigDict, Field
@@ -53,7 +53,7 @@ class DelegationHop(BaseModel):
     subject_type: str = Field(description="Entity kind: user, agent, service, system.")
     audience: str | None = Field(default=None, description="Target audience for this hop's token.")
     scopes_granted: tuple[str, ...] = Field(default=(), description="Scopes this hop's token grants.")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="When this hop was created.")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC), description="When this hop was created.")
     ttl_seconds: int | None = Field(default=None, description="Token lifetime in seconds.")
     strategy: str | None = Field(default=None, description="Token strategy: token_exchange, ucan, passthrough, etc.")
     from_cache: bool = Field(default=False, description="Whether the token came from cache.")
@@ -110,7 +110,7 @@ class DelegationExtension(BaseModel):
         """
         new_chain = self.chain + (hop,)
         origin = self.origin_subject_id or hop.subject_id
-        age = (datetime.utcnow() - self.chain[0].timestamp).total_seconds() if self.chain else 0.0
+        age = (datetime.now(UTC) - self.chain[0].timestamp).total_seconds() if self.chain else 0.0
         return DelegationExtension(
             chain=new_chain,
             depth=len(new_chain),

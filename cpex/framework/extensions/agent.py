@@ -12,7 +12,6 @@ modifiable by processing components.
 """
 
 # Standard
-from typing import Any
 
 # Third-Party
 from pydantic import BaseModel, ConfigDict, Field
@@ -42,9 +41,10 @@ class ConversationContext(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    history: list[Any] = Field(
+    history: list[BaseModel] = Field(
         default_factory=list,
-        description="Windowed message history (recent turns).",
+        description="Windowed message history (recent turns). Each entry is a typed model (e.g., CMF Message).",
+        max_length=100,
     )
     summary: str | None = Field(default=None, description="Summarized prior context.")
     topics: list[str] = Field(default_factory=list, description="Extracted topics or intents.")

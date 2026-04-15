@@ -81,7 +81,7 @@ class ToolPreInvokePayload(PluginPayload):
                 "use extensions.http.headers instead. "
                 "This field will be removed in a future release.",
                 DeprecationWarning,
-                stacklevel=2,
+                stacklevel=4,
             )
         return v
 

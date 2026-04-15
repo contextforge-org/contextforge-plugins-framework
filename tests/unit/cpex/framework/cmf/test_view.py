@@ -1153,9 +1153,8 @@ class TestHeadersImmutability:
         msg = Message(
             role=Role.USER,
             content=[TextContent(text="hi")],
-            extensions=ext,
         )
-        view = list(iter_views(msg))[0]
+        view = list(iter_views(msg, extensions=ext))[0]
         with pytest.raises(TypeError):
             view.headers["new_key"] = "val"
 
