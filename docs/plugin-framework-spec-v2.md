@@ -1,9 +1,7 @@
-# Plugin Framework Specification
+# Plugin Framework (CPEX) Specification
 
-**Status**: Draft
 **Version**: 2.0
-**Code Name**: APEX
-**Related**: [CMF Message Specification](cdm-message-spec-v2.md)
+**Related**: [CMF Message Specification](cdm-message-spec.md)
 
 ## Introduction
 

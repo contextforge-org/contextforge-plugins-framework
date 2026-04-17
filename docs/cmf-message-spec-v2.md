@@ -1,8 +1,7 @@
 # Common Message Format (CMF) Specification
 
-**Status**: Draft
 **Version**: 2.0
-**Related**: [Plugin Framework Specification](plugin-framework-spec-v2.md)
+**Related**: [Plugin Framework Specification](../docs/plugin-framework-spec.md)
 
 ## Introduction
 
