@@ -5,20 +5,20 @@
 
 ## Vision
 
-One configuration file that defines everything: plugin declarations, routing rules, policy, transforms, and plugin orchestration — all using APL's syntax as the unifying language.
+A single configuration file defines plugin declarations, routing rules, policy, transforms, and orchestration, all expressed in APL syntax.
 
-Plugins become first-class citizens in APL's pipe chains and policy blocks, callable inline alongside built-in operations like `redact`, `mask`, and `deny`. The execution model (sequential, parallel) is expressed declaratively in the same YAML.
+Plugins are first-class citizens in APL pipe chains and policy blocks, callable inline alongside built-in operations like `redact`, `mask`, and `deny`. Orchestration modes (sequential, parallel) are declared in the same document.
 
 ## What Unifies
 
 | Before (scattered) | After (unified) |
 |---|---|
-| `plugins/config.yaml` — plugin declarations | `config.yaml` — one file |
-| `apl/policy.yaml` — APL policy rules | Embedded in routes |
+| `plugins/config.yaml` for plugin declarations | `config.yaml`, one file |
+| `apl/policy.yaml` for APL policy rules | Embedded in routes |
 | Plugin conditions (tools, server_ids) | Route matching (name, tags, when) |
-| Separate execution modes per plugin | Inline orchestration in policy blocks |
-| Separate policy engines (OPA, Cedar, NeMo) | `opa:`, `cedar:`, `nemo:` in policy blocks |
-| Separate plugin invocations | `plugin(name)` in pipe chains and policy blocks |
+| Per-plugin execution modes | Inline orchestration in policy blocks |
+| Separate policy engines (OPA, Cedar, NeMo) | `opa(...)`, `cedar:`, `nemo(...)` in policy blocks |
+| Bespoke plugin invocations | `plugin(name)` in pipe chains and policy blocks |
 
 ## Configuration Structure
 
@@ -276,9 +276,9 @@ routes:
 
 ## The `plugin()` Functor
 
-`plugin(name)` is a first-class operation in APL, usable in two contexts:
+`plugin(name)` is a first-class operation in APL, usable in three contexts that match the plugin kinds defined in the APL spec (Section 4.7): pipe chains (field plugins), policy blocks (decision plugins), and `on_deny` / `on_allow` blocks (reaction plugins).
 
-### In Pipe Chains (transforms)
+### In Pipe Chains (field plugins)
 
 ```yaml
 result:
@@ -286,16 +286,16 @@ result:
   body:  "str | plugin(pii_scanner) | nemo(pii-sanitize)"
 ```
 
-The plugin receives the field value, processes it (scan, transform, validate), and returns the modified value. It's a **modifier** — same as `redact` or `mask`, but the logic is in the plugin.
+The plugin receives the field value and returns an (optionally) modified value. It acts as a modifier, like `redact` or `mask`, but with plugin-defined logic.
 
-**Execution:** The plugin's `execute()` method receives:
-- `payload`: A `FieldPayload` with the field name, value, and type
-- `context`: Plugin context with global state
-- `extensions`: Capability-filtered extensions
+The plugin's `execute()` method receives:
+- `payload`: a `FieldPayload` with the field name, value, type, tool name, and phase
+- `context`: plugin context with global state
+- `extensions`: capability-filtered extensions
 
-**Return:** `PluginResult` with optional `modified_payload` containing the transformed value.
+It returns a `PluginResult` that may carry a `modified_payload`, taint labels, or a deny violation.
 
-### In Policy Blocks (decisions + orchestration)
+### In Policy Blocks (decision plugins and orchestration)
 
 ```yaml
 policy:
@@ -339,20 +339,20 @@ policy:
 
 | Form | Behavior |
 |------|----------|
-| `plugin(name)` | Run plugin, use its decision (allow/deny/modify) |
-| `condition: plugin(name)` | Run plugin only if condition is true |
-| `condition:` + list | Conditional sequential — run list items in order if condition met |
-| `condition:` + `parallel:` | Conditional parallel — run concurrently if condition met |
-| `sequential: [...]` | Unconditional sequential — run in order, stop on first deny |
-| `parallel: [...]` | Unconditional parallel — run concurrently, all must allow |
+| `plugin(name)` | Run plugin; honor its decision (allow, deny, modify, taint) |
+| `condition: plugin(name)` | Run plugin only when the condition holds |
+| `condition:` + list | Conditional sequential: run list items in order when the condition holds |
+| `condition:` + `parallel:` | Conditional parallel: run concurrently when the condition holds |
+| `sequential: [...]` | Unconditional sequential: run in order, halt on first deny |
+| `parallel: [...]` | Unconditional parallel: run concurrently; deny if any branch denies |
 
 **Plugin decisions in policy:**
 
-When `plugin(name)` appears in a policy block, the plugin acts as a **decision point**:
-- Returns `allow` → pipeline continues
-- Returns `deny` (with violation) → pipeline halts (same as APL `deny`)
-- Returns `modify` → payload updated (same as APL transforms)
-- Returns `taint` → session labels updated
+When `plugin(name)` appears in a policy block the plugin receives the full `MessagePayload` and acts as a decision point. Per APL Section 4.7, it may:
+- allow (pipeline continues)
+- deny with a violation (pipeline halts, same semantics as APL `deny`)
+- modify the payload (same semantics as APL transforms)
+- emit taint labels against the session, the message, or both
 
 ### Combining APL Rules with Plugins
 
@@ -371,7 +371,8 @@ policy:
   # Then NeMo for content safety (slower, HTTP)
   - nemo(args.query):
       config_id: "prompt-injection"
-      on_match: deny
+      on_deny:
+        - deny
 
   # Then custom plugins for business logic
   - sequential:
@@ -382,11 +383,11 @@ policy:
   - args.include_ssn == true: taint(SSN_REQUESTED)
 ```
 
-Each line executes in order. Fast checks first, slower external calls later. If any step denies, the pipeline halts. This is the tiered evaluation model from the routing proposal, but expressed inline in APL.
+Lines execute top to bottom: fast in-process checks first, slower external calls later. Any deny halts the pipeline. This is the tiered evaluation model from the routing proposal, expressed inline in APL.
 
 ## Route-Level Plugin Config Overrides
 
-Plugins are declared globally in the `plugins:` section with default configuration. Routes can override that configuration for their scope:
+Plugins are declared globally in the `plugins:` section with default configuration. A route overrides that configuration for its own scope:
 
 ```yaml
 # Global declaration
@@ -420,7 +421,7 @@ Global plugin declaration (plugins: section at root)
   └── Route-level plugin block (overrides for this route)
 ```
 
-The route-level `plugins:` block is a map of plugin name → config overrides. Only the keys you specify are overridden; everything else inherits from the global declaration. You can also override capabilities per-route if a plugin needs extra access for specific tools:
+The route-level `plugins:` block is a map from plugin name to config overrides. Only the specified keys are overridden; everything else inherits from the global declaration. A route may also override capabilities if a plugin needs extra access for specific tools:
 
 ```yaml
 routes:
@@ -435,37 +436,37 @@ routes:
 
 ## FieldPayload Hook
 
-When `plugin(name)` appears in a pipe chain, the plugin receives a `FieldPayload` — a lightweight payload type for field-level operations:
+When `plugin(name)` appears in a pipe chain, the plugin receives a `FieldPayload`, a lightweight payload type for field-level operations:
 
 ```rust
 struct FieldPayload {
     field_name: String,       // "ssn", "salary", "notes"
     field_value: Value,       // current value (after prior pipe steps)
     field_type: String,       // "str", "int", "bool"
-    tool_name: String,        // which tool this field belongs to
+    tool_name: String,        // tool this field belongs to
     phase: Phase,             // Args (pre-invoke) or Result (post-invoke)
 }
 ```
 
-The plugin processes the field and returns the (optionally modified) value:
+The plugin processes the field and returns an (optionally modified) value, plus optional taint labels or a deny violation:
 
 ```yaml
 result:
   notes: "str | plugin(pii_scanner) | redact(!perm.view_notes)"
-  #              ↑                     ↑
+  #              ^                     ^
   #              FieldPayload:         Standard APL transform
   #                field_name: "notes"
   #                field_value: "Performance review pending..."
   #                field_type: "str"
   #                phase: Result
   #
-  #              Plugin returns:
+  #              Plugin result, any of:
   #                modified_payload: FieldPayload { field_value: "[PII detected] ..." }
-  #                or taint: { labels: ["PII"] }
-  #                or deny (validation failure)
+  #                taint: { labels: ["PII"], scope: [session, message] }
+  #                deny (validation failure)
 ```
 
-This means the same `Plugin` trait works for both policy decisions (receives `MessagePayload`) and field transforms (receives `FieldPayload`). The hook type determines the payload type:
+The same `Plugin` trait backs both policy decisions (which receive `MessagePayload`) and field transforms (which receive `FieldPayload`). The hook type determines the payload type:
 
 | Hook | Payload | Plugin receives |
 |------|---------|----------------|
@@ -473,7 +474,7 @@ This means the same `Plugin` trait works for both policy decisions (receives `Me
 | `cmf.tool_post_invoke` | `MessagePayload` | Full tool result |
 | `field_transform` | `FieldPayload` | Single field value |
 
-Plugins declare which hooks they support. A plugin can support both message-level and field-level hooks.
+Plugins declare which hooks they support. A single plugin may support both message-level and field-level hooks.
 
 ## Route Matching
 
@@ -490,25 +491,25 @@ Routes match using the same model as the plugin routing proposal:
 | Wildcard | Catch-all | `tool: "*"` |
 | Defaults | Fallback per entity type | `defaults.tool` |
 
-Routes are evaluated in order. More specific routes (exact name + scope) take precedence over less specific (meta tag match) which take precedence over wildcards and defaults.
+Routes are evaluated in order. More specific routes (exact name + scope) take precedence over less specific matches (meta tag), which take precedence over wildcards and defaults.
 
-Tags declared on a route via `meta.tags` serve two purposes: (1) they are assigned to the entity's `MetaExtension` for policy condition evaluation, and (2) if a matching named policy group exists in `global.policies`, that policy is automatically inherited.
+Tags declared on a route via `meta.tags` serve two purposes: (1) they are assigned to the entity's `MetaExtension` for policy condition evaluation; and (2) if a matching named policy group exists in `global.policies`, that policy is automatically inherited.
 
 ## Execution Model
 
-### Plugin Modes in Unified Config
+### Plugin Kinds by Invocation Context
 
-The plugin routing proposal defined modes on individual plugins. In the unified config, modes are defined by **how** the plugin is invoked:
+The plugin routing proposal defined modes on individual plugins. In the unified config the kind is determined by the invocation context, following APL Section 4.7:
 
-| Invocation | Mode | Can deny? | Can modify? |
-|-----------|------|-----------|-------------|
-| `plugin(name)` in policy | validate | Yes | No |
-| `plugin(name)` in pipe chain | modify | No | Yes |
-| `plugin(name)` in post_policy | observe | No | No (but can taint) |
-| `sequential: [...]` | validate (ordered) | Yes (stops on deny) | Yes (chained) |
-| `parallel: [...]` | validate (concurrent) | Yes (all must allow) | No (no chaining) |
+| Invocation | Kind | Allowed effects |
+|-----------|------|-----------------|
+| `plugin(name)` in `policy:` or `post_policy:` | Decision plugin | allow, deny, modify, taint |
+| `plugin(name)` in pipe chain (`args:` / `result:`) | Field plugin | modify, taint, deny, pass through |
+| `plugin(name)` in `on_deny:` / `on_allow:` | Reaction plugin | taint, audit, alert (no deny override) |
+| `sequential: [...]` | Ordered decision group | Runs branches in order; first deny halts; modifications chain |
+| `parallel: [...]` | Concurrent decision group | Branches see the same input; taint unions; any deny denies; mutations are branch-local |
 
-The mode is determined by context, not by plugin declaration. The same plugin can validate in one route and modify in another.
+Kind is assigned by context, not by plugin declaration. The same plugin may act as a field plugin in one route and as a decision plugin in another, provided it implements the corresponding hooks.
 
 ### Ordering Guarantees
 
@@ -561,7 +562,7 @@ routes:
       "*": "str | plugin(pii_filter)"
 ```
 
-Conditions become route matching. Hooks become invocation context (policy vs pipe chain). Priority becomes list order.
+Conditions map to route matching. Hooks map to invocation context (policy vs pipe chain). Priority maps to list order.
 
 ### From APL Policy YAML
 
@@ -585,20 +586,20 @@ routes:
       notes: "str | plugin(pii_scanner)"  # NEW: plugin in pipe chain
 ```
 
-APL policy embeds unchanged. Plugins are added where needed.
+APL policy embeds unchanged. Plugins are added where needed, as field transforms in pipe chains or as decision points in policy blocks.
 
 ## Open Questions
 
-1. **Parallel + modify**: Can parallel plugins modify the payload? If two plugins modify the same field concurrently, who wins? Proposal: parallel plugins can only validate (allow/deny), not modify.
+1. **Parallel + modify**: APL Section 6.3 states that mutations from one branch are not visible to siblings and taint labels union monotonically. This leaves the merge order of concurrent mutations undefined. Proposal: restrict `parallel:` blocks to validation and taint; if any branch returns `modified_payload`, reject the policy at compile time.
 
-2. **Wildcard field matching**: `"*": "str | plugin(pii_scanner)"` scans all string fields. Is this the right syntax? What about non-string fields?
+2. **Wildcard field matching**: Is `"*": "str | plugin(pii_scanner)"` the right syntax for "scan all string fields", and how should non-string fields be skipped? Should there be typed wildcards (`str:*`, `int:*`) or a predicate matcher?
 
-3. **Error handling per invocation**: If `plugin(rate_limiter)` fails (plugin crashes), should the pipeline deny (fail-closed) or continue (fail-open)? Configurable per-plugin globally, or overridable per-route in the plugin block?
+3. **Error handling per invocation**: If `plugin(rate_limiter)` crashes, should the pipeline fail closed or fail open? Should the policy be configurable per-plugin globally and overridable per-route, and what is the default?
 
-4. **Plugin as taint source**: Can `plugin(name)` in a policy block return taint labels? e.g., a PII scanner plugin detects PII and returns `taint(PII)` instead of deny.
+4. **External PDP declarations vs inline URLs**: The `plugins:` section declares `company_opa` with `config.url`, but route policy uses `opa("http://…")` with an inline URL. Should `opa(company_opa)` resolve the declared plugin's URL, should the inline form remain for ad-hoc calls, or should both be supported with a precedence rule?
 
-5. **FieldPayload batch mode**: Should there be a `FieldsPayload` for plugins that want to see all fields at once (e.g., cross-field validation)? Or is per-field sufficient?
+5. **FieldPayload batch mode**: Should there be a `FieldsPayload` for plugins that need to see all fields at once (e.g., cross-field validation), or is per-field invocation sufficient?
 
-6. **Route-level capability override security**: Should routes be allowed to grant capabilities beyond what the global declaration specifies? Or only narrow (remove capabilities)?
+6. **Route-level capability override security**: Should a route be allowed to grant capabilities beyond what the global declaration specifies, or only narrow them? Granting extra capabilities locally makes per-route behavior harder to audit; narrowing them is safe by construction.
 
-7. **Config override depth**: Route-level plugin config is a shallow merge. Should deep merge be supported for nested config? e.g., override `config.rules[0].threshold` without replacing the entire `rules` list.
+7. **Config override depth**: Route-level plugin config is a shallow merge. Should deep merge be supported for nested config, so a route can override `config.rules[0].threshold` without replacing the entire `rules` list?
