@@ -1,7 +1,7 @@
 # Plugin Framework (CPEX) Specification
 
 **Version**: 2.0
-**Related**: [CMF Message Specification](../docs/specs/cmf-message-spec.md)
+**Related**: [CMF Message Specification](../specs/cmf-message-spec.md)
 
 ## Introduction
 
@@ -16,7 +16,7 @@ The framework separates four concerns:
 
 The framework operates on any `PluginPayload` subclass. CMF `Message` and `MessageView` are built-in payload types for the common case of message-level policy enforcement, but the same plugin model, scheduling, and capability gating apply to any domain-specific payload.
 
-For the canonical message model, extensions, and `MessageView` abstraction, see the [CMF Message Specification](../docs/specs/cmf-message-spec.md).
+For the canonical message model, extensions, and `MessageView` abstraction, see the [CMF Message Specification](../specs/cmf-message-spec.md).
 
 ## Table of Contents
 
@@ -70,7 +70,7 @@ This section introduces the type system that the rest of the specification build
 
 | Type | Role |
 |------|------|
-| `PluginPayload` | Base type for all hook payloads. Frozen (immutable) Pydantic model with optional extensions. Plugins use `model_copy(update={...})` to propose modifications. CMF [Message](../docs/specs/cmf-message-spec.md) defines a canonical representation for messages. |
+| `PluginPayload` | Base type for all hook payloads. Frozen (immutable) Pydantic model with optional extensions. Plugins use `model_copy(update={...})` to propose modifications. CMF [Message](../specs/cmf-message-spec.md) defines a canonical representation for messages. |
 | `PluginResult[T]` | Generic result: `continue_processing`, `modified_payload`, `violation`, `metadata`. |
 | `PipelineResult[T]` | Aggregate result from a full hook invocation. Wraps `PluginResult` with factory methods (`allowed`, `denied`). |
 | `PluginViolation` | Structured policy failure: `reason`, `description`, `code`, `details`. |
@@ -497,7 +497,7 @@ Only `modify` plugins receive mutable payloads. All modifications use copy-on-wr
 * Modified copies propagate forward
 * Original remains available for audit and rollback
 
-For payloads that carry extensions, COW copies respect extension mutability tiers: immutable extensions are shared by reference, monotonic extensions are validated add-only, guarded extensions require write capabilities. See [CMF Message Specification — Mutability Tiers](../docs/specs/cmf-message-spec.md#31-mutability-tiers). Payloads without extensions skip tier enforcement.
+For payloads that carry extensions, COW copies respect extension mutability tiers: immutable extensions are shared by reference, monotonic extensions are validated add-only, guarded extensions require write capabilities. See [CMF Message Specification — Mutability Tiers](../specs/cmf-message-spec.md#31-mutability-tiers). Payloads without extensions skip tier enforcement.
 
 This ensures:
 
@@ -758,7 +758,7 @@ This ensures negligible overhead when the framework is unused.
 
 Plugins declare which extensions they need. The pipeline builds payload views with only the granted extensions visible — ungated extensions appear as `None`. Capability gating applies to any `PluginPayload` that carries extensions, not only CMF messages.
 
-For the full extension model and mutability tiers, see [CMF Message Specification — Extensions](../docs/specs/cmf-message-spec.md#3-extensions).
+For the full extension model and mutability tiers, see [CMF Message Specification — Extensions](../specs/cmf-message-spec.md#3-extensions).
 
 ### 6.1 Capability Model
 
