@@ -1,6 +1,6 @@
 # APL: Attribute Policy Language Specification
 
-**Status**: v1.0 (documents implemented behavior as of 2026-03-25)
+**Status**: v1.0
 
 APL is an attribute policy language with effects and sequencing support that can be used to control AI application behaviors. It combines attribute-based access control, delegation chain tracking, data sensitivity propagation (taint), field-level transforms, runtime plugins, and external PDP federation into a single predicate-and-effects model. Predicates evaluate over identity, delegation, session, and content attributes. Effects deny requests, label data flows, transform fields, or invoke host-defined logic. Policies are compiled once and evaluated in microseconds.
 
