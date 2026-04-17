@@ -1,7 +1,7 @@
 # Unified Configuration: APL + Plugin Routing + Plugin Framework
 
 **Status:** Proposal
-**Dependencies:** [APL Specification](../docs/specs/apl-dsl-spec.md)
+**Dependencies:** [APL Specification](../specs/apl-dsl-spec.md)
 
 A single configuration file defines plugin declarations, routing rules, policy, transforms, and orchestration, all expressed in APL syntax.
 
