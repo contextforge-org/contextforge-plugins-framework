@@ -248,3 +248,4 @@ db_path/
 tmp/
 
 .continue
+plugin-catalog
