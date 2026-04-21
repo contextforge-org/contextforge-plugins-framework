@@ -278,6 +278,23 @@ impl PluginRegistry {
         self.register_for_names_inner(plugin, config, handler, names)
     }
 
+    /// Register a plugin with a handler for multiple hook names.
+    ///
+    /// Like `register_for_names` but without requiring a `HookTypeDef`
+    /// type parameter. Used by the config-driven factory path where
+    /// the hook type is not known at compile time — the factory
+    /// provides the handler directly.
+    pub fn register_for_names_with_handler(
+        &mut self,
+        plugin: Arc<dyn Plugin>,
+        config: PluginConfig,
+        handler: Arc<dyn AnyHookHandler>,
+        names: &[&str],
+    ) -> Result<(), String> {
+        self.register_for_names_inner(plugin, config, handler, names)
+    }
+
+
     /// Internal: register handler under one or more hook names.
     fn register_for_names_inner(
         &mut self,
