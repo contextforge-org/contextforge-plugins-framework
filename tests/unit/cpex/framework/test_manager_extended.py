@@ -116,10 +116,12 @@ async def test_manager_timeout_handling():
         # assert "timeout" in result.violation.description.lower()
 
     # Test with audit mode + on_error=IGNORE (errors are logged and ignored)
-    plugin_config.mode = PluginMode.AUDIT
-    plugin_config.on_error = OnError.IGNORE
+    audit_config = plugin_config.model_copy(
+        update={"mode": PluginMode.AUDIT, "on_error": OnError.IGNORE}
+    )
+    audit_plugin = TimeoutPlugin(audit_config)
     with patch.object(manager._registry, "get_hook_refs_for_hook") as mock_get:
-        hook_ref = HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(timeout_plugin))
+        hook_ref = HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(audit_plugin))
         mock_get.return_value = [hook_ref]
 
         result, _ = await manager.invoke_hook(PromptHookType.PROMPT_PRE_FETCH, prompt, global_context=global_context)
@@ -177,10 +179,12 @@ async def test_manager_exception_handling():
         # assert "error" in result.violation.description.lower()
 
     # Test with audit mode + on_error=IGNORE (errors are logged and ignored)
-    plugin_config.mode = PluginMode.AUDIT
-    plugin_config.on_error = OnError.IGNORE
+    audit_config = plugin_config.model_copy(
+        update={"mode": PluginMode.AUDIT, "on_error": OnError.IGNORE}
+    )
+    audit_plugin = ErrorPlugin(audit_config)
     with patch.object(manager._registry, "get_hook_refs_for_hook") as mock_get:
-        hook_ref = HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(error_plugin))
+        hook_ref = HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(audit_plugin))
         mock_get.return_value = [hook_ref]
 
         result, _ = await manager.invoke_hook(PromptHookType.PROMPT_PRE_FETCH, prompt, global_context=global_context)
@@ -189,41 +193,21 @@ async def test_manager_exception_handling():
         assert result.continue_processing
         assert result.violation is None
 
-    plugin_config.mode = PluginMode.CONCURRENT
-    plugin_config.on_error = OnError.IGNORE
-    with patch.object(manager._registry, "get_hook_refs_for_hook") as mock_get:
-        hook_ref = HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(error_plugin))
-        mock_get.return_value = [hook_ref]
+    # Test with concurrent mode + on_error=IGNORE (repeated to verify consistency)
+    ignore_config = plugin_config.model_copy(
+        update={"mode": PluginMode.CONCURRENT, "on_error": OnError.IGNORE}
+    )
+    ignore_plugin = ErrorPlugin(ignore_config)
+    for _ in range(3):
+        with patch.object(manager._registry, "get_hook_refs_for_hook") as mock_get:
+            hook_ref = HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(ignore_plugin))
+            mock_get.return_value = [hook_ref]
 
-        result, _ = await manager.invoke_hook(PromptHookType.PROMPT_PRE_FETCH, prompt, global_context=global_context)
+            result, _ = await manager.invoke_hook(PromptHookType.PROMPT_PRE_FETCH, prompt, global_context=global_context)
 
-        # Should continue with on_error=ignore
-        assert result.continue_processing
-        assert result.violation is None
-
-    plugin_config.mode = PluginMode.CONCURRENT
-    plugin_config.on_error = OnError.IGNORE
-    with patch.object(manager._registry, "get_hook_refs_for_hook") as mock_get:
-        hook_ref = HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(error_plugin))
-        mock_get.return_value = [hook_ref]
-
-        result, _ = await manager.invoke_hook(PromptHookType.PROMPT_PRE_FETCH, prompt, global_context=global_context)
-
-        # Should continue with on_error=ignore
-        assert result.continue_processing
-        assert result.violation is None
-
-    plugin_config.mode = PluginMode.CONCURRENT
-    plugin_config.on_error = OnError.IGNORE
-    with patch.object(manager._registry, "get_hook_refs_for_hook") as mock_get:
-        hook_ref = HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(error_plugin))
-        mock_get.return_value = [hook_ref]
-
-        result, _ = await manager.invoke_hook(PromptHookType.PROMPT_PRE_FETCH, prompt, global_context=global_context)
-
-        # Should continue with on_error=ignore
-        assert result.continue_processing
-        assert result.violation is None
+            # Should continue with on_error=ignore
+            assert result.continue_processing
+            assert result.violation is None
 
     await manager.shutdown()
 

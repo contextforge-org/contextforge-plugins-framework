@@ -45,6 +45,7 @@ from cpex.framework.constants import (
     UDS,
     URL,
 )
+from cpex.framework.extensions.extensions import Extensions
 from cpex.framework.settings import (
     get_client_mtls_settings,
     get_grpc_client_mtls_settings,
@@ -1198,6 +1199,8 @@ class PluginConfig(BaseModel):
         max_content_size (Optional(int)): The maximum size of payload, context,
     """
 
+    model_config = ConfigDict(frozen=True)
+
     name: str
     description: Optional[str] = None
     author: Optional[str] = None
@@ -1234,10 +1237,44 @@ class PluginConfig(BaseModel):
 
     conditions: list[PluginCondition] = Field(default_factory=list)  # When to apply
     applied_to: Optional[AppliedTo] = None  # Fields to apply to.
+    capabilities: frozenset[str] = Field(
+        default_factory=frozenset,
+        description="Declared capabilities (e.g., 'read_headers', 'append_labels').",
+    )
     config: Optional[dict[str, Any]] = None
     mcp: Optional[MCPClientConfig] = None
     grpc: Optional[GRPCClientConfig] = None
     unix_socket: Optional[UnixSocketClientConfig] = None
+
+    @field_validator("capabilities", mode="before")
+    @classmethod
+    def _validate_capabilities(cls, v: Any) -> frozenset[str]:
+        """Validate that all declared capabilities are known.
+
+        Args:
+            v: Raw capabilities value from the config.
+
+        Returns:
+            A validated frozenset of capability strings.
+
+        Raises:
+            ValueError: If an unknown capability is declared.
+        """
+        # First-Party
+        from cpex.framework.extensions.tiers import Capability  # pylint: disable=import-outside-toplevel
+
+        if isinstance(v, (list, set, frozenset)):
+            known = {c.value for c in Capability}
+            for cap in v:
+                if cap not in known:
+                    raise ValueError(f"Unknown capability: {cap!r}. Known: {sorted(known)}")
+            return frozenset(v)
+        return frozenset()
+
+    @field_serializer("capabilities")
+    def serialize_capabilities(self, value: frozenset[str]) -> list[str]:
+        """Serialize frozenset for JSON compatibility."""
+        return sorted(value)
 
     @model_validator(mode="after")
     def check_url_or_script_filled(self) -> Self:  # pylint: disable=bad-classmethod-argument
@@ -1597,6 +1634,8 @@ class PluginResult(BaseModel, Generic[T]):
     Attributes:
             continue_processing (bool): Whether to stop processing.
             modified_payload (Optional[Any]): The modified payload if the plugin is a transformer.
+            modified_extensions (Optional[Extensions]): Modified extensions returned by the plugin
+                (e.g., updated HTTP headers from token delegation, appended security labels).
             violation (Optional[PluginViolation]): violation object.
             metadata (Optional[dict[str, Any]]): additional metadata.
 
@@ -1625,6 +1664,7 @@ class PluginResult(BaseModel, Generic[T]):
 
     continue_processing: bool = True
     modified_payload: Optional[T] = None
+    modified_extensions: Optional[Extensions] = None
     violation: Optional[PluginViolation] = None
     metadata: Optional[dict[str, Any]] = Field(default_factory=dict)
 

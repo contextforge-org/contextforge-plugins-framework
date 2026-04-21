@@ -295,6 +295,8 @@ def get_matchable_value(payload: Any, hook_type: str) -> Optional[str]:
         "resource_post_fetch": "uri",
         "agent_pre_invoke": "agent_id",
         "agent_post_invoke": "agent_id",
+        "token_delegate": "target_name",
+        "identity_resolve": "raw_token",
     }
 
     field_name = field_map.get(hook_type)
@@ -348,6 +350,8 @@ def payload_matches(
         "resource_post_fetch": "resources",
         "agent_pre_invoke": "agents",
         "agent_post_invoke": "agents",
+        "token_delegate": "tools",
+        "identity_resolve": "tools",
     }
 
     # If no conditions, match everything
