@@ -101,8 +101,8 @@ async def test_fire_and_forget_mode_fires_background_task():
     assert result.continue_processing
     assert not finished.is_set()
 
-    # Let the background task complete
-    await asyncio.sleep(0.1)
+    # Wait deterministically for the background task to complete
+    await asyncio.gather(*result.background_tasks, return_exceptions=True)
     assert finished.is_set()
 
     await manager.shutdown()
@@ -129,8 +129,8 @@ async def test_fire_and_forget_mode_error_does_not_block():
 
     assert result.continue_processing
 
-    # Allow background task to run and silently fail
-    await asyncio.sleep(0.05)
+    # Wait deterministically for the background task to run and silently fail
+    await asyncio.gather(*result.background_tasks, return_exceptions=True)
 
     await manager.shutdown()
 
@@ -356,8 +356,8 @@ async def test_execution_pool_semaphore():
 
     assert result.continue_processing
 
-    # Allow all background FIRE_AND_FORGET tasks to complete
-    await asyncio.sleep(0.1)
+    # Wait deterministically for all background FIRE_AND_FORGET tasks to complete
+    await asyncio.gather(*result.background_tasks, return_exceptions=True)
 
     # With pool=1, max concurrency should be 1
     assert concurrency_high_water <= 1
@@ -619,8 +619,8 @@ async def test_phase_order_all_five_modes():
             result, _ = await manager.invoke_hook(PromptHookType.PROMPT_PRE_FETCH, payload, global_context)
 
     assert result.continue_processing
-    # F&F is async — wait for it
-    await asyncio.sleep(0.1)
+    # F&F is async — wait for it deterministically
+    await asyncio.gather(*result.background_tasks, return_exceptions=True)
 
     assert phase_log == ["seq", "xform", "audit", "conc", "fnf"]
 
@@ -666,7 +666,7 @@ async def test_fire_and_forget_fires_after_all_phases():
     # FIRE_AND_FORGET has not yet completed (fire-and-forget)
     assert not fire_and_forget_started.is_set()
 
-    await asyncio.sleep(0.1)
+    await asyncio.gather(*result.background_tasks, return_exceptions=True)
     assert "fire_and_forget" in phase_log
     # FIRE_AND_FORGET always comes after sequential in the log
     assert phase_log.index("sequential") < phase_log.index("fire_and_forget")

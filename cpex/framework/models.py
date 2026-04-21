@@ -10,6 +10,7 @@ the base plugin layer including configurations, and contexts.
 """
 
 # Standard
+import asyncio
 import logging
 import os
 import re
@@ -1498,6 +1499,11 @@ class PluginResult(BaseModel, Generic[T]):
                 (e.g., updated HTTP headers from token delegation, appended security labels).
             violation (Optional[PluginViolation]): violation object.
             metadata (Optional[dict[str, Any]]): additional metadata.
+            background_tasks (list[asyncio.Task]): asyncio.Task handles for any FIRE_AND_FORGET
+                plugins scheduled during this invocation. Use
+                ``await asyncio.gather(*result.background_tasks, return_exceptions=True)``
+                to deterministically wait for all background tasks to complete (useful in tests).
+                This field is excluded from model serialization.
 
      Examples:
         >>> result = PluginResult()
@@ -1522,11 +1528,14 @@ class PluginResult(BaseModel, Generic[T]):
         False
     """
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     continue_processing: bool = True
     modified_payload: Optional[T] = None
     modified_extensions: Optional[Extensions] = None
     violation: Optional[PluginViolation] = None
     metadata: Optional[dict[str, Any]] = Field(default_factory=dict)
+    background_tasks: list[asyncio.Task] = Field(default_factory=list, exclude=True)
 
 
 class GlobalContext(BaseModel):

@@ -354,7 +354,7 @@ class PluginExecutor:
                     )
 
         # FIRE_AND_FORGET: fire-and-forget background tasks (fires last with final payload snapshot)
-        self._fire_and_forget_tasks(
+        bg_tasks = self._fire_and_forget_tasks(
             fire_and_forget_refs,
             payload,
             global_context,
@@ -373,6 +373,7 @@ class PluginExecutor:
                 modified_extensions=current_extensions,
                 violation=None,
                 metadata=combined_metadata,
+                background_tasks=bg_tasks,
             ),
             res_local_contexts,
         )
@@ -688,7 +689,7 @@ class PluginExecutor:
         extensions: Optional[Extensions] = None,
     ) -> tuple[PluginResult, dict]:
         """Schedule fire-and-forget tasks and build a pipeline-halting result."""
-        self._fire_and_forget_tasks(
+        bg_tasks = self._fire_and_forget_tasks(
             fire_and_forget_refs,
             payload,
             global_context,
@@ -704,6 +705,7 @@ class PluginExecutor:
                 modified_payload=current_payload,
                 violation=violation,
                 metadata=combined_metadata,
+                background_tasks=bg_tasks,
             ),
             res_local_contexts,
         )
@@ -728,12 +730,14 @@ class PluginExecutor:
         res_local_contexts: dict,
         semaphore: Optional[asyncio.Semaphore],
         extensions: Optional[Extensions] = None,
-    ) -> None:
+    ) -> list[asyncio.Task]:
         """Schedule all FIRE_AND_FORGET plugins as fire-and-forget background tasks.
 
         May be called from an early-exit path or from the normal completion path.
         Each FIRE_AND_FORGET plugin receives an isolated snapshot of the payload at call time.
+        Returns the list of asyncio.Task handles for all newly scheduled tasks.
         """
+        tasks: list[asyncio.Task] = []
         for ref in fire_and_forget_refs:
             local_context_key = global_context.request_id + ref.plugin_ref.uuid
             if local_context_key in res_local_contexts:
@@ -752,9 +756,11 @@ class PluginExecutor:
             )
             local_context = PluginContext(global_context=tmp_gc)
             res_local_contexts[local_context_key] = local_context
-            asyncio.create_task(
+            task = asyncio.create_task(
                 self._run_fire_and_forget_task(ref, task_input, local_context, semaphore, extensions=extensions)
             )
+            tasks.append(task)
+        return tasks
 
     async def _run_fire_and_forget_task(
         self,
