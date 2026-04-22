@@ -769,9 +769,10 @@ class PluginExecutor:
         local_context: PluginContext,
         semaphore: Optional[asyncio.Semaphore],
         extensions: Optional[Extensions] = None,
-    ) -> None:
+    ) -> Optional[PluginErrorModel]:
         """Execute a plugin as a fire-and-forget background task.
 
+        Returns None on success, or a PluginErrorModel if the plugin raised.
         Errors are logged but never propagated — background tasks cannot halt the pipeline.
         If on_error=DISABLE, the plugin is added to the runtime-disabled set.
         """
@@ -781,11 +782,13 @@ class PluginExecutor:
                     await self._execute_with_timeout(hook_ref, payload, local_context, extensions=extensions)
             else:
                 await self._execute_with_timeout(hook_ref, payload, local_context, extensions=extensions)
-        except Exception:
+            return None
+        except Exception as exc:
             logger.error("Plugin %s failed in fire-and-forget mode (ignored)", hook_ref.plugin_ref.name)
             if hook_ref.plugin_ref.on_error == OnError.DISABLE:
                 self._runtime_disabled.add(hook_ref.plugin_ref.name)
             # FAIL and IGNORE both just log for FIRE_AND_FORGET mode (background can't halt pipeline)
+            return PluginErrorModel(message=repr(exc), plugin_name=hook_ref.plugin_ref.name)
 
     async def execute_plugin(
         self,

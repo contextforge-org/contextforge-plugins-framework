@@ -102,7 +102,7 @@ async def test_fire_and_forget_mode_fires_background_task():
     assert not finished.is_set()
 
     # Wait deterministically for the background task to complete
-    await asyncio.gather(*result.background_tasks, return_exceptions=True)
+    await result.wait_for_background_tasks()
     assert finished.is_set()
 
     await manager.shutdown()
@@ -129,8 +129,35 @@ async def test_fire_and_forget_mode_error_does_not_block():
 
     assert result.continue_processing
 
-    # Wait deterministically for the background task to run and silently fail
-    await asyncio.gather(*result.background_tasks, return_exceptions=True)
+    # Wait for the background task; errors are returned, not raised
+    await result.wait_for_background_tasks()
+
+    await manager.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_wait_for_background_tasks_returns_errors():
+    """wait_for_background_tasks() returns a PluginErrorModel for each failed task."""
+
+    class BrokenPlugin(Plugin):
+        async def prompt_pre_fetch(self, payload, context):
+            raise RuntimeError("boom")
+
+    manager = await _make_manager()
+    cfg = make_plugin_config("BrokenFnF", PluginMode.FIRE_AND_FORGET)
+    plugin = BrokenPlugin(cfg)
+
+    with patch.object(manager._registry, "get_hook_refs_for_hook") as mock_get:
+        mock_get.return_value = [HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(plugin))]
+        payload = PromptPrehookPayload(prompt_id="test", args={})
+        global_context = GlobalContext(request_id="wait_errors")
+
+        result, _ = await manager.invoke_hook(PromptHookType.PROMPT_PRE_FETCH, payload, global_context)
+
+    errors = await result.wait_for_background_tasks()
+    assert len(errors) == 1
+    assert errors[0].plugin_name == "BrokenFnF"
+    assert "RuntimeError" in errors[0].message
 
     await manager.shutdown()
 
@@ -357,7 +384,7 @@ async def test_execution_pool_semaphore():
     assert result.continue_processing
 
     # Wait deterministically for all background FIRE_AND_FORGET tasks to complete
-    await asyncio.gather(*result.background_tasks, return_exceptions=True)
+    await result.wait_for_background_tasks()
 
     # With pool=1, max concurrency should be 1
     assert concurrency_high_water <= 1
@@ -620,7 +647,7 @@ async def test_phase_order_all_five_modes():
 
     assert result.continue_processing
     # F&F is async — wait for it deterministically
-    await asyncio.gather(*result.background_tasks, return_exceptions=True)
+    await result.wait_for_background_tasks()
 
     assert phase_log == ["seq", "xform", "audit", "conc", "fnf"]
 
@@ -666,7 +693,7 @@ async def test_fire_and_forget_fires_after_all_phases():
     # FIRE_AND_FORGET has not yet completed (fire-and-forget)
     assert not fire_and_forget_started.is_set()
 
-    await asyncio.gather(*result.background_tasks, return_exceptions=True)
+    await result.wait_for_background_tasks()
     assert "fire_and_forget" in phase_log
     # FIRE_AND_FORGET always comes after sequential in the log
     assert phase_log.index("sequential") < phase_log.index("fire_and_forget")
