@@ -6,4 +6,4 @@ bookFlatSection: true
 
 # CPEX Documentation
 
-Learn how to build extensible systems with CPEX — from your first plugin to production pipelines.
+Learn how to build extensible AI systems with CPEX — from understanding the core concepts to deploying production plugin pipelines.

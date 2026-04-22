@@ -13,6 +13,12 @@ This guide walks you through installing CPEX, writing a plugin, configuring it, 
 pip install cpex
 ```
 
+## What Are Plugins?
+
+Plugins let you intercept and modify execution at well-defined points — without changing the targeted application code.
+
+You define **hooks** in your application where you want extensibility. Plugins attach to those hooks and run automatically whenever they fire.
+
 ## 1. Write a Plugin
 
 A plugin is a class that subclasses `Plugin` and implements one or more hook handlers. Here you will create a plugin that blocks specific tools by name.

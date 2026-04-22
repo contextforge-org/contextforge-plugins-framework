@@ -5,9 +5,34 @@ type: docs
 
 # CPEX
 
-**A lightweight plugin framework for building extensible AI systems**
+**A lightweight, composable plugin framework for building extensible AI systems.**
 
 CPEX lets you intercept, enforce, and extend application behavior through plugins — without modifying core logic. Define hook points in your application, write plugins that attach to them, and compose enforcement pipelines that run automatically.
+
+```python
+from cpex.framework import hook, Plugin, PluginResult, PluginViolation
+
+class RateLimitPlugin(Plugin):
+    @hook("tool_pre_invoke")
+    async def check_rate_limit(self, payload, context):
+        if self.is_over_limit(context):
+            return PluginResult(
+                continue_processing=False,
+                violation=PluginViolation(reason="Rate limit exceeded", code="RATE_LIMIT")
+            )
+        return PluginResult(continue_processing=True)
+```
+
+Register the plugin, and it runs at every hook invocation. No changes to your application logic.
+
+### What you can build with CPEX
+
+- **Security** — access control, prompt injection detection, data loss prevention
+- **Observability** — request tracing, audit logging, metrics collection
+- **Governance** — policy enforcement, compliance validation, approval workflows
+- **Reliability** — rate limiting, circuit breakers, response validation
+
+---
 
 {{% columns %}}
 
@@ -19,6 +44,6 @@ CPEX lets you intercept, enforce, and extend application behavior through plugin
 - ### Learn the Concepts
   Understand hooks, execution modes, and the plugin pipeline.
 
-  [Documentation &rarr;]({{< relref "/docs/overview" >}})
+  [Overview &rarr;]({{< relref "/docs/overview" >}})
 
 {{% /columns %}}

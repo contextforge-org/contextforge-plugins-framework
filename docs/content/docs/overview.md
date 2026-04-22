@@ -3,13 +3,17 @@ title: "Overview"
 weight: 10
 ---
 
-# What Are Plugins?
+# Overview
 
-Plugins let you intercept and modify execution at well-defined points, without changing the application code.
+## Why CPEX?
 
-You define **hooks** in your application where you want extensibility. Plugins attach to those hooks and run automatically whenever they fire. The plugin manager handles registration, ordering, execution, timeouts, and error isolation. You get a deterministic pipeline with no surprises.
+AI systems interact with tools, APIs, data sources, and other agents. Adding guardrails, observability, or policy checks typically means embedding that logic directly into application code — leading to duplication, tight coupling, and drift.
 
-## How the Pipeline Works
+CPEX introduces **standardized interception hooks** between your application and its operations. Plugins attach to these hooks and run automatically, keeping enforcement logic separate from business logic.
+
+## How It Works
+
+Your application defines **hooks** — named interception points before and after critical operations. Plugins register against these hooks and execute automatically when triggered. The plugin manager handles registration, ordering, execution, timeouts, and error isolation.
 
 ```goat
   .---.        .----.        .-------.         .------.        .---.
@@ -30,18 +34,11 @@ When a hook fires, the plugin manager dispatches the payload to every registered
 - **Modify** the payload (e.g., redact sensitive data, inject defaults)
 - **Block** execution with a violation (e.g., deny a prohibited tool call)
 
-## What You Can Build
-
-CPEX is designed for modern AI and agent systems, but works for any application that needs safe, modular extensibility.
-
-- **Security** — access control, prompt injection detection, data loss prevention
-- **Observability** — request tracing, audit logging, metrics collection
-- **Governance** — policy enforcement, compliance validation, approval workflows
-- **Reliability** — rate limiting, circuit breakers, response validation
+You get a deterministic pipeline with no surprises.
 
 ## Built-in Hooks
 
-CPEX ships with hooks for common AI operations — tools, prompts, resources, agents, HTTP requests, identity resolution, and a unified Common Message Format for cross-cutting policy evaluation. You can also register your own hooks for any domain.
+CPEX ships with hooks for common AI operations — tools, prompts, resources, agents, HTTP requests, identity resolution, and a unified Common Message Format for cross-cutting policy evaluation. You can also [register your own hooks]({{< relref "/docs/hooks#custom-hooks" >}}) for any domain.
 
 ## Next Steps
 
