@@ -30,6 +30,7 @@
 // in cpex/framework/base.py and cpex/framework/registry.py.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use crate::context::PluginContext;
@@ -68,6 +69,12 @@ pub struct PluginRef {
 
     /// Unique identifier assigned by the registry.
     id: String,
+
+    /// Runtime circuit breaker — set to true when `on_error: Disable`
+    /// triggers. Once set, `mode()` returns `Disabled` and the plugin
+    /// is skipped by `group_by_mode()` on all subsequent invocations.
+    /// Uses `Arc<AtomicBool>` so clones (in HookEntry) share the same flag.
+    disabled: Arc<AtomicBool>,
 }
 
 impl PluginRef {
@@ -82,6 +89,7 @@ impl PluginRef {
             plugin,
             trusted_config,
             id,
+            disabled: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -105,9 +113,28 @@ impl PluginRef {
         &self.trusted_config.name
     }
 
-    /// Convenience: plugin mode from the trusted config.
+    /// Effective mode — returns `Disabled` if the runtime circuit breaker
+    /// has tripped, otherwise returns the configured mode.
     pub fn mode(&self) -> PluginMode {
-        self.trusted_config.mode
+        if self.disabled.load(Ordering::Relaxed) {
+            PluginMode::Disabled
+        } else {
+            self.trusted_config.mode
+        }
+    }
+
+    /// Runtime-disable this plugin (one-way circuit breaker).
+    ///
+    /// Called by the executor when a plugin errors with `on_error: Disable`.
+    /// All clones of this PluginRef (in HookEntry, etc.) share the same
+    /// `AtomicBool`, so the disable is instantly visible across the system.
+    pub fn disable(&self) {
+        self.disabled.store(true, Ordering::Relaxed);
+    }
+
+    /// Whether this plugin has been runtime-disabled.
+    pub fn is_disabled(&self) -> bool {
+        self.disabled.load(Ordering::Relaxed)
     }
 
     /// Convenience: plugin priority from the trusted config.
@@ -128,27 +155,26 @@ impl PluginRef {
 /// `CmfHookHandler`) and translates between type-erased payloads
 /// and the typed handler method.
 ///
-/// Two invoke paths:
-/// - `invoke_owned()` — for Sequential/Transform modes. Receives
-///   an owned payload (Box<dyn Any>). The handler downcasts and calls
-///   the typed method.
-/// - `invoke_ref()` — for Audit/Concurrent/FireAndForget modes.
-///   Receives a borrowed payload (&dyn Any). No clone needed.
+/// The executor dispatches through this trait for all five phases.
+/// The handler receives a borrowed payload — the framework retains
+/// ownership. Plugins clone only when modifying.
+///
+/// `invoke` is async so that plugins can perform I/O (HTTP calls,
+/// Redis, vault lookups) without blocking the tokio runtime, and
+/// so that `tokio::time::timeout` can actually observe and cancel
+/// long-running handlers.
+#[async_trait::async_trait]
 pub trait AnyHookHandler: Send + Sync {
     /// Call the handler with a borrowed payload.
-    ///
-    /// The handler downcasts `&dyn PluginPayload` to the concrete
-    /// type via `as_any()`. The framework always retains ownership
-    /// of the payload — the handler clones only if it needs to modify.
     ///
     /// Returns an `ErasedResultFields` (see executor module) wrapped
     /// as `Box<dyn Any>`. If the handler modified the payload, the
     /// modified copy is in `ErasedResultFields.modified_payload`.
-    fn invoke(
+    async fn invoke(
         &self,
         payload: &dyn PluginPayload,
         extensions: &FilteredExtensions,
-        ctx: &PluginContext,
+        ctx: &mut PluginContext,
     ) -> Result<Box<dyn std::any::Any + Send + Sync>, crate::error::PluginError>;
 
     /// The hook type name this handler was registered for.
@@ -250,29 +276,6 @@ impl PluginRegistry {
         names: &[&str],
     ) -> Result<(), String> {
         self.register_for_names_inner(plugin, config, handler, names)
-    }
-
-    /// Register a plugin with its authoritative config using hook names
-    /// from the config (legacy path — no typed handler).
-    ///
-    /// This is the backward-compatible path for plugins that don't use
-    /// the typed hook system. The plugin is registered in the name index
-    /// and hook index, but without a type-erased handler. The executor
-    /// must use `invoke_by_name()` with payload conversion for these.
-    pub fn register_legacy(
-        &mut self,
-        plugin: Arc<dyn Plugin>,
-        config: PluginConfig,
-    ) -> Result<(), String> {
-        let name = config.name.clone();
-
-        if self.plugins.contains_key(&name) {
-            return Err(format!("plugin '{}' is already registered", name));
-        }
-
-        let plugin_ref = PluginRef::new(plugin, config);
-        self.plugins.insert(name, plugin_ref);
-        Ok(())
     }
 
     /// Internal: register handler under one or more hook names.
@@ -431,12 +434,13 @@ mod tests {
     /// A simple AnyHookHandler that wraps a function for testing.
     struct TestHandler;
 
+    #[async_trait]
     impl AnyHookHandler for TestHandler {
-        fn invoke(
+        async fn invoke(
             &self,
             _payload: &dyn PluginPayload,
             _extensions: &FilteredExtensions,
-            _ctx: &PluginContext,
+            _ctx: &mut PluginContext,
         ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
             let result: PluginResult<TestPayload> = PluginResult::allow();
             Ok(crate::executor::erase_result(result))
@@ -605,16 +609,16 @@ mod tests {
         assert_eq!(plugin_ref.priority(), 100);
     }
 
-    #[test]
-    fn test_handler_invoke() {
+    #[tokio::test]
+    async fn test_handler_invoke() {
         let handler = TestHandler;
         let payload = TestPayload {
             value: "test".into(),
         };
         let ext = FilteredExtensions::default();
-        let ctx = PluginContext::new(crate::context::GlobalContext::new("req-1"));
+        let mut ctx = PluginContext::new();
 
-        let result = handler.invoke(&payload as &dyn PluginPayload, &ext, &ctx).unwrap();
+        let result = handler.invoke(&payload as &dyn PluginPayload, &ext, &mut ctx).await.unwrap();
         let fields = crate::executor::extract_erased(result).unwrap();
         assert!(fields.continue_processing);
     }

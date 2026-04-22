@@ -65,6 +65,7 @@ where
     }
 }
 
+#[async_trait::async_trait]
 impl<H, P> AnyHookHandler for TypedHandlerAdapter<H, P>
 where
     H: HookTypeDef,
@@ -78,11 +79,11 @@ where
     /// receives a borrow (`&H::Payload`) and clones only if it needs
     /// to modify. The result is erased back to `ErasedResultFields`
     /// for the executor.
-    fn invoke(
+    async fn invoke(
         &self,
         payload: &dyn PluginPayload,
         extensions: &FilteredExtensions,
-        ctx: &PluginContext,
+        ctx: &mut PluginContext,
     ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
         let typed_ref: &H::Payload = payload
             .as_any()
@@ -104,22 +105,4 @@ where
     fn hook_type_name(&self) -> &'static str {
         H::NAME
     }
-}
-
-// Send + Sync: safe because P: Send + Sync (from Plugin bound)
-// and H is a zero-sized marker with no data.
-unsafe impl<H, P> Send for TypedHandlerAdapter<H, P>
-where
-    H: HookTypeDef,
-    H::Result: Into<PluginResult<H::Payload>>,
-    P: Plugin + HookHandler<H> + 'static,
-{
-}
-
-unsafe impl<H, P> Sync for TypedHandlerAdapter<H, P>
-where
-    H: HookTypeDef,
-    H::Result: Into<PluginResult<H::Payload>>,
-    P: Plugin + HookHandler<H> + 'static,
-{
 }

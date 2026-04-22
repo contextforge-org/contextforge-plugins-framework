@@ -24,4 +24,4 @@ async-trait = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
-paste = { workspace = true }
+futures = { workspace = true }

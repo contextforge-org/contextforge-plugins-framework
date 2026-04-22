@@ -116,7 +116,7 @@ pub trait HookHandler<H: HookTypeDef>: Plugin + Send + Sync {
         &self,
         payload: &H::Payload,
         extensions: &FilteredExtensions,
-        ctx: &PluginContext,
+        ctx: &mut PluginContext,
     ) -> H::Result;
 }
 
@@ -195,6 +195,7 @@ impl<P: PluginPayload> PluginResult<P> {
             continue_processing: true,
             modified_payload: None,
             modified_extensions: None,
+
             violation: None,
             metadata: None,
         }
@@ -206,6 +207,7 @@ impl<P: PluginPayload> PluginResult<P> {
             continue_processing: false,
             modified_payload: None,
             modified_extensions: None,
+
             violation: Some(violation),
             metadata: None,
         }
@@ -217,6 +219,7 @@ impl<P: PluginPayload> PluginResult<P> {
             continue_processing: true,
             modified_payload: Some(payload),
             modified_extensions: None,
+
             violation: None,
             metadata: None,
         }
@@ -228,6 +231,7 @@ impl<P: PluginPayload> PluginResult<P> {
             continue_processing: true,
             modified_payload: None,
             modified_extensions: Some(extensions),
+
             violation: None,
             metadata: None,
         }
@@ -239,6 +243,7 @@ impl<P: PluginPayload> PluginResult<P> {
             continue_processing: true,
             modified_payload: Some(payload),
             modified_extensions: Some(extensions),
+
             violation: None,
             metadata: None,
         }

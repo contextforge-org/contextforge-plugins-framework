@@ -5,20 +5,16 @@
 //
 // define_hook! macro.
 //
-// Generates a HookTypeDef marker struct, trait implementation, and
-// a handler trait from a single declaration. This is the primary
-// way to define new hooks — both built-in (CMF, tool, prompt) and
-// custom (rate limiting, deployment gates, federation sync).
+// Generates a HookTypeDef marker struct and trait implementation
+// from a single declaration. This is the primary way to define new
+// hooks — both built-in (CMF, tool, prompt) and custom (rate
+// limiting, deployment gates, federation sync).
 //
-// The generated handler trait has a single method whose name is
-// derived from the hook name. The handler receives:
-//   - payload: the typed payload (owned — executor decides borrow vs clone)
-//   - extensions: &FilteredExtensions (capability-gated, separate from payload)
-//   - ctx: &PluginContext
-//
-// And returns the hook's result type (typically PluginResult<Payload>).
+// Plugins implement the generic HookHandler<H> trait (from
+// trait_def.rs) for the generated marker struct. The handler
+// receives a borrowed payload and returns the hook's result type.
 
-/// Generates a hook type definition, marker struct, and handler trait.
+/// Generates a hook type definition and marker struct.
 ///
 /// # Usage
 ///
@@ -32,17 +28,8 @@
 /// }
 /// ```
 ///
-/// This generates:
-///
-/// 1. A marker struct `MyHook` implementing `HookTypeDef`.
-/// 2. A handler trait `MyHookHandler` with a method `my_hook()`.
-///
-/// The handler method receives:
-/// - `payload: MyPayload` (owned)
-/// - `extensions: &FilteredExtensions`
-/// - `ctx: &PluginContext`
-///
-/// And returns `PluginResult<MyPayload>`.
+/// This generates a marker struct `MyHook` implementing `HookTypeDef`.
+/// Plugins handle it by implementing `HookHandler<MyHook>`.
 ///
 /// # CMF Pattern (one handler, multiple hook names)
 ///
@@ -58,7 +45,7 @@
 /// }
 ///
 /// // Register the same handler for multiple names:
-/// // registry.register_for_names::<CmfHook>(plugin, config, &[
+/// // manager.register_handler_for_names::<CmfHook, _>(plugin, config, &[
 /// //     "cmf.tool_pre_invoke", "cmf.llm_input", ...
 /// // ]);
 /// ```
@@ -78,28 +65,6 @@ macro_rules! define_hook {
             type Payload = $payload;
             type Result = $result;
             const NAME: &'static str = $hook_name;
-        }
-
-        paste::paste! {
-            /// Handler trait for the
-            #[doc = concat!("`", stringify!($name), "`")]
-            /// hook. Implement this on your plugin to handle this hook type.
-            pub trait [<$name Handler>]: $crate::plugin::Plugin + Send + Sync {
-                /// Handle the
-                #[doc = concat!("`", $hook_name, "`")]
-                /// hook.
-                ///
-                /// The executor decides whether to pass a clone (for Sequential/
-                /// Transform modes) or a borrow (for Audit/Concurrent/FireAndForget
-                /// modes) based on the plugin's mode. The handler signature always
-                /// takes owned payload — the executor handles the mechanics.
-                fn [<$hook_name>](
-                    &self,
-                    payload: $payload,
-                    extensions: &$crate::hooks::payload::FilteredExtensions,
-                    ctx: &$crate::context::PluginContext,
-                ) -> $result;
-            }
         }
     };
 }

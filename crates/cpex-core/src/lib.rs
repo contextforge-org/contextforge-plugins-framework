@@ -17,7 +17,7 @@
 // - [`manager`] — PluginManager lifecycle and hook dispatch
 // - [`registry`] — PluginInstanceRegistry and HookRegistry
 // - [`config`] — Unified YAML configuration parsing
-// - [`context`] — GlobalContext and PluginContext
+// - [`context`] — PluginContext (local_state + global_state)
 // - [`error`] — Error types, violations, and result types
 
 pub mod config;
