@@ -5,20 +5,23 @@ weight: 10
 
 # What Are Plugins?
 
-Plugins let you intercept and modify execution at well-defined points — without changing the targeted application code.
+Plugins let you intercept and modify execution at well-defined points, without changing the application code.
 
 You define **hooks** in your application where you want extensibility. Plugins attach to those hooks and run automatically whenever they fire. The plugin manager handles registration, ordering, execution, timeouts, and error isolation. You get a deterministic pipeline with no surprises.
 
 ## How the Pipeline Works
 
-```
-Application  →  Hook Point  →  Plugin Manager  →  Application continues  →  Result
-                                     │
-                              ┌──────┼──────┐
-                              ▼      ▼      ▼
-                          Plugin A  Plugin B  Plugin C
-                         (priority  (priority  (priority
-                            10)       20)       100)
+```goat
+  .---.        .----.        .-------.         .------.        .---.
+ | App +----->| Hook +----->| Manager +------>| Result +----->| App |
+  '---'        '----'        '---+---'         '------'        '---'
+                                 |
+                     .-----------+-----------.
+                    |            |            |
+                    v            v            v
+                .--------.   .--------.   .--------.
+               | Plugin A | | Plugin B | | Plugin C |
+                '--------'   '--------'   '--------'
 ```
 
 When a hook fires, the plugin manager dispatches the payload to every registered plugin in priority order. Each plugin can:

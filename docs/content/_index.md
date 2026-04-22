@@ -5,7 +5,7 @@ type: docs
 
 # CPEX
 
-**A lightweight, composable plugin framework for building extensible AI systems.**
+**A lightweight plugin framework for building extensible AI systems**
 
 CPEX lets you intercept, enforce, and extend application behavior through plugins — without modifying core logic. Define hook points in your application, write plugins that attach to them, and compose enforcement pipelines that run automatically.
 

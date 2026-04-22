@@ -8,14 +8,14 @@ theme = "hugo-book"
   BookToC = true
   BookSection = "docs"
   BookRepo = "https://github.com/contextforge-org/contextforge-plugins-framework"
-  BookEditPath = "edit/main/docs/content"
   BookSearch = true
   BookComments = false
+  BookEditLink = '{{ .Site.Params.BookRepo }}/edit/main/docs/{{ .Path }}'
   BookLogo = "images/cpex_v1.png"
 
 [markup.goldmark.renderer]
   unsafe = true
 
 [markup.highlight]
-  style = "github"
+  # style = "bw"
   lineNos = false

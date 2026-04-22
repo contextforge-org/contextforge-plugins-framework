@@ -1,6 +1,6 @@
 ---
 title: "Common Message Format"
-weight: 80
+weight: 45
 ---
 
 # Common Message Format (CMF)
