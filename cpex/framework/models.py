@@ -10,6 +10,7 @@ the base plugin layer including configurations, and contexts.
 """
 
 # Standard
+import asyncio
 import logging
 import os
 import re
@@ -1498,6 +1499,9 @@ class PluginResult(BaseModel, Generic[T]):
                 (e.g., updated HTTP headers from token delegation, appended security labels).
             violation (Optional[PluginViolation]): violation object.
             metadata (Optional[dict[str, Any]]): additional metadata.
+            background_tasks (list[asyncio.Task]): asyncio.Task handles for any FIRE_AND_FORGET
+                plugins scheduled during this invocation. Use ``wait_for_background_tasks()``
+                to await them and collect any errors. This field is excluded from model serialization.
 
      Examples:
         >>> result = PluginResult()
@@ -1522,11 +1526,28 @@ class PluginResult(BaseModel, Generic[T]):
         False
     """
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     continue_processing: bool = True
     modified_payload: Optional[T] = None
     modified_extensions: Optional[Extensions] = None
     violation: Optional[PluginViolation] = None
     metadata: Optional[dict[str, Any]] = Field(default_factory=dict)
+    background_tasks: list[asyncio.Task] = Field(default_factory=list, exclude=True)
+
+    async def wait_for_background_tasks(self) -> "list[PluginErrorModel]":
+        """Await all FIRE_AND_FORGET background tasks and return any errors.
+
+        Returns an empty list if all tasks completed without error.
+
+        Examples:
+            >>> result = PluginResult()
+            >>> # errors = await result.wait_for_background_tasks()
+        """
+        if not self.background_tasks:
+            return []
+        results = await asyncio.gather(*self.background_tasks, return_exceptions=True)
+        return [r for r in results if isinstance(r, PluginErrorModel)]
 
 
 class GlobalContext(BaseModel):
