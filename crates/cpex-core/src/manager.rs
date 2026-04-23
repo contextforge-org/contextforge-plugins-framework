@@ -29,12 +29,12 @@ use std::path::Path;
 use std::sync::{Arc, RwLock};
 
 use hashbrown::HashMap;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::config::{self, CpexConfig};
 use crate::context::PluginContextTable;
 use crate::error::PluginError;
-use crate::executor::{Executor, ExecutorConfig, PipelineResult};
+use crate::executor::{BackgroundTasks, Executor, ExecutorConfig, PipelineResult};
 use crate::factory::PluginFactoryRegistry;
 use crate::hooks::adapter::TypedHandlerAdapter;
 use crate::hooks::payload::{Extensions, PluginPayload};
@@ -140,9 +140,6 @@ pub struct PluginManager {
     /// Executor — stateless 5-phase pipeline engine.
     executor: Executor,
 
-    /// Manager configuration.
-    config: ManagerConfig,
-
     /// Parsed CPEX config (when loaded from file). Used for route resolution.
     cpex_config: Option<CpexConfig>,
 
@@ -170,8 +167,7 @@ impl PluginManager {
         let cache_hasher = hashbrown::DefaultHashBuilder::default();
         Self {
             registry: PluginRegistry::new(),
-            executor: Executor::new(config.executor.clone()),
-            config,
+            executor: Executor::new(config.executor),
             cpex_config: None,
             factories: PluginFactoryRegistry::new(),
             route_cache: RwLock::new(HashMap::with_hasher(cache_hasher.clone())),
@@ -254,17 +250,13 @@ impl PluginManager {
 
             let instance = factory.create(plugin_config)?;
 
-            let hook_names: Vec<&str> = plugin_config.hooks.iter().map(|s| s.as_str()).collect();
-            {
-                self.registry
-                    .register_for_names_with_handler(
-                        instance.plugin,
-                        plugin_config.clone(),
-                        instance.handler,
-                        &hook_names,
-                    )
-                    .map_err(|msg| PluginError::Config { message: msg })?;
-            }
+            self.registry
+                .register_multi_handler(
+                    instance.plugin,
+                    plugin_config.clone(),
+                    instance.handlers,
+                )
+                .map_err(|msg| PluginError::Config { message: msg })?;
 
             info!(
                 "Registered plugin '{}' (kind: '{}') for hooks: {:?}",
@@ -306,18 +298,14 @@ impl PluginManager {
 
             let instance = factory.create(plugin_config)?;
 
-            let hook_names: Vec<&str> = plugin_config.hooks.iter().map(|s| s.as_str()).collect();
-            {
-                manager
-                    .registry
-                    .register_for_names_with_handler(
-                        instance.plugin,
-                        plugin_config.clone(),
-                        instance.handler,
-                        &hook_names,
-                    )
-                    .map_err(|msg| PluginError::Config { message: msg })?;
-            }
+            manager
+                .registry
+                .register_multi_handler(
+                    instance.plugin,
+                    plugin_config.clone(),
+                    instance.handlers,
+                )
+                .map_err(|msg| PluginError::Config { message: msg })?;
         }
 
         // Update executor from config settings
@@ -523,33 +511,40 @@ impl PluginManager {
     ///
     /// # Returns
     ///
-    /// A `PipelineResult` with the final payload, extensions, violation,
-    /// and the updated context table.
+    /// A tuple of `(PipelineResult, BackgroundTasks)`. The result
+    /// contains the final payload, extensions, violation, and context
+    /// table. Background tasks can be awaited or dropped.
     pub async fn invoke_by_name(
         &self,
         hook_name: &str,
         payload: Box<dyn PluginPayload>,
         extensions: Extensions,
         context_table: Option<PluginContextTable>,
-    ) -> PipelineResult {
+    ) -> (PipelineResult, BackgroundTasks) {
         let hook_type = HookType::new(hook_name);
         let all_entries = self.registry.entries_for_hook(&hook_type);
 
         if all_entries.is_empty() {
-            return PipelineResult::allowed_with(
-                payload,
-                extensions,
-                context_table.unwrap_or_default(),
+            return (
+                PipelineResult::allowed_with(
+                    payload,
+                    extensions,
+                    context_table.unwrap_or_default(),
+                ),
+                BackgroundTasks::empty(),
             );
         }
 
         let entries = self.filter_entries_by_route(all_entries, &extensions, hook_name);
 
         if entries.is_empty() {
-            return PipelineResult::allowed_with(
-                payload,
-                extensions,
-                context_table.unwrap_or_default(),
+            return (
+                PipelineResult::allowed_with(
+                    payload,
+                    extensions,
+                    context_table.unwrap_or_default(),
+                ),
+                BackgroundTasks::empty(),
             );
         }
 
@@ -587,24 +582,25 @@ impl PluginManager {
     ///
     /// # Returns
     ///
-    /// A `PipelineResult` with the final payload (type-erased —
-    /// caller downcasts via `as_any()`), extensions, violation, and
-    /// the updated context table.
+    /// A tuple of `(PipelineResult, BackgroundTasks)`.
     pub async fn invoke<H: HookTypeDef>(
         &self,
         payload: H::Payload,
         extensions: Extensions,
         context_table: Option<PluginContextTable>,
-    ) -> PipelineResult {
+    ) -> (PipelineResult, BackgroundTasks) {
         let hook_type = HookType::new(H::NAME);
         let all_entries = self.registry.entries_for_hook(&hook_type);
 
         if all_entries.is_empty() {
             let boxed: Box<dyn PluginPayload> = Box::new(payload);
-            return PipelineResult::allowed_with(
-                boxed,
-                extensions,
-                context_table.unwrap_or_default(),
+            return (
+                PipelineResult::allowed_with(
+                    boxed,
+                    extensions,
+                    context_table.unwrap_or_default(),
+                ),
+                BackgroundTasks::empty(),
             );
         }
 
@@ -612,10 +608,13 @@ impl PluginManager {
 
         if entries.is_empty() {
             let boxed: Box<dyn PluginPayload> = Box::new(payload);
-            return PipelineResult::allowed_with(
-                boxed,
-                extensions,
-                context_table.unwrap_or_default(),
+            return (
+                PipelineResult::allowed_with(
+                    boxed,
+                    extensions,
+                    context_table.unwrap_or_default(),
+                ),
+                BackgroundTasks::empty(),
             );
         }
 
@@ -764,14 +763,30 @@ impl PluginManager {
         }
 
         // Create new instance with merged config
+        let target_hook = base_entry.handler.hook_type_name();
         match factory.create(&merged_config) {
             Ok(instance) => {
-                // Build a HookEntry from the new instance
-                let plugin_ref = crate::registry::PluginRef::new(instance.plugin, merged_config);
-                Some(crate::registry::HookEntry {
-                    plugin_ref,
-                    handler: instance.handler,
-                })
+                // Find the handler matching the current hook
+                let handler = instance
+                    .handlers
+                    .into_iter()
+                    .find(|(name, _)| *name == target_hook)
+                    .map(|(_, h)| h);
+
+                if let Some(handler) = handler {
+                    let plugin_ref =
+                        crate::registry::PluginRef::new(instance.plugin, merged_config);
+                    Some(crate::registry::HookEntry {
+                        plugin_ref,
+                        handler,
+                    })
+                } else {
+                    warn!(
+                        "Override instance for '{}' has no handler for hook '{}'",
+                        base_config.name, target_hook
+                    );
+                    None
+                }
             }
             Err(e) => {
                 error!(
@@ -990,12 +1005,12 @@ mod tests {
         });
 
 
-        let result = mgr
+        let (result, _) = mgr
             .invoke_by_name("test_hook", payload, Extensions::default(), None)
             .await;
 
-        assert!(result.allowed);
-        assert!(result.payload.is_some());
+        assert!(result.continue_processing);
+        assert!(result.modified_payload.is_some());
     }
 
     #[tokio::test]
@@ -1013,11 +1028,11 @@ mod tests {
         });
 
 
-        let result = mgr
+        let (result, _) = mgr
             .invoke_by_name("test_hook", payload, Extensions::default(), None)
             .await;
 
-        assert!(result.allowed);
+        assert!(result.continue_processing);
     }
 
     #[tokio::test]
@@ -1034,11 +1049,11 @@ mod tests {
         });
 
 
-        let result = mgr
+        let (result, _) = mgr
             .invoke_by_name("test_hook", payload, Extensions::default(), None)
             .await;
 
-        assert!(!result.allowed);
+        assert!(!result.continue_processing);
         assert_eq!(result.violation.as_ref().unwrap().code, "denied");
     }
 
@@ -1056,11 +1071,11 @@ mod tests {
         };
 
 
-        let result = mgr
+        let (result, _) = mgr
             .invoke::<TestHook>(payload, Extensions::default(), None)
             .await;
 
-        assert!(result.allowed);
+        assert!(result.continue_processing);
     }
 
     #[tokio::test]
@@ -1103,12 +1118,12 @@ mod tests {
         });
 
 
-        let result = mgr
+        let (result, _) = mgr
             .invoke_by_name("test_hook", payload, Extensions::default(), None)
             .await;
 
         // Audit mode — deny is suppressed, pipeline continues
-        assert!(result.allowed);
+        assert!(result.continue_processing);
     }
 
     #[tokio::test]
@@ -1134,8 +1149,8 @@ mod tests {
         // First invocation — flaky plugin errors, gets disabled, pipeline continues
         // because on_error is Disable (not Fail). allow-plugin still runs.
         let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "first".into() });
-        let result = mgr.invoke_by_name("test_hook", payload, Extensions::default(), None).await;
-        assert!(result.allowed);
+        let (result, _) = mgr.invoke_by_name("test_hook", payload, Extensions::default(), None).await;
+        assert!(result.continue_processing);
 
         // Verify the plugin is now disabled
         let plugin_ref = mgr.get_plugin("flaky-plugin").unwrap();
@@ -1145,8 +1160,8 @@ mod tests {
         // Second invocation — flaky plugin should be skipped entirely
         // (group_by_mode filters it out). Only allow-plugin runs.
         let payload2: Box<dyn PluginPayload> = Box::new(TestPayload { value: "second".into() });
-        let result2 = mgr.invoke_by_name("test_hook", payload2, Extensions::default(), None).await;
-        assert!(result2.allowed);
+        let (result2, _) = mgr.invoke_by_name("test_hook", payload2, Extensions::default(), None).await;
+        assert!(result2.continue_processing);
     }
 
     #[tokio::test]
@@ -1166,8 +1181,8 @@ mod tests {
 
         // First invocation — plugin errors, ignored, pipeline continues
         let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "test".into() });
-        let result = mgr.invoke_by_name("test_hook", payload, Extensions::default(), None).await;
-        assert!(result.allowed);
+        let (result, _) = mgr.invoke_by_name("test_hook", payload, Extensions::default(), None).await;
+        assert!(result.continue_processing);
 
         // Plugin should NOT be disabled — still in its original mode
         let plugin_ref = mgr.get_plugin("flaky-plugin").unwrap();
@@ -1192,8 +1207,8 @@ mod tests {
 
         // Invocation — plugin errors, pipeline halts with a violation
         let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "test".into() });
-        let result = mgr.invoke_by_name("test_hook", payload, Extensions::default(), None).await;
-        assert!(!result.allowed);
+        let (result, _) = mgr.invoke_by_name("test_hook", payload, Extensions::default(), None).await;
+        assert!(!result.continue_processing);
         assert_eq!(result.violation.as_ref().unwrap().code, "plugin_error");
         assert_eq!(
             result.violation.as_ref().unwrap().plugin_name.as_deref(),
@@ -1264,10 +1279,10 @@ mod tests {
 
         let payload = TestPayload { value: "original".into() };
 
-        let result = mgr.invoke::<TestHook>(payload, Extensions::default(), None).await;
+        let (result, _) = mgr.invoke::<TestHook>(payload, Extensions::default(), None).await;
 
-        assert!(result.allowed);
-        let final_payload = result.payload.unwrap();
+        assert!(result.continue_processing);
+        let final_payload = result.modified_payload.unwrap();
         let typed = final_payload.as_any().downcast_ref::<TestPayload>().unwrap();
         assert_eq!(typed.value, "original_transformed");
     }
@@ -1318,10 +1333,10 @@ mod tests {
 
         let start = std::time::Instant::now();
         let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "test".into() });
-        let result = mgr.invoke_by_name("test_hook", payload, Extensions::default(), None).await;
+        let (result, _) = mgr.invoke_by_name("test_hook", payload, Extensions::default(), None).await;
         let elapsed = start.elapsed();
 
-        assert!(result.allowed);
+        assert!(result.continue_processing);
         assert_eq!(CALL_COUNT.load(Ordering::SeqCst), 2);
         // If they ran in parallel, total time should be ~50ms, not ~100ms
         assert!(elapsed.as_millis() < 90, "concurrent plugins ran serially: {}ms", elapsed.as_millis());
@@ -1348,11 +1363,11 @@ mod tests {
 
         let start = std::time::Instant::now();
         let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "test".into() });
-        let result = mgr.invoke_by_name("test_hook", payload, Extensions::default(), None).await;
+        let (result, _) = mgr.invoke_by_name("test_hook", payload, Extensions::default(), None).await;
         let elapsed = start.elapsed();
 
         // Should have timed out and denied (on_error: Fail)
-        assert!(!result.allowed);
+        assert!(!result.continue_processing);
         assert_eq!(result.violation.as_ref().unwrap().code, "plugin_timeout");
         // Should have returned in ~1s, not 5s
         assert!(elapsed.as_secs() < 3, "timeout didn't fire: {}s", elapsed.as_secs());
@@ -1396,14 +1411,15 @@ mod tests {
         mgr.initialize().await.unwrap();
 
         let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "test".into() });
-        let result = mgr.invoke_by_name("test_hook", payload, Extensions::default(), None).await;
+        let (result, bg) = mgr.invoke_by_name("test_hook", payload, Extensions::default(), None).await;
 
         // Pipeline should return immediately — before the background task finishes
-        assert!(result.allowed);
+        assert!(result.continue_processing);
         assert!(!TASK_COMPLETED.load(Ordering::SeqCst), "fire-and-forget task completed before pipeline returned");
 
-        // Wait for the background task to finish
-        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        // Wait for background tasks using wait_for_background_tasks()
+        let errors = bg.wait_for_background_tasks().await;
+        assert!(errors.is_empty(), "background task had errors: {:?}", errors);
         assert!(TASK_COMPLETED.load(Ordering::SeqCst), "fire-and-forget task never completed");
     }
 
@@ -1468,9 +1484,9 @@ mod tests {
         mgr.initialize().await.unwrap();
 
         let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "test".into() });
-        let result = mgr.invoke_by_name("test_hook", payload, Extensions::default(), None).await;
+        let (result, _) = mgr.invoke_by_name("test_hook", payload, Extensions::default(), None).await;
 
-        assert!(result.allowed);
+        assert!(result.continue_processing);
         assert!(
             saw_writer.load(std::sync::atomic::Ordering::SeqCst),
             "reader plugin did not see writer's global_state change"
@@ -1514,8 +1530,8 @@ mod tests {
 
         // First invocation — no context table, starts fresh
         let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "first".into() });
-        let result1 = mgr.invoke_by_name("test_hook", payload, Extensions::default(), None).await;
-        assert!(result1.allowed);
+        let (result1, _) = mgr.invoke_by_name("test_hook", payload, Extensions::default(), None).await;
+        assert!(result1.continue_processing);
 
         // Check call_count = 1 in the returned context table
         let table = &result1.context_table;
@@ -1524,10 +1540,10 @@ mod tests {
 
         // Second invocation — pass the context table from the first call
         let payload2: Box<dyn PluginPayload> = Box::new(TestPayload { value: "second".into() });
-        let result2 = mgr.invoke_by_name(
+        let (result2, _) = mgr.invoke_by_name(
             "test_hook", payload2, Extensions::default(), Some(result1.context_table),
         ).await;
-        assert!(result2.allowed);
+        assert!(result2.continue_processing);
 
         // call_count should now be 2 — local_state persisted across invocations
         let table2 = &result2.context_table;
@@ -1549,7 +1565,10 @@ mod tests {
             let handler: Arc<dyn AnyHookHandler> = Arc::new(
                 TypedHandlerAdapter::<TestHook, AllowPlugin>::new(Arc::clone(&plugin)),
             );
-            Ok(crate::factory::PluginInstance { plugin, handler })
+            Ok(crate::factory::PluginInstance {
+                plugin,
+                handlers: vec![("test_hook", handler)],
+            })
         }
     }
 
@@ -1565,7 +1584,10 @@ mod tests {
             let handler: Arc<dyn AnyHookHandler> = Arc::new(
                 TypedHandlerAdapter::<TestHook, DenyPlugin>::new(Arc::clone(&plugin)),
             );
-            Ok(crate::factory::PluginInstance { plugin, handler })
+            Ok(crate::factory::PluginInstance {
+                plugin,
+                handlers: vec![("test_hook", handler)],
+            })
         }
     }
 
@@ -1617,11 +1639,11 @@ plugins:
         });
         // context_table = None (first invocation)
 
-        let result = mgr
+        let (result, _) = mgr
             .invoke_by_name("test_hook", payload, Extensions::default(), None)
             .await;
 
-        assert!(!result.allowed);
+        assert!(!result.continue_processing);
         assert_eq!(result.violation.as_ref().unwrap().code, "denied");
     }
 
@@ -1675,11 +1697,11 @@ plugins:
         });
         // context_table = None (first invocation)
 
-        let result = mgr
+        let (result, _) = mgr
             .invoke_by_name("test_hook", payload, Extensions::default(), None)
             .await;
 
-        assert!(!result.allowed); // gate denied before fallback could allow
+        assert!(!result.continue_processing); // gate denied before fallback could allow
     }
 
     // -- Routing cache tests --
@@ -1932,12 +1954,12 @@ routes:
         };
         // context_table = None (first invocation)
 
-        let result = mgr
+        let (result, _) = mgr
             .invoke_by_name("test_hook", payload, ext, None)
             .await;
 
         // Plugin executed (allow plugin returns allowed)
-        assert!(result.allowed);
+        assert!(result.continue_processing);
         // Cache populated
         assert_eq!(mgr.routing_cache_size(), 1);
     }
@@ -1967,10 +1989,10 @@ plugin_settings:
 
         let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "t".into() });
         // context_table = None (first invocation)
-        let result = mgr
+        let (result, _) = mgr
             .invoke_by_name("test_hook", payload, Extensions::default(), None)
             .await;
-        assert!(result.allowed);
+        assert!(result.continue_processing);
     }
 
     // -- End-to-end routing tests --
@@ -2049,18 +2071,18 @@ routes:
         // get_compensation: identity (all) + apl_policy (pii tag) + rate_limiter (route)
         // apl_policy denies → overall denied
         let p1: Box<dyn PluginPayload> = Box::new(TestPayload { value: "t".into() });
-        let r1 = mgr
+        let (r1, _) = mgr
             .invoke_by_name("test_hook", p1, make_meta("tool", "get_compensation", None, &[]), None)
             .await;
-        assert!(!r1.allowed); // apl_policy (deny) fires due to pii tag
+        assert!(!r1.continue_processing); // apl_policy (deny) fires due to pii tag
 
         // send_email: identity (all) + rate_limiter (route) — no pii tag
         // both allow → overall allowed
         let p2: Box<dyn PluginPayload> = Box::new(TestPayload { value: "t".into() });
-        let r2 = mgr
+        let (r2, _) = mgr
             .invoke_by_name("test_hook", p2, make_meta("tool", "send_email", None, &[]), None)
             .await;
-        assert!(r2.allowed); // no deny plugin fires
+        assert!(r2.continue_processing); // no deny plugin fires
     }
 
     #[tokio::test]
@@ -2090,10 +2112,10 @@ plugins:
 
         // Even with meta, routing disabled → all plugins fire → denier wins
         let p: Box<dyn PluginPayload> = Box::new(TestPayload { value: "t".into() });
-        let result = mgr
+        let (result, _) = mgr
             .invoke_by_name("test_hook", p, make_meta("tool", "anything", None, &[]), None)
             .await;
-        assert!(!result.allowed); // denier fires (all plugins active)
+        assert!(!result.continue_processing); // denier fires (all plugins active)
     }
 
     #[tokio::test]
@@ -2131,13 +2153,13 @@ routes:
 
         // No meta → all plugins fire (both allower and denier)
         let p: Box<dyn PluginPayload> = Box::new(TestPayload { value: "t".into() });
-        let result = mgr
+        let (result, _) = mgr
             .invoke_by_name("test_hook", p, Extensions::default(), None)
             .await;
         // denier has default priority 100, allower has default 100 — order depends on registration
         // but at least both fire (not filtered by routing)
         // We can't assert allow/deny specifically since both run — just check it executed
-        assert!(result.allowed || !result.allowed); // both plugins fired
+        assert!(result.continue_processing || !result.continue_processing); // both plugins fired
     }
 
     #[tokio::test]
@@ -2184,17 +2206,17 @@ routes:
 
         // get_compensation matches exact route → specific_plugin (deny)
         let p1: Box<dyn PluginPayload> = Box::new(TestPayload { value: "t".into() });
-        let r1 = mgr
+        let (r1, _) = mgr
             .invoke_by_name("test_hook", p1, make_meta("tool", "get_compensation", None, &[]), None)
             .await;
-        assert!(!r1.allowed); // specific_plugin denies
+        assert!(!r1.continue_processing); // specific_plugin denies
 
         // unknown_tool matches wildcard → fallback_plugin (allow)
         let p2: Box<dyn PluginPayload> = Box::new(TestPayload { value: "t".into() });
-        let r2 = mgr
+        let (r2, _) = mgr
             .invoke_by_name("test_hook", p2, make_meta("tool", "unknown_tool", None, &[]), None)
             .await;
-        assert!(r2.allowed); // fallback_plugin allows
+        assert!(r2.continue_processing); // fallback_plugin allows
     }
 
     #[tokio::test]
@@ -2233,20 +2255,20 @@ routes:
 
         // Without urgent tag → only identity fires → allowed
         let p1: Box<dyn PluginPayload> = Box::new(TestPayload { value: "t".into() });
-        let r1 = mgr
+        let (r1, _) = mgr
             .invoke_by_name("test_hook", p1, make_meta("tool", "get_compensation", None, &[]), None)
             .await;
-        assert!(r1.allowed);
+        assert!(r1.continue_processing);
 
         // Clear cache so new tags take effect
         mgr.clear_routing_cache();
 
         // With urgent tag from host → denier also fires → denied
         let p2: Box<dyn PluginPayload> = Box::new(TestPayload { value: "t".into() });
-        let r2 = mgr
+        let (r2, _) = mgr
             .invoke_by_name("test_hook", p2, make_meta("tool", "get_compensation", None, &["urgent"]), None)
             .await;
-        assert!(!r2.allowed);
+        assert!(!r2.continue_processing);
     }
 
     #[tokio::test]
@@ -2287,23 +2309,23 @@ routes:
         // context_table = None (first invocation)
 
         // Typed invoke for get_compensation — pii tag activates denier → denied
-        let r1 = mgr
+        let (r1, _) = mgr
             .invoke::<TestHook>(
                 TestPayload { value: "t".into() },
                 make_meta("tool", "get_compensation", None, &[]),
                 None,
             )
             .await;
-        assert!(!r1.allowed);
+        assert!(!r1.continue_processing);
 
         // Typed invoke for send_email — no pii tag → only allower → allowed
-        let r2 = mgr
+        let (r2, _) = mgr
             .invoke::<TestHook>(
                 TestPayload { value: "t".into() },
                 make_meta("tool", "send_email", None, &[]),
                 None,
             )
             .await;
-        assert!(r2.allowed);
+        assert!(r2.continue_processing);
     }
 }
