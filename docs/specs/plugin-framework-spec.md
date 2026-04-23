@@ -185,6 +185,14 @@ class PluginResult(Generic[T]):
     modified_payload: T | None = None
     violation: PluginViolation | None = None
     metadata: dict[str, Any] = {}
+    background_tasks: list[asyncio.Task] = []  # excluded from serialization
+```
+
+`background_tasks` contains the `asyncio.Task` handles for any `FIRE_AND_FORGET` plugins scheduled during the invocation. Use `wait_for_background_tasks()` to await them and collect any errors:
+
+```python
+result, _ = await manager.invoke_hook(...)
+errors = await result.wait_for_background_tasks()  # list[PluginErrorModel], empty on success
 ```
 
 The `PluginViolation` type carries structured policy failure information:

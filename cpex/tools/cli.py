@@ -356,7 +356,11 @@ def install_from_manifest(manifest: PluginManifest, installation_type: str, cata
         plugin_registry: PluginRegistry = PluginRegistry()
         # add the newly downloaded plugin to the registry
         plugin_registry.update(
-            manifest=manifest, installation_type=installation_type, catalog=catalog, git_user_name=git_user_name(), plugin_path=plugin_path
+            manifest=manifest,
+            installation_type=installation_type,
+            catalog=catalog,
+            git_user_name=git_user_name(),
+            plugin_path=plugin_path,
         )
         update_plugins_config_yaml(manifest)
 
@@ -434,7 +438,9 @@ def _parse_pypi_source(source: str) -> tuple[str, Optional[str]]:
     return package_name, version_constraint
 
 
-def _finalize_installation(manifest: PluginManifest, install_type: str, catalog: PluginCatalog, plugin_path: Path | None = None):
+def _finalize_installation(
+    manifest: PluginManifest, install_type: str, catalog: PluginCatalog, plugin_path: Path | None = None
+):
     """Common finalization steps for plugin installation.
 
     Args:
@@ -444,7 +450,11 @@ def _finalize_installation(manifest: PluginManifest, install_type: str, catalog:
     """
     plugin_registry = PluginRegistry()
     plugin_registry.update(
-        manifest=manifest, installation_type=install_type, catalog=catalog, git_user_name=git_user_name(), plugin_path=plugin_path
+        manifest=manifest,
+        installation_type=install_type,
+        catalog=catalog,
+        git_user_name=git_user_name(),
+        plugin_path=plugin_path,
     )
     update_plugins_config_yaml(manifest=manifest)
 

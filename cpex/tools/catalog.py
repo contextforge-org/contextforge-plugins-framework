@@ -10,24 +10,22 @@ This module implements the plugin catalog object.
 import base64
 import logging
 import os
+import shutil
 import subprocess
 import sys
-import tomllib
-from pathlib import Path
-from typing import Any, Optional
-import uuid
-
-import httpx
-import shutil
 import tarfile
 import tempfile
+import tomllib
+import uuid
 import zipfile
+from pathlib import Path
+from typing import Any, Optional
 
+import httpx
 import yaml
 from github import Auth, Github
 
 from cpex.framework.models import PiPyRepo, PluginManifest, PluginPackageInfo
-from cpex.framework.utils import find_package_path
 from cpex.tools.settings import get_catalog_settings
 
 logger = logging.getLogger(__name__)
@@ -463,7 +461,7 @@ class PluginCatalog:
             raise RuntimeError("PluginManifest.monorepo can not be None.")
         try:
             repo_url = f"git+{manifest.monorepo.package_source}"
-            
+
             plugin_path = None
             # Check manifest kind BEFORE installing
             if manifest.kind == "isolated_venv":
@@ -476,7 +474,10 @@ class PluginCatalog:
                 # For non-isolated plugins, install normally into CLI's venv
                 logger.info("Installing non-isolated plugin from monorepo: %s", manifest.name)
                 subprocess.run(
-                    [self.python_executable, "-m", "pip", "install", repo_url], check=True, capture_output=True, text=True
+                    [self.python_executable, "-m", "pip", "install", repo_url],
+                    check=True,
+                    capture_output=True,
+                    text=True,
                 )
                 logger.info("Successfully installed package: %s", manifest.name)
             return plugin_path
@@ -627,7 +628,7 @@ class PluginCatalog:
             Path to the downloaded monorepo folder.
         """
         try:
-            tmpid    = uuid.uuid4()
+            tmpid = uuid.uuid4()
             temp_dir = Path(tempfile.mkdtemp(prefix=f"cpex_plugin_{tmpid}_"))
             logger.info("Downloading monorepo folder to %s", temp_dir)
 
@@ -670,7 +671,6 @@ class PluginCatalog:
             raise RuntimeError(f"Failed to download {package_name}: {e.stderr}") from e
         except Exception as e:
             raise RuntimeError(f"Unexpected error downloading {package_name}: {str(e)}") from e
-
 
     def _download_package_to_temp(
         self, package_name: str, version_constraint: str | None, use_test: bool = False
@@ -766,7 +766,9 @@ class PluginCatalog:
         # Return the first manifest found
         return manifest_files[0]
 
-    def _find_requirements_in_extracted_package(self, extract_dir: Path, package_name: str, requirements_file: str) -> Path:
+    def _find_requirements_in_extracted_package(
+        self, extract_dir: Path, package_name: str, requirements_file: str
+    ) -> Path:
         """Find plugin-manifest.yaml in extracted package.
 
         Args:
@@ -787,7 +789,6 @@ class PluginCatalog:
 
         # Return the first manifest found
         return manifest_files[0]
-
 
     def _initialize_isolated_venv(self, manifest: PluginManifest, package_path: Path) -> Path:
         """Initialize isolated venv for a plugin without installing it into the CLI's venv.
