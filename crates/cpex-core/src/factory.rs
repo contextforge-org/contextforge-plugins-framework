@@ -65,13 +65,18 @@ pub trait PluginFactory: Send + Sync {
     fn create(&self, config: &PluginConfig) -> Result<PluginInstance, PluginError>;
 }
 
-/// A created plugin instance — the plugin and its type-erased handler.
+/// A created plugin instance — the plugin and its type-erased handlers.
+///
+/// Each handler is paired with the hook name it handles. A plugin
+/// that implements multiple hook types (e.g., `ToolPreInvoke` and
+/// `ToolPostInvoke`) returns one entry per hook.
 pub struct PluginInstance {
     /// The plugin implementation.
     pub plugin: Arc<dyn Plugin>,
 
-    /// The type-erased handler for the executor.
-    pub handler: Arc<dyn AnyHookHandler>,
+    /// Type-erased handlers paired with their hook names.
+    /// Each entry maps a hook name to the adapter for that hook type.
+    pub handlers: Vec<(&'static str, Arc<dyn AnyHookHandler>)>,
 }
 
 // ---------------------------------------------------------------------------

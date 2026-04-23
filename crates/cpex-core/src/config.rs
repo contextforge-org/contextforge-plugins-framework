@@ -405,11 +405,9 @@ fn validate_config(config: &CpexConfig) -> Result<(), PluginError> {
 // ---------------------------------------------------------------------------
 
 /// Specificity scores for route matching.
-const SPECIFICITY_EXACT_NAME_WITH_SCOPE: usize = 1100;
 const SPECIFICITY_EXACT_NAME: usize = 1000;
 const SPECIFICITY_NAME_LIST: usize = 500;
 const SPECIFICITY_GLOB: usize = 300;
-const SPECIFICITY_TAGS_ONLY: usize = 100;
 const SPECIFICITY_WHEN_ONLY: usize = 10;
 const SPECIFICITY_WILDCARD: usize = 0;
 
