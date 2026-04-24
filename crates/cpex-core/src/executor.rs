@@ -195,6 +195,9 @@ impl BackgroundTasks {
                     plugin_name,
                     message: format!("background task panicked: {}", e),
                     source: None,
+                    code: None,
+                    details: std::collections::HashMap::new(),
+                    proto_error_code: None,
                 });
             }
         }

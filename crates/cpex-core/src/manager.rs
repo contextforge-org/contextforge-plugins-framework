@@ -451,6 +451,9 @@ impl PluginManager {
                         plugin_name,
                         message: format!("initialization failed: {}", e),
                         source: Some(Box::new(e)),
+                        code: None,
+                        details: std::collections::HashMap::new(),
+                        proto_error_code: None,
                     });
                 }
 
@@ -942,6 +945,9 @@ mod tests {
                 plugin_name: "error-plugin".into(),
                 message: "simulated failure".into(),
                 source: None,
+                code: None,
+                details: std::collections::HashMap::new(),
+                proto_error_code: None,
             })
         }
 

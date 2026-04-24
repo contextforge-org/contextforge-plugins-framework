@@ -112,14 +112,7 @@ struct PiiGuard {
 #[async_trait]
 impl Plugin for PiiGuard {
     fn config(&self) -> &PluginConfig { &self.cfg }
-    async fn initialize(&self) -> Result<(), PluginError> {
-        println!("  [pii-guard] initialized");
-        Ok(())
-    }
-    async fn shutdown(&self) -> Result<(), PluginError> {
-        println!("  [pii-guard] shutdown");
-        Ok(())
-    }
+    // initialize() and shutdown() use defaults — no setup needed
 }
 
 impl HookHandler<ToolPreInvoke> for PiiGuard {
@@ -156,14 +149,7 @@ struct AuditLogger {
 #[async_trait]
 impl Plugin for AuditLogger {
     fn config(&self) -> &PluginConfig { &self.cfg }
-    async fn initialize(&self) -> Result<(), PluginError> {
-        println!("  [audit-logger] initialized");
-        Ok(())
-    }
-    async fn shutdown(&self) -> Result<(), PluginError> {
-        println!("  [audit-logger] shutdown");
-        Ok(())
-    }
+    // initialize() and shutdown() use defaults — no setup needed
 }
 
 impl HookHandler<ToolPreInvoke> for AuditLogger {
