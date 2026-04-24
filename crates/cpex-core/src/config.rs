@@ -220,17 +220,17 @@ pub struct RouteEntry {
     #[serde(default)]
     pub tool: Option<StringOrList>,
 
-    /// Match a resource by URI pattern.
+    /// Match a resource by exact URI, list, or glob.
     #[serde(default)]
-    pub resource: Option<String>,
+    pub resource: Option<StringOrList>,
 
-    /// Match a prompt by name.
+    /// Match a prompt by exact name, list, or glob.
     #[serde(default)]
-    pub prompt: Option<String>,
+    pub prompt: Option<StringOrList>,
 
-    /// Match an LLM by model name.
+    /// Match an LLM by exact model name, list, or glob.
     #[serde(default)]
-    pub llm: Option<String>,
+    pub llm: Option<StringOrList>,
 
     /// Operational metadata — tags, scope, properties.
     #[serde(default)]
@@ -553,32 +553,46 @@ fn find_matching_route<'a>(
                 }
             }
             "resource" => {
-                if let Some(pattern) = &route.resource {
-                    if pattern.ends_with('*') {
-                        let prefix = pattern.trim_end_matches('*');
-                        if !entity_name.starts_with(prefix) {
-                            continue;
-                        }
-                        SPECIFICITY_GLOB
-                    } else if pattern == entity_name {
-                        SPECIFICITY_EXACT_NAME
-                    } else {
+                if let Some(matcher) = &route.resource {
+                    if !matcher.matches(entity_name) {
                         continue;
+                    }
+                    match matcher {
+                        StringOrList::Single(s) if s == "*" => SPECIFICITY_WILDCARD,
+                        StringOrList::Single(s) if s.contains('*') => SPECIFICITY_GLOB,
+                        StringOrList::List(_) => SPECIFICITY_NAME_LIST,
+                        StringOrList::Single(_) => SPECIFICITY_EXACT_NAME,
                     }
                 } else {
                     continue;
                 }
             }
             "prompt" => {
-                if route.prompt.as_deref() == Some(entity_name) {
-                    SPECIFICITY_EXACT_NAME
+                if let Some(matcher) = &route.prompt {
+                    if !matcher.matches(entity_name) {
+                        continue;
+                    }
+                    match matcher {
+                        StringOrList::Single(s) if s == "*" => SPECIFICITY_WILDCARD,
+                        StringOrList::Single(s) if s.contains('*') => SPECIFICITY_GLOB,
+                        StringOrList::List(_) => SPECIFICITY_NAME_LIST,
+                        StringOrList::Single(_) => SPECIFICITY_EXACT_NAME,
+                    }
                 } else {
                     continue;
                 }
             }
             "llm" => {
-                if route.llm.as_deref() == Some(entity_name) {
-                    SPECIFICITY_EXACT_NAME
+                if let Some(matcher) = &route.llm {
+                    if !matcher.matches(entity_name) {
+                        continue;
+                    }
+                    match matcher {
+                        StringOrList::Single(s) if s == "*" => SPECIFICITY_WILDCARD,
+                        StringOrList::Single(s) if s.contains('*') => SPECIFICITY_GLOB,
+                        StringOrList::List(_) => SPECIFICITY_NAME_LIST,
+                        StringOrList::Single(_) => SPECIFICITY_EXACT_NAME,
+                    }
                 } else {
                     continue;
                 }
