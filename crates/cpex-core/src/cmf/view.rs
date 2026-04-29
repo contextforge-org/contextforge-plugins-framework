@@ -346,42 +346,44 @@ impl<'a> MessageView<'a> {
         include_content: bool,
         include_context: bool,
     ) -> serde_json::Value {
+        use super::constants::*;
+
         let mut result = serde_json::Map::new();
 
         // Core fields
-        result.insert("kind".into(), serde_json::json!(self.kind));
-        result.insert("role".into(), serde_json::json!(self.role));
-        result.insert("is_pre".into(), serde_json::json!(self.is_pre()));
-        result.insert("is_post".into(), serde_json::json!(self.is_post()));
-        result.insert("action".into(), serde_json::json!(self.action()));
+        result.insert(FIELD_KIND.into(), serde_json::json!(self.kind));
+        result.insert(FIELD_ROLE.into(), serde_json::json!(self.role));
+        result.insert(FIELD_IS_PRE.into(), serde_json::json!(self.is_pre()));
+        result.insert(FIELD_IS_POST.into(), serde_json::json!(self.is_post()));
+        result.insert(FIELD_ACTION.into(), serde_json::json!(self.action()));
 
         if let Some(hook) = self.hook {
-            result.insert("hook".into(), serde_json::json!(hook));
+            result.insert(FIELD_HOOK.into(), serde_json::json!(hook));
         }
 
         if let Some(uri) = self.uri() {
-            result.insert("uri".into(), serde_json::json!(uri));
+            result.insert(FIELD_URI.into(), serde_json::json!(uri));
         }
 
         if let Some(name) = self.name() {
-            result.insert("name".into(), serde_json::json!(name));
+            result.insert(FIELD_NAME.into(), serde_json::json!(name));
         }
 
         // Content
         if include_content {
             if let Some(text) = self.content() {
-                result.insert("size_bytes".into(), serde_json::json!(text.len()));
-                result.insert("content".into(), serde_json::json!(text));
+                result.insert(FIELD_SIZE_BYTES.into(), serde_json::json!(text.len()));
+                result.insert(FIELD_CONTENT.into(), serde_json::json!(text));
             }
         }
 
         if let Some(mime) = self.mime_type() {
-            result.insert("mime_type".into(), serde_json::json!(mime));
+            result.insert(FIELD_MIME_TYPE.into(), serde_json::json!(mime));
         }
 
         // Arguments
         if let Some(args) = self.args() {
-            result.insert("arguments".into(), serde_json::json!(args));
+            result.insert(FIELD_ARGUMENTS.into(), serde_json::json!(args));
         }
 
         // Extensions context
@@ -394,28 +396,28 @@ impl<'a> MessageView<'a> {
                     if let Some(ref subject) = sec.subject {
                         let mut sub_map = serde_json::Map::new();
                         if let Some(ref id) = subject.id {
-                            sub_map.insert("id".into(), serde_json::json!(id));
+                            sub_map.insert(FIELD_ID.into(), serde_json::json!(id));
                         }
                         if let Some(ref st) = subject.subject_type {
-                            sub_map.insert("type".into(), serde_json::json!(st));
+                            sub_map.insert(FIELD_TYPE.into(), serde_json::json!(st));
                         }
                         if !subject.roles.is_empty() {
                             let mut roles: Vec<&String> = subject.roles.iter().collect();
                             roles.sort();
-                            sub_map.insert("roles".into(), serde_json::json!(roles));
+                            sub_map.insert(FIELD_ROLES.into(), serde_json::json!(roles));
                         }
                         if !subject.permissions.is_empty() {
                             let mut perms: Vec<&String> = subject.permissions.iter().collect();
                             perms.sort();
-                            sub_map.insert("permissions".into(), serde_json::json!(perms));
+                            sub_map.insert(FIELD_PERMISSIONS.into(), serde_json::json!(perms));
                         }
                         if !subject.teams.is_empty() {
                             let mut teams: Vec<&String> = subject.teams.iter().collect();
                             teams.sort();
-                            sub_map.insert("teams".into(), serde_json::json!(teams));
+                            sub_map.insert(FIELD_TEAMS.into(), serde_json::json!(teams));
                         }
                         if !sub_map.is_empty() {
-                            ext_map.insert("subject".into(), serde_json::Value::Object(sub_map));
+                            ext_map.insert(FIELD_SUBJECT.into(), serde_json::Value::Object(sub_map));
                         }
                     }
 
@@ -423,28 +425,29 @@ impl<'a> MessageView<'a> {
                     if !sec.labels.is_empty() {
                         let mut labels: Vec<&String> = sec.labels.iter().collect();
                         labels.sort();
-                        ext_map.insert("labels".into(), serde_json::json!(labels));
+                        ext_map.insert(FIELD_LABELS.into(), serde_json::json!(labels));
                     }
                 }
 
                 // Environment
                 if let Some(ref req) = ext.request {
                     if let Some(ref env) = req.environment {
-                        ext_map.insert("environment".into(), serde_json::json!(env));
+                        ext_map.insert(FIELD_ENVIRONMENT.into(), serde_json::json!(env));
                     }
                 }
 
-                // Headers (strip sensitive)
+                // Request headers (strip sensitive)
                 if let Some(ref http) = ext.http {
-                    let headers = &http.read().headers;
-                    let safe: std::collections::HashMap<&String, &String> = headers
+                    let http_ref = http.read();
+                    let safe: std::collections::HashMap<&String, &String> = http_ref
+                        .request_headers
                         .iter()
                         .filter(|(k, _)| {
                             !Self::SENSITIVE_HEADERS.contains(&k.to_lowercase().as_str())
                         })
                         .collect();
                     if !safe.is_empty() {
-                        ext_map.insert("headers".into(), serde_json::json!(safe));
+                        ext_map.insert(FIELD_HEADERS.into(), serde_json::json!(safe));
                     }
                 }
 
@@ -452,25 +455,25 @@ impl<'a> MessageView<'a> {
                 if let Some(ref agent) = ext.agent {
                     let mut agent_map = serde_json::Map::new();
                     if let Some(ref input) = agent.input {
-                        agent_map.insert("input".into(), serde_json::json!(input));
+                        agent_map.insert(FIELD_INPUT.into(), serde_json::json!(input));
                     }
                     if let Some(ref sid) = agent.session_id {
-                        agent_map.insert("session_id".into(), serde_json::json!(sid));
+                        agent_map.insert(FIELD_SESSION_ID.into(), serde_json::json!(sid));
                     }
                     if let Some(ref cid) = agent.conversation_id {
-                        agent_map.insert("conversation_id".into(), serde_json::json!(cid));
+                        agent_map.insert(FIELD_CONVERSATION_ID.into(), serde_json::json!(cid));
                     }
                     if let Some(turn) = agent.turn {
-                        agent_map.insert("turn".into(), serde_json::json!(turn));
+                        agent_map.insert(FIELD_TURN.into(), serde_json::json!(turn));
                     }
                     if let Some(ref aid) = agent.agent_id {
-                        agent_map.insert("agent_id".into(), serde_json::json!(aid));
+                        agent_map.insert(FIELD_AGENT_ID.into(), serde_json::json!(aid));
                     }
                     if let Some(ref paid) = agent.parent_agent_id {
-                        agent_map.insert("parent_agent_id".into(), serde_json::json!(paid));
+                        agent_map.insert(FIELD_PARENT_AGENT_ID.into(), serde_json::json!(paid));
                     }
                     if !agent_map.is_empty() {
-                        ext_map.insert("agent".into(), serde_json::Value::Object(agent_map));
+                        ext_map.insert(FIELD_AGENT.into(), serde_json::Value::Object(agent_map));
                     }
                 }
 
@@ -478,23 +481,23 @@ impl<'a> MessageView<'a> {
                 if let Some(ref meta) = ext.meta {
                     let mut meta_map = serde_json::Map::new();
                     if let Some(ref et) = meta.entity_type {
-                        meta_map.insert("entity_type".into(), serde_json::json!(et));
+                        meta_map.insert(FIELD_ENTITY_TYPE.into(), serde_json::json!(et));
                     }
                     if let Some(ref en) = meta.entity_name {
-                        meta_map.insert("entity_name".into(), serde_json::json!(en));
+                        meta_map.insert(FIELD_ENTITY_NAME.into(), serde_json::json!(en));
                     }
                     if !meta.tags.is_empty() {
                         let mut tags: Vec<&String> = meta.tags.iter().collect();
                         tags.sort();
-                        meta_map.insert("tags".into(), serde_json::json!(tags));
+                        meta_map.insert(FIELD_TAGS.into(), serde_json::json!(tags));
                     }
                     if !meta_map.is_empty() {
-                        ext_map.insert("meta".into(), serde_json::Value::Object(meta_map));
+                        ext_map.insert(FIELD_META.into(), serde_json::Value::Object(meta_map));
                     }
                 }
 
                 if !ext_map.is_empty() {
-                    result.insert("extensions".into(), serde_json::Value::Object(ext_map));
+                    result.insert(FIELD_EXTENSIONS.into(), serde_json::Value::Object(ext_map));
                 }
             }
         }
@@ -507,8 +510,9 @@ impl<'a> MessageView<'a> {
     /// Wraps the view in the standard OPA input envelope:
     /// `{"input": {...view data...}}`.
     pub fn to_opa_input(&self, include_content: bool) -> serde_json::Value {
+        use super::constants::FIELD_OPA_INPUT;
         serde_json::json!({
-            "input": self.to_dict(include_content, true)
+            FIELD_OPA_INPUT: self.to_dict(include_content, true)
         })
     }
 }

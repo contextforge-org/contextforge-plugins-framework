@@ -48,44 +48,56 @@ impl HookHandler<CmfHook> for IdentityChecker {
         extensions: &Extensions,
         _ctx: &mut PluginContext,
     ) -> PluginResult<MessagePayload> {
-        let tool_name = payload.message.get_tool_calls()
-            .first()
-            .map(|tc| tc.name.as_str())
-            .unwrap_or("unknown");
+        // Determine if this is pre or post invoke based on message content
+        let is_result = payload.message.is_tool_result();
 
-        // Check security labels (capability: read_labels)
-        if let Some(ref security) = extensions.security {
-            let labels: Vec<&String> = security.labels.iter().collect();
-            println!("  [identity-checker] Security labels visible: {:?}", labels);
-            println!("  [identity-checker] Classification: {:?}", security.classification);
+        if is_result {
+            // POST-INVOKE: verify the tool result came from an authorized call
+            let tool_name = payload.message.get_tool_results()
+                .first()
+                .map(|tr| tr.tool_name.as_str())
+                .unwrap_or("unknown");
+            println!("  [identity-checker] POST-INVOKE: verifying result from '{}'", tool_name);
 
-            // Check subject (capability: read_subject, read_roles)
-            if let Some(ref subject) = security.subject {
-                println!("  [identity-checker] Subject: {:?}", subject.id);
-                let roles: Vec<&String> = subject.roles.iter().collect();
-                println!("  [identity-checker] Roles: {:?}", roles);
-
-                if security.has_label("PII") && !subject.roles.contains("hr_admin") {
-                    return PluginResult::deny(PluginViolation::new(
-                        "insufficient_role",
-                        format!("Tool '{}' requires 'hr_admin' role for PII data", tool_name),
-                    ));
+            if let Some(ref security) = extensions.security {
+                if let Some(ref subject) = security.subject {
+                    println!("  [identity-checker] Result authorized for subject: {:?}", subject.id);
                 }
-            } else {
-                println!("  [identity-checker] No subject visible (missing capability)");
             }
+            println!("  [identity-checker] POST-INVOKE ALLOWED");
         } else {
-            println!("  [identity-checker] No security extension visible");
+            // PRE-INVOKE: check caller identity and roles
+            let tool_name = payload.message.get_tool_calls()
+                .first()
+                .map(|tc| tc.name.as_str())
+                .unwrap_or("unknown");
+            println!("  [identity-checker] PRE-INVOKE: checking identity for '{}'", tool_name);
+
+            if let Some(ref security) = extensions.security {
+                let labels: Vec<&String> = security.labels.iter().collect();
+                println!("  [identity-checker] Security labels: {:?}", labels);
+
+                if let Some(ref subject) = security.subject {
+                    println!("  [identity-checker] Subject: {:?}, Roles: {:?}",
+                        subject.id, subject.roles.iter().collect::<Vec<_>>());
+
+                    if security.has_label("PII") && !subject.roles.contains("hr_admin") {
+                        return PluginResult::deny(PluginViolation::new(
+                            "insufficient_role",
+                            format!("Tool '{}' requires 'hr_admin' role for PII data", tool_name),
+                        ));
+                    }
+                }
+            }
+
+            if extensions.http.is_some() {
+                println!("  [identity-checker] WARNING: HTTP visible (unexpected!)");
+            } else {
+                println!("  [identity-checker] HTTP: not visible (correct — no read_headers)");
+            }
+            println!("  [identity-checker] PRE-INVOKE ALLOWED");
         }
 
-        // Check HTTP (should NOT be visible — no read_headers capability)
-        if extensions.http.is_some() {
-            println!("  [identity-checker] WARNING: HTTP visible (unexpected!)");
-        } else {
-            println!("  [identity-checker] HTTP: not visible (no read_headers capability)");
-        }
-
-        println!("  [identity-checker] ALLOWED: tool '{}' for authorized user", tool_name);
         PluginResult::allow()
     }
 }
@@ -114,7 +126,7 @@ impl HookHandler<CmfHook> for HeaderInjector {
     ) -> PluginResult<MessagePayload> {
         // Can see HTTP (has read_headers)
         if let Some(ref http) = extensions.http {
-            println!("  [header-injector] HTTP headers visible: {:?}", http.read().headers);
+            println!("  [header-injector] HTTP headers visible: {:?}", http.read().request_headers);
         }
 
         // Can NOT see security subject (no read_subject)
@@ -167,12 +179,22 @@ impl HookHandler<CmfHook> for AuditLogger {
         extensions: &Extensions,
         _ctx: &mut PluginContext,
     ) -> PluginResult<MessagePayload> {
-        let tool_name = payload.message.get_tool_calls()
-            .first()
-            .map(|tc| tc.name.as_str())
-            .unwrap_or("unknown");
+        let is_result = payload.message.is_tool_result();
+        let phase = if is_result { "POST" } else { "PRE" };
 
-        print!("  [audit-logger] AUDIT: tool='{}' ", tool_name);
+        let tool_name = if is_result {
+            payload.message.get_tool_results()
+                .first()
+                .map(|tr| tr.tool_name.as_str())
+                .unwrap_or("unknown")
+        } else {
+            payload.message.get_tool_calls()
+                .first()
+                .map(|tc| tc.name.as_str())
+                .unwrap_or("unknown")
+        };
+
+        print!("  [audit-logger] AUDIT[{}]: tool='{}' ", phase, tool_name);
 
         if let Some(ref security) = extensions.security {
             let labels: Vec<&String> = security.labels.iter().collect();
@@ -185,8 +207,12 @@ impl HookHandler<CmfHook> for AuditLogger {
             }
         }
 
-        if let Some(ref meta) = extensions.meta {
-            print!("entity='{:?}' ", meta.entity_name);
+        if is_result {
+            let is_error = payload.message.get_tool_results()
+                .first()
+                .map(|tr| tr.is_error)
+                .unwrap_or(false);
+            print!("error={} ", is_error);
         }
 
         println!();
@@ -205,7 +231,8 @@ impl PluginFactory for IdentityCheckerFactory {
         Ok(PluginInstance {
             plugin: plugin.clone(),
             handlers: vec![
-                ("cmf.tool_pre_invoke", Arc::new(TypedHandlerAdapter::<CmfHook, _>::new(plugin))),
+                ("cmf.tool_pre_invoke", Arc::new(TypedHandlerAdapter::<CmfHook, _>::new(plugin.clone()))),
+                ("cmf.tool_post_invoke", Arc::new(TypedHandlerAdapter::<CmfHook, _>::new(plugin))),
             ],
         })
     }
@@ -231,7 +258,8 @@ impl PluginFactory for AuditLoggerFactory {
         Ok(PluginInstance {
             plugin: plugin.clone(),
             handlers: vec![
-                ("cmf.tool_pre_invoke", Arc::new(TypedHandlerAdapter::<CmfHook, _>::new(plugin))),
+                ("cmf.tool_pre_invoke", Arc::new(TypedHandlerAdapter::<CmfHook, _>::new(plugin.clone()))),
+                ("cmf.tool_post_invoke", Arc::new(TypedHandlerAdapter::<CmfHook, _>::new(plugin))),
             ],
         })
     }
@@ -262,7 +290,7 @@ async fn main() {
     // --- Build CMF Message ---
     let payload = MessagePayload {
         message: Message {
-            schema_version: "2.0".into(),
+            schema_version: cpex_core::cmf::constants::SCHEMA_VERSION.into(),
             role: Role::Assistant,
             content: vec![
                 ContentPart::Text { text: "Looking up compensation.".into() },
@@ -313,27 +341,95 @@ async fn main() {
         ..Default::default()
     };
 
-    // --- Invoke ---
-    println!("--- Invoking cmf.tool_pre_invoke ---\n");
-    let boxed: Box<dyn cpex_core::hooks::PluginPayload> = Box::new(payload);
-    let (result, bg) = mgr.invoke_by_name("cmf.tool_pre_invoke", boxed, ext, None).await;
+    // --- Pre-invoke: type-safe dispatch via invoke_named ---
+    println!("=== Phase 1: cmf.tool_pre_invoke ===\n");
+
+    // invoke_named<CmfHook> gives compile-time payload type checking
+    // while routing to the specific "cmf.tool_pre_invoke" hook name
+    let (pre_result, bg) = mgr.invoke_named::<CmfHook>(
+        "cmf.tool_pre_invoke",
+        payload,
+        ext,
+        None,  // first hook — no context table
+    ).await;
 
     println!();
-    if result.continue_processing {
-        println!("Result: ALLOWED");
-        if let Some(ref modified_ext) = result.modified_extensions {
+    if pre_result.continue_processing {
+        println!("Pre-invoke result: ALLOWED");
+        if let Some(ref modified_ext) = pre_result.modified_extensions {
             if let Some(ref sec) = modified_ext.security {
                 let labels: Vec<&String> = sec.labels.iter().collect();
-                println!("Final labels: {:?}", labels);
+                println!("  Labels after pre-invoke: {:?}", labels);
             }
             if let Some(ref http) = modified_ext.http {
-                println!("Final headers: {:?}", http.read().headers);
+                println!("  Headers after pre-invoke: {:?}", http.read().request_headers);
             }
         }
     } else {
-        println!("Result: DENIED — {}", result.violation.as_ref().unwrap().reason);
+        println!("Pre-invoke result: DENIED — {}", pre_result.violation.as_ref().unwrap().reason);
+        bg.wait_for_background_tasks().await;
+        println!("\n=== Demo complete ===");
+        return;
+    }
+    bg.wait_for_background_tasks().await;
+
+    // --- Simulate tool execution ---
+    println!("\n--- Tool 'get_compensation' executes... ---");
+    println!("  Result: {{\"salary\": 150000, \"currency\": \"USD\"}}\n");
+
+    // --- Post-invoke: different CMF message with tool result ---
+    println!("=== Phase 2: cmf.tool_post_invoke ===\n");
+
+    let post_payload = MessagePayload {
+        message: Message {
+            schema_version: cpex_core::cmf::constants::SCHEMA_VERSION.into(),
+            role: Role::Tool,
+            content: vec![
+                ContentPart::ToolResult {
+                    content: cpex_core::cmf::ToolResult {
+                        tool_call_id: "tc_001".into(),
+                        tool_name: "get_compensation".into(),
+                        content: serde_json::json!({"salary": 150000, "currency": "USD"}),
+                        is_error: false,
+                    },
+                },
+            ],
+            channel: None,
+        },
+    };
+
+    // Build post-invoke extensions — carry forward any modifications
+    // from pre-invoke via the context table
+    let post_ext = pre_result.modified_extensions.unwrap_or_else(|| {
+        // Rebuild if no modifications
+        let mut security = SecurityExtension::default();
+        security.add_label("PII");
+        Extensions {
+            security: Some(security),
+            meta: Some(Arc::new(MetaExtension {
+                entity_type: Some("tool".into()),
+                entity_name: Some("get_compensation".into()),
+                ..Default::default()
+            })),
+            ..Default::default()
+        }
+    });
+
+    // Thread the context table from pre-invoke to preserve plugin state
+    let (post_result, post_bg) = mgr.invoke_named::<CmfHook>(
+        "cmf.tool_post_invoke",
+        post_payload,
+        post_ext,
+        Some(pre_result.context_table),
+    ).await;
+
+    println!();
+    if post_result.continue_processing {
+        println!("Post-invoke result: ALLOWED");
+    } else {
+        println!("Post-invoke result: DENIED — {}", post_result.violation.as_ref().unwrap().reason);
     }
 
-    bg.wait_for_background_tasks().await;
+    post_bg.wait_for_background_tasks().await;
     println!("\n=== Demo complete ===");
 }

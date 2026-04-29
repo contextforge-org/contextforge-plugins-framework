@@ -52,14 +52,14 @@ pub struct Message {
 }
 
 fn default_schema_version() -> String {
-    "2.0".to_string()
+    super::constants::SCHEMA_VERSION.to_string()
 }
 
 impl Message {
     /// Create a simple text message.
     pub fn text(role: Role, text: impl Into<String>) -> Self {
         Self {
-            schema_version: "2.0".to_string(),
+            schema_version: super::constants::SCHEMA_VERSION.to_string(),
             role,
             content: vec![ContentPart::Text {
                 text: text.into(),

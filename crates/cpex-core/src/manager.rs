@@ -627,6 +627,75 @@ impl PluginManager {
             .await
     }
 
+    /// Invoke a typed hook by explicit name.
+    ///
+    /// Combines compile-time payload type checking (from `H`) with
+    /// runtime hook name routing (from `hook_name`). Use this when
+    /// a single hook type (e.g., `CmfHook`) covers multiple hook
+    /// names (e.g., `cmf.tool_pre_invoke`, `cmf.tool_post_invoke`).
+    ///
+    /// # Type Parameters
+    ///
+    /// - `H` — the hook type (provides payload type checking).
+    ///
+    /// # Arguments
+    ///
+    /// * `hook_name` — the hook name for dispatch routing.
+    /// * `payload` — the typed payload (compile-time checked against `H::Payload`).
+    /// * `extensions` — the full extensions.
+    /// * `context_table` — optional context table from a previous hook.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// // Compile-time: payload must be MessagePayload (from CmfHook)
+    /// // Runtime: dispatches to plugins registered under "cmf.tool_pre_invoke"
+    /// let (result, bg) = mgr.invoke_named::<CmfHook>(
+    ///     "cmf.tool_pre_invoke", payload, ext, None,
+    /// ).await;
+    /// ```
+    pub async fn invoke_named<H: HookTypeDef>(
+        &self,
+        hook_name: &str,
+        payload: H::Payload,
+        extensions: Extensions,
+        context_table: Option<PluginContextTable>,
+    ) -> (PipelineResult, BackgroundTasks) {
+        let hook_type = HookType::new(hook_name);
+        let all_entries = self.registry.entries_for_hook(&hook_type);
+
+        if all_entries.is_empty() {
+            let boxed: Box<dyn PluginPayload> = Box::new(payload);
+            return (
+                PipelineResult::allowed_with(
+                    boxed,
+                    extensions,
+                    context_table.unwrap_or_default(),
+                ),
+                BackgroundTasks::empty(),
+            );
+        }
+
+        let entries = self.filter_entries_by_route(all_entries, &extensions, hook_name);
+
+        if entries.is_empty() {
+            let boxed: Box<dyn PluginPayload> = Box::new(payload);
+            return (
+                PipelineResult::allowed_with(
+                    boxed,
+                    extensions,
+                    context_table.unwrap_or_default(),
+                ),
+                BackgroundTasks::empty(),
+            );
+        }
+
+        let boxed: Box<dyn PluginPayload> = Box::new(payload);
+        self.executor
+            .execute(&entries, boxed, extensions, context_table)
+            .await
+    }
+
     // -----------------------------------------------------------------------
     // Route Filtering
     // -----------------------------------------------------------------------
@@ -1082,6 +1151,74 @@ mod tests {
             .await;
 
         assert!(result.continue_processing);
+    }
+
+    #[tokio::test]
+    async fn test_invoke_named() {
+        // invoke_named::<H>(hook_name, ...) gives compile-time payload
+        // type checking while routing to a specific hook name.
+        let mut mgr = PluginManager::default();
+        let config = make_config("allow-plugin", 10, PluginMode::Sequential);
+        let plugin = Arc::new(AllowPlugin { cfg: config.clone() });
+
+        mgr.register_handler::<TestHook, _>(plugin, config).unwrap();
+        mgr.initialize().await.unwrap();
+
+        let payload = TestPayload {
+            value: "named".into(),
+        };
+
+        // TestHook::NAME is "test_hook" — invoke_named routes by the
+        // explicit hook_name parameter, not H::NAME
+        let (result, _) = mgr
+            .invoke_named::<TestHook>("test_hook", payload, Extensions::default(), None)
+            .await;
+
+        assert!(result.continue_processing);
+    }
+
+    #[tokio::test]
+    async fn test_invoke_named_no_plugins_for_hook() {
+        // invoke_named with a hook name that has no registered plugins
+        let mut mgr = PluginManager::default();
+        let config = make_config("allow-plugin", 10, PluginMode::Sequential);
+        let plugin = Arc::new(AllowPlugin { cfg: config.clone() });
+
+        mgr.register_handler::<TestHook, _>(plugin, config).unwrap();
+        mgr.initialize().await.unwrap();
+
+        let payload = TestPayload {
+            value: "no-match".into(),
+        };
+
+        // Plugin is registered under "test_hook", but we invoke "other_hook"
+        let (result, _) = mgr
+            .invoke_named::<TestHook>("other_hook", payload, Extensions::default(), None)
+            .await;
+
+        // No plugins fire — allowed by default
+        assert!(result.continue_processing);
+    }
+
+    #[tokio::test]
+    async fn test_invoke_named_deny() {
+        let mut mgr = PluginManager::default();
+        let config = make_config("deny-plugin", 10, PluginMode::Sequential);
+        let plugin = Arc::new(DenyPlugin { cfg: config.clone() });
+
+        mgr.register_handler::<TestHook, _>(plugin, config).unwrap();
+        mgr.initialize().await.unwrap();
+
+        let payload = TestPayload {
+            value: "denied".into(),
+        };
+
+        let (result, _) = mgr
+            .invoke_named::<TestHook>("test_hook", payload, Extensions::default(), None)
+            .await;
+
+        assert!(!result.continue_processing);
+        assert_eq!(result.violation.as_ref().unwrap().code, "denied");
     }
 
     #[tokio::test]
