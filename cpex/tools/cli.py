@@ -26,19 +26,37 @@ $ mcpplugins --help
 """
 
 # Standard
+import json
 import logging
+import os
 import shutil
 import subprocess  # nosec B404 # Safe: Used only for git commands with hardcoded args
-from pathlib import Path
 
-# Third-Party
+# import sys
+from pathlib import Path
+from typing import List, Optional
+
+import inquirer
 import typer
+from rich.console import Console
 from typing_extensions import Annotated
 
 # First-Party
+from cpex.framework.loader.config import ConfigLoader, ConfigSaver
+from cpex.framework.models import (
+    Config,
+    PluginManifest,
+    PluginMode,
+)
 from cpex.framework.settings import settings
+from cpex.tools.catalog import PluginCatalog
+
+# Third-Party
+from cpex.tools.plugin_registry import PluginRegistry
 
 logger = logging.getLogger(__name__)
+console = Console()
+
 
 # ---------------------------------------------------------------------------
 # Configuration defaults
@@ -49,6 +67,8 @@ DEFAULT_AUTHOR_NAME = "<changeme>"
 DEFAULT_AUTHOR_EMAIL = "<changeme>"
 DEFAULT_PROJECT_DIR = Path("./.")
 DEFAULT_INSTALL_MANIFEST = Path("plugins/install.yaml")
+DEFAULT_PLUGIN_REGISTRY_FOLDER = Path(os.environ.get("PLUGIN_REGISTRY_FILE", "data"))
+DEFAULT_PLUGIN_REGISTRY_FILE = "installed-plugins.json"
 DEFAULT_IMAGE_TAG = "contextforge-plugin:latest"  # TBD: add plugin name and version
 DEFAULT_IMAGE_BUILDER = "docker"
 DEFAULT_BUILD_CONTEXT = "."
@@ -224,41 +244,519 @@ def bootstrap(
         logger.exception("An error was caught while copying template.")
 
 
+def list(type: str) -> None:
+    """List the installed plugins
+    Args:
+    type (str): The type of plugins to list. Can be "native" or "external".
+
+    Raises:
+    typer.Exit: If the type is not "native" or "external".
+    """
+    pr = PluginRegistry()
+
+    registered_plugins = pr.registry.plugins
+
+    if registered_plugins:
+        for plug_in in registered_plugins:
+            logger.info(
+                "name: %s version: %s installation type: %s",
+                plug_in.name,
+                plug_in.version,
+                plug_in.installation_type,
+            )
+    else:
+        logger.info("No plugins registered.")
+
+
+def instance_name_is_unique(config: Config, suggested_instance_name) -> bool:
+    """See if the instance name already exists in the plugins/config.yaml"""
+    if config.plugins is not None:
+        for a_plugin in config.plugins:
+            if a_plugin.name == suggested_instance_name:
+                return False
+    return True
+
+
+def update_plugins_config_yaml(manifest: PluginManifest):
+    """
+    Update the plugins/config.yaml file with the new plugin manifest.
+
+    Args:
+        manifest (PluginManifest): The plugin manifest to be added to the config.yaml file.
+    Returns:
+        bool: True if the update was successful, False otherwise.
+    """
+    plugin_configs: Config = ConfigLoader.load_config(settings.config_file)
+    suggested_name = manifest.suggest_instance_name()
+    ctr = 1
+    while not instance_name_is_unique(plugin_configs, suggested_instance_name=suggested_name):
+        suggested_name = manifest.suggest_instance_name() + "_" + str(ctr)
+        ctr += 1
+
+    accepted_name = suggested_name
+    # TODO: prompt to confirm mode, priority etc and accepted name?
+    plugin_config = manifest.create_instance_config(
+        instance_name=accepted_name, mode=PluginMode.SEQUENTIAL, priority=100
+    )
+    if plugin_configs.plugins is None:
+        plugin_configs.plugins = []
+    plugin_configs.plugins.append(plugin_config)
+    # now serialize the config
+    ConfigSaver.save_config(plugin_configs, settings.config_file)
+
+
+def remove_from_plugins_config_yaml(manifest: PluginManifest) -> bool:
+    """
+    Remove a plugin from the plugins/config.yaml file.
+
+    Args:
+        plugin_name: The name of the plugin to remove from the config.
+
+    Returns:
+        bool: True if the plugin was found and removed, False otherwise.
+    """
+    try:
+        plugin_configs: Config = ConfigLoader.load_config(settings.config_file)
+
+        if plugin_configs.plugins is None:
+            return False
+
+        initial_count = len(plugin_configs.plugins)
+        # Need to match by manifest.kind or if plugin.name starts with manifest.name
+        # e.g. if it is an external plugin or a venv plugin then kind will match many plugin configurations in config.yaml
+        plugin_configs.plugins = [
+            p for p in plugin_configs.plugins if p.kind != manifest.kind and p.name.count(manifest.name) == 0
+        ]
+        if len(plugin_configs.plugins) < initial_count:
+            ConfigSaver.save_config(plugin_configs, settings.config_file)
+            return True
+
+        return False
+    except Exception as e:
+        logger.error("Error removing plugin from config: %s", str(e))
+        return False
+
+
+def install_from_manifest(manifest: PluginManifest, installation_type: str, catalog: PluginCatalog):
+    """
+    Given a plugin manifest, download the plugin and register it in the plugin registry.
+
+    Args:
+        manifest (PluginManifest): The plugin manifest to be installed.
+        installation_type (str): The type of installation, either "monorepo" or "pypi".
+        catalog (PluginCatalog): The plugin catalog to be used for installation.
+    Returns:
+        None: This function does not return anything.
+    """
+
+    # download the plugin to the plugins folder
+    if installation_type == "monorepo":
+        logger.info("installation type: %s", installation_type)
+        plugin_path = catalog.install_folder_via_pip(manifest)
+        actual_plugin_path = catalog._find_and_load_versions_json(manifest, plugin_path, manifest.name)
+        plugin_registry: PluginRegistry = PluginRegistry()
+        # add the newly downloaded plugin to the registry
+        plugin_registry.update(
+            manifest=manifest,
+            installation_type=installation_type,
+            catalog=catalog,
+            git_user_name=git_user_name(),
+            plugin_path=actual_plugin_path if actual_plugin_path is not None else plugin_path,
+        )
+        update_plugins_config_yaml(manifest)
+
+
+def select_plugin_from_catalog(available_plugins: List[PluginManifest]) -> Optional[PluginManifest]:
+    """Select a plugin from a list of available plugins using an interactive prompt.
+
+    Args:
+        available_plugins: List of available plugin manifests to choose from.
+
+    Returns:
+        The selected PluginManifest, or None if no selection was made.
+    """
+    if not available_plugins:
+        return None
+
+    # Sort plugins by name and version
+    available_plugins = sorted(available_plugins, key=lambda p: (p.name, p.version), reverse=True)
+
+    # Build choices list with plugin information
+    choices = []
+    for index, plug_in in enumerate(available_plugins):
+        installation_type = (
+            "monorepo" if plug_in.monorepo is not None else "pypi" if plug_in.package_info is not None else "local"
+        )
+        choice = f"{index} name: {plug_in.name} version: {plug_in.version} installation type: {installation_type}"
+        choices.append((choice, index))
+
+    # Prompt user to select a plugin
+    questions = [
+        inquirer.List(
+            "plugins",
+            message="Which plugin would you like to install?",
+            choices=choices,
+        ),
+    ]
+    answers = inquirer.prompt(questions)
+
+    if not answers:
+        return None
+
+    logger.info(json.dumps(answers))
+    selected_index = int(answers["plugins"])
+    selected_plugin = available_plugins[selected_index]
+
+    # Display selected plugin information
+    installation_type = (
+        "monorepo"
+        if selected_plugin.monorepo is not None
+        else "pypi"
+        if selected_plugin.package_info is not None
+        else "local"
+    )
+    console.print(
+        "name: ",
+        selected_plugin.name,
+        "Version: ",
+        selected_plugin.version,
+        "type: ",
+        installation_type,
+    )
+
+    return selected_plugin
+
+
+def _parse_pypi_source(source: str) -> tuple[str, Optional[str]]:
+    """Parse PyPI source string to extract package name and version constraint.
+
+    Args:
+        source: PyPI package source string, optionally with version (e.g., "package@>=1.0.0").
+
+    Returns:
+        Tuple of (package_name, version_constraint).
+    """
+    parts = source.split("@", 1)
+    package_name = parts[0]
+    version_constraint = parts[1] if len(parts) > 1 else None
+    return package_name, version_constraint
+
+
+def _finalize_installation(
+    manifest: PluginManifest, install_type: str, catalog: PluginCatalog, plugin_path: Path | None = None
+):
+    """Common finalization steps for plugin installation.
+
+    Args:
+        manifest: The plugin manifest to finalize.
+        install_type: The type of installation (e.g., "pypi", "monorepo").
+        catalog: The plugin catalog.
+    """
+    plugin_registry = PluginRegistry()
+    plugin_registry.update(
+        manifest=manifest,
+        installation_type=install_type,
+        catalog=catalog,
+        git_user_name=git_user_name(),
+        plugin_path=plugin_path,
+    )
+    update_plugins_config_yaml(manifest=manifest)
+
+
+def _install_from_local(source: str, catalog: PluginCatalog, use_test: bool = False):
+    """Handle local-based installation (not yet implemented).
+
+    Args:
+        source: local path.
+        catalog: The plugin catalog.
+
+    Raises:
+        NotImplementedError: local installation is not yet supported.
+    """
+    raise NotImplementedError("Local installation is not yet implemented")
+
+
+def _install_from_git(source: str, catalog: PluginCatalog, use_test: bool = False):
+    """Handle git-based installation (not yet implemented).
+
+    Args:
+        source: Git repository URL or path.
+        catalog: The plugin catalog.
+
+    Raises:
+        NotImplementedError: Git installation is not yet supported.
+    """
+    raise NotImplementedError("Git installation is not yet implemented")
+
+
+def _install_from_monorepo(source: str, catalog: PluginCatalog, use_test: bool = False):
+    """Handle monorepo-based installation.
+
+    Args:
+        source: Plugin name or search term in the monorepo.
+        catalog: The plugin catalog.
+    """
+    logger.info("Trying to install from git monorepo: %s", source)
+    available_plugins = catalog.search(source)
+
+    if not available_plugins:
+        console.print("No matching plugins found.")
+        return
+
+    selected_plugin = select_plugin_from_catalog(available_plugins)
+    if not selected_plugin:
+        return
+
+    with console.status(f"Installing plugin {selected_plugin.name}...", spinner="dots"):
+        install_from_manifest(selected_plugin, "monorepo", catalog=catalog)
+
+    console.print(f":white_heavy_check_mark: {selected_plugin.name} installation complete.")
+
+
+def _install_from_pypi(source: str, catalog: PluginCatalog, use_test: bool = False):
+    """Handle PyPI-based installation.
+
+    Args:
+        source: PyPI package name, optionally with version constraint (e.g., "package@>=1.0.0").
+        catalog: The plugin catalog.
+    """
+    logger.info("Trying to install from pypi package %s", source)
+
+    # Parse version constraint
+    package_name, version_constraint = _parse_pypi_source(source)
+
+    with console.status(f"Installing plugin {package_name} via pypi", spinner="dots"):
+        manifest, plugin_path = catalog.install_from_pypi(
+            plugin_package_name=package_name, version_constraint=version_constraint, use_pytest=use_test
+        )
+
+    if manifest is None:
+        console.print(f":x: Failed to install {package_name}")
+        return
+
+    _finalize_installation(manifest, "pypi", catalog, plugin_path)
+    console.print(f":white_heavy_check_mark: {package_name} installation complete.")
+
+
+def install(source: str, install_type: str | None, catalog: PluginCatalog):
+    """Install a plugin from its associated source.
+
+    Args:
+        source: The source of the plugin (package name, repo URL, or search term).
+        install_type: The type of installation ("git", "monorepo", or "pypi").
+        catalog: The catalog of plugins.
+
+    Raises:
+        ValueError: If install_type is not supported.
+        NotImplementedError: If the installation type is not yet implemented.
+    """
+    if install_type is None:
+        install_type = "monorepo"
+
+    handlers = {
+        "git": _install_from_git,
+        "monorepo": _install_from_monorepo,
+        "pypi": _install_from_pypi,
+        "test-pypi": _install_from_pypi,
+        "local": _install_from_local,
+    }
+
+    handler = handlers.get(install_type)
+    if handler is None:
+        raise ValueError(f"Unsupported installation type: {install_type}. Must be one of: {', '.join(handlers.keys())}")
+
+    handler(source, catalog, use_test=True if install_type == "test-pypi" else False)
+
+
+def versions(plugin_name: str | None, catalog: PluginCatalog):
+    """List available versions of the plugin
+    Args:
+        plugin_name (str | None): The name of the plugin to search for.
+        catalog (PluginCatalog): The catalog to search in.
+    """
+    return search(plugin_name, catalog)
+
+
+def search(plugin_name: str | None, catalog: PluginCatalog):
+    """Search for a plugin in the catalog
+    Args:
+        plugin_name (str | None): The name of the plugin to search for.
+        catalog (PluginCatalog): The catalog to search in.
+    Returns:
+        list[Plugin]: A list of plugins that match the search criteria.
+    """
+    # lookup the plugin from the catalog's plugin-manifest.yaml
+    with console.status("Searching for available plugins ...", spinner="dots"):
+        available_plugins = catalog.search(plugin_name)
+    if available_plugins:
+        console.log("Available plugins:")
+        for plug_in in available_plugins:
+            msg = f"name: {plug_in.name} version: {plug_in.version} installation type: {'monorepo' if plug_in.monorepo is not None else 'pypi' if plug_in.package_info is not None else 'local'}"
+            console.log(msg)
+    else:
+        console.log("No plugins found.")
+
+
+def info(plugin_name: str | None):
+    """Search for or list all installed plugins
+
+    Args:
+        plugin_name (str | None): The name of the plugin to search for.
+        If None, list all installed plugins.
+
+        Returns:
+            list[Plugin]: A list of plugins that match the search criteria.
+    """
+    registry = PluginRegistry().registry
+
+    found = 0
+    for plug_in in registry.plugins:
+        if plugin_name is None:
+            console.print_json(json.dumps(plug_in.model_dump()))
+            # console.print(yaml.dump(plug_in.model_dump(), default_flow_style=False))
+            found += 1
+        else:
+            if (
+                plug_in.name.lower().count(plugin_name.lower()) > 0
+                or plug_in.kind.lower().count(plugin_name.lower()) > 0
+            ):
+                console.print_json(json.dumps(plug_in.model_dump()))
+                # console.print(yaml.dump(plug_in.model_dump()))
+                found += 1
+    if found == 0:
+        console.print("No plugins found")
+
+
+def uninstall(plugin_name: str, catalog: PluginCatalog) -> None:
+    """Uninstall a plugin.
+
+    Args:
+        plugin_name: The name of the plugin to uninstall.
+        catalog: The plugin catalog.
+    """
+    # Get plugin registry to find the installed plugin
+    plugin_registry = PluginRegistry()
+
+    # Find the plugin in the registry
+    installed_plugin = None
+    for plugin in plugin_registry.registry.plugins:
+        if plugin.name == plugin_name:
+            installed_plugin = plugin
+            break
+
+    if installed_plugin is None:
+        console.print(f":x: Plugin '{plugin_name}' is not installed.")
+        return
+
+    # Confirm uninstallation
+    console.print(f"Found plugin: {installed_plugin.name} (version {installed_plugin.version})")
+    console.print(f"Installation type: {installed_plugin.installation_type}")
+    console.print(f"Installation path: {installed_plugin.installation_path}")
+
+    questions = [
+        inquirer.Confirm(
+            "confirm",
+            message=f"Are you sure you want to uninstall '{plugin_name}'?",
+            default=False,
+        ),
+    ]
+    answers = inquirer.prompt(questions)
+
+    if not answers or not answers["confirm"]:
+        console.print("Uninstall cancelled.")
+        return
+
+    try:
+        with console.status(f"Uninstalling plugin {plugin_name}...", spinner="dots"):
+            # Uninstall the package using pip
+            catalog.uninstall_package(plugin_name)
+
+            # Remove from plugin registry
+            plugin_registry.remove(plugin_name)
+            # retrieve the manifest so we can match on kind value
+            catalog = PluginCatalog()
+            manifest = catalog.find(plugin_name)
+            # Remove from plugins/config.yaml
+            if manifest:
+                remove_from_plugins_config_yaml(manifest)
+            else:
+                console.print(f"Plugin {plugin_name} not found in plugins config.yaml.")
+
+        console.print(f":white_heavy_check_mark: {plugin_name} uninstalled successfully.")
+
+    except Exception as e:
+        console.print(f":x: Failed to uninstall {plugin_name}: {str(e)}")
+        logger.error("Uninstall error: %s", str(e), exc_info=True)
+
+
+@app.command(
+    help="List, search, install or uninstall plugins.\n\n"
+    "\ndefault install type is monorepo\n"
+    "Examples:\n"
+    "python cpex/tools/cli.py plugin info pii\n"
+    "python cpex/tools/cli.py plugin search pii\n"
+    "python cpex/tools/cli.py plugin --type monorepo search pii\n"
+    "python cpex/tools/cli.py plugin --type monorepo install cpex-pii-filter\n"
+    'python cpex/tools/cli.py plugin --type pypi install "ExamplePlugin@>=0.1.0"\n'
+    'python cpex/tools/cli.py plugin --type test-pypi install "cpex-test-plugin@>=0.1.1"\n'
+    "python cpex/tools/cli.py plugin versions cpex-test-plugin"
+    "python cpex/tools/cli.py plugin uninstall cpex-pii-filter"
+)
+def plugin(
+    cmd_action: str = typer.Argument(None, help="One of: list|info|install|search|versions|uninstall"),
+    source: str | None = typer.Argument(None, help="The pypi, git, or local folder where the plugin resides"),
+    install_type: Annotated[
+        str,
+        typer.Option(
+            "--type",
+            "-t",
+            help="The types of plugins to list.  One of: monorepo|pypi|test-pypi|git|local  Defaults to monorepo if unspecified.",
+        ),
+    ] = None,
+) -> None:
+    """Lists installed plugins"""
+    if cmd_action == "info":
+        return info(source)
+
+    # For uninstall, we don't need to update the catalog
+    if cmd_action == "uninstall":
+        if source is None:
+            console.print(":x: Please specify a plugin name to uninstall.")
+            return
+        pc = PluginCatalog()
+        return uninstall(source, catalog=pc)
+    if cmd_action == "install" and source is not None:
+        registry = PluginRegistry()
+        if registry.has(source):
+            console.print(f"Plugin {source} is already installed.")
+            return
+
+    # update the catalog before proceeding with install etc.
+    pc = PluginCatalog()
+    # optimized github search REST api takes ~14s to search & download all manifests
+    if install_type not in {"test-pypi", "pypi"}:
+        console.log("Update catalog")
+        with console.status("Updating catalog...", spinner="dots"):
+            rc = pc.update_catalog_with_pyproject()
+            if rc is False:
+                console.log("Catalog update completed.")
+            else:
+                console.log(":x: Catalog update failed.")
+
+    if cmd_action == "versions":
+        return versions(source, catalog=pc)
+
+    if cmd_action == "list":
+        return list(install_type)
+    if cmd_action == "install" and source is not None:
+        return install(source, install_type, catalog=pc)
+    if cmd_action == "search":
+        return search(source, catalog=pc)
+
+
 @app.callback()
 def callback() -> None:  # pragma: no cover
     """This function exists to force 'bootstrap' to be a subcommand."""
-
-
-# @app.command(help="Installs plugins into a Python environment.")
-# def install(
-#     install_manifest: Annotated[typer.FileText, typer.Option("--install_manifest", "-i", help="The install manifest describing which plugins to install.")] = DEFAULT_INSTALL_MANIFEST,
-#     installer: Annotated[str, typer.Option("--installer", "-c", help="The install command to install plugins.")] = DEFAULT_INSTALLER,
-# ):
-#     typer.echo(f"Installing plugin packages from {install_manifest.name}")
-#     data = yaml.safe_load(install_manifest)
-#     manifest = InstallManifest.model_validate(data)
-#     for pkg in manifest.packages:
-#         typer.echo(f"Installing plugin package {pkg.package} from {pkg.repository}")
-#         repository = os.path.expandvars(pkg.repository)
-#         cmd = installer.split(" ")
-#         if pkg.extras:
-#             cmd.append(f"{pkg.package}[{','.join(pkg.extras)}]@{repository}")
-#         else:
-#             cmd.append(f"{pkg.package}@{repository}")
-#         subprocess.run(cmd)
-
-
-# @app.command(help="Builds an MCP server to serve plugins as tools.")
-# def package(
-#     image_tag: Annotated[str, typer.Option("--image_tag", "-t", help="The container image tag to generated container.")] = DEFAULT_IMAGE_TAG,
-#     containerfile: Annotated[Path, typer.Option("--containerfile", "-c", help="The Dockerfile used to build the container.")] = DEFAULT_CONTAINERFILE_PATH,
-#     builder: Annotated[str, typer.Option("--builder", "-b", help="The container builder, compatible with docker build.")] = DEFAULT_IMAGE_BUILDER,
-#     build_context: Annotated[Path, typer.Option("--build_context", "-p", help="The container builder context, specified as a path.")] = DEFAULT_BUILD_CONTEXT,
-# ):
-#     typer.echo("Building MCP server image")
-#     cmd = builder.split(" ")
-#     cmd.extend(["-f", containerfile, "-t", image_tag, build_context])
-#     subprocess.run(cmd)
 
 
 def main() -> None:  # noqa: D401 - imperative mood is fine here
@@ -280,4 +778,9 @@ def main() -> None:  # noqa: D401 - imperative mood is fine here
 
 
 if __name__ == "__main__":  # pragma: no cover - executed only when run directly
+    # logging.basicConfig(
+    #     level=logging.INFO,
+    #     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    #     stream=sys.stderr,  # Log to stderr to keep stdout clean for coordination
+    # )
     main()
