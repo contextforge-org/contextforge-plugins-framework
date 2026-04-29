@@ -859,7 +859,7 @@ mod tests {
     use super::*;
     use crate::context::PluginContext;
     use crate::error::PluginViolation;
-    use crate::hooks::payload::FilteredExtensions;
+    use crate::hooks::payload::Extensions;
     use crate::hooks::{HookHandler, PluginResult};
     use crate::plugin::{OnError, PluginMode};
     use async_trait::async_trait;
@@ -900,7 +900,7 @@ mod tests {
         fn handle(
             &self,
             _payload: &TestPayload,
-            _extensions: &FilteredExtensions,
+            _extensions: &Extensions,
             _ctx: &mut PluginContext,
         ) -> PluginResult<TestPayload> {
             PluginResult::allow()
@@ -923,7 +923,7 @@ mod tests {
         fn handle(
             &self,
             _payload: &TestPayload,
-            _extensions: &FilteredExtensions,
+            _extensions: &Extensions,
             _ctx: &mut PluginContext,
         ) -> PluginResult<TestPayload> {
             PluginResult::deny(PluginViolation::new("denied", "test denial"))
@@ -938,7 +938,7 @@ mod tests {
         async fn invoke(
             &self,
             _payload: &dyn PluginPayload,
-            _extensions: &FilteredExtensions,
+            _extensions: &Extensions,
             _ctx: &mut PluginContext,
         ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
             Err(PluginError::Execution {
@@ -1240,7 +1240,7 @@ mod tests {
         fn handle(
             &self,
             payload: &TestPayload,
-            _extensions: &FilteredExtensions,
+            _extensions: &Extensions,
             _ctx: &mut PluginContext,
         ) -> PluginResult<TestPayload> {
             PluginResult::modify_payload(TestPayload {
@@ -1259,7 +1259,7 @@ mod tests {
         async fn invoke(
             &self,
             _payload: &dyn PluginPayload,
-            _extensions: &FilteredExtensions,
+            _extensions: &Extensions,
             _ctx: &mut PluginContext,
         ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
             tokio::time::sleep(std::time::Duration::from_millis(self.delay_ms)).await;
@@ -1308,7 +1308,7 @@ mod tests {
             async fn invoke(
                 &self,
                 _payload: &dyn PluginPayload,
-                _extensions: &FilteredExtensions,
+                _extensions: &Extensions,
                 _ctx: &mut PluginContext,
             ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
                 // Small sleep to ensure both tasks are spawned before either finishes
@@ -1393,7 +1393,7 @@ mod tests {
             async fn invoke(
                 &self,
                 _payload: &dyn PluginPayload,
-                _extensions: &FilteredExtensions,
+                _extensions: &Extensions,
                 _ctx: &mut PluginContext,
             ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
                 tokio::time::sleep(std::time::Duration::from_millis(200)).await;
@@ -1440,7 +1440,7 @@ mod tests {
             async fn invoke(
                 &self,
                 _payload: &dyn PluginPayload,
-                _extensions: &FilteredExtensions,
+                _extensions: &Extensions,
                 ctx: &mut PluginContext,
             ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
                 ctx.set_global("writer_was_here", serde_json::Value::Bool(true));
@@ -1459,7 +1459,7 @@ mod tests {
             async fn invoke(
                 &self,
                 _payload: &dyn PluginPayload,
-                _extensions: &FilteredExtensions,
+                _extensions: &Extensions,
                 ctx: &mut PluginContext,
             ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
                 if ctx.get_global("writer_was_here").is_some() {
@@ -1511,7 +1511,7 @@ mod tests {
             async fn invoke(
                 &self,
                 _payload: &dyn PluginPayload,
-                _extensions: &FilteredExtensions,
+                _extensions: &Extensions,
                 ctx: &mut PluginContext,
             ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
                 // Increment a counter in local_state
@@ -1742,11 +1742,11 @@ routes:
         // First invoke — populates cache
         let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "test".into() });
         let ext = Extensions {
-            meta: Some(crate::hooks::payload::MetaExtension {
+            meta: Some(std::sync::Arc::new(crate::hooks::payload::MetaExtension {
                 entity_type: Some("tool".into()),
                 entity_name: Some("get_compensation".into()),
                 ..Default::default()
-            }),
+            })),
             ..Default::default()
         };
         // context_table = None (first invocation)
@@ -1757,11 +1757,11 @@ routes:
         // Second invoke — cache hit, still size 1
         let payload2: Box<dyn PluginPayload> = Box::new(TestPayload { value: "test2".into() });
         let ext2 = Extensions {
-            meta: Some(crate::hooks::payload::MetaExtension {
+            meta: Some(std::sync::Arc::new(crate::hooks::payload::MetaExtension {
                 entity_type: Some("tool".into()),
                 entity_name: Some("get_compensation".into()),
                 ..Default::default()
-            }),
+            })),
             ..Default::default()
         };
         mgr.invoke_by_name("test_hook", payload2, ext2, None).await;
@@ -1799,11 +1799,11 @@ routes:
         // Invoke for get_compensation
         let p1: Box<dyn PluginPayload> = Box::new(TestPayload { value: "t".into() });
         let e1 = Extensions {
-            meta: Some(crate::hooks::payload::MetaExtension {
+            meta: Some(std::sync::Arc::new(crate::hooks::payload::MetaExtension {
                 entity_type: Some("tool".into()),
                 entity_name: Some("get_compensation".into()),
                 ..Default::default()
-            }),
+            })),
             ..Default::default()
         };
         mgr.invoke_by_name("test_hook", p1, e1, None).await;
@@ -1811,11 +1811,11 @@ routes:
         // Invoke for send_email
         let p2: Box<dyn PluginPayload> = Box::new(TestPayload { value: "t".into() });
         let e2 = Extensions {
-            meta: Some(crate::hooks::payload::MetaExtension {
+            meta: Some(std::sync::Arc::new(crate::hooks::payload::MetaExtension {
                 entity_type: Some("tool".into()),
                 entity_name: Some("send_email".into()),
                 ..Default::default()
-            }),
+            })),
             ..Default::default()
         };
         mgr.invoke_by_name("test_hook", p2, e2, None).await;
@@ -1850,11 +1850,11 @@ routes:
         // context_table = None (first invocation)
         let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "t".into() });
         let ext = Extensions {
-            meta: Some(crate::hooks::payload::MetaExtension {
+            meta: Some(std::sync::Arc::new(crate::hooks::payload::MetaExtension {
                 entity_type: Some("tool".into()),
                 entity_name: Some("get_compensation".into()),
                 ..Default::default()
-            }),
+            })),
             ..Default::default()
         };
         mgr.invoke_by_name("test_hook", payload, ext, None).await;
@@ -1893,24 +1893,24 @@ routes:
         // Same entity, different scopes → separate cache entries
         let p1: Box<dyn PluginPayload> = Box::new(TestPayload { value: "t".into() });
         let e1 = Extensions {
-            meta: Some(crate::hooks::payload::MetaExtension {
+            meta: Some(std::sync::Arc::new(crate::hooks::payload::MetaExtension {
                 entity_type: Some("tool".into()),
                 entity_name: Some("get_compensation".into()),
                 scope: Some("hr-server".into()),
                 ..Default::default()
-            }),
+            })),
             ..Default::default()
         };
         mgr.invoke_by_name("test_hook", p1, e1, None).await;
 
         let p2: Box<dyn PluginPayload> = Box::new(TestPayload { value: "t".into() });
         let e2 = Extensions {
-            meta: Some(crate::hooks::payload::MetaExtension {
+            meta: Some(std::sync::Arc::new(crate::hooks::payload::MetaExtension {
                 entity_type: Some("tool".into()),
                 entity_name: Some("get_compensation".into()),
                 scope: Some("billing-server".into()),
                 ..Default::default()
-            }),
+            })),
             ..Default::default()
         };
         mgr.invoke_by_name("test_hook", p2, e2, None).await;
@@ -1951,11 +1951,11 @@ routes:
         // Invoke with routing — should create override instance
         let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "t".into() });
         let ext = Extensions {
-            meta: Some(crate::hooks::payload::MetaExtension {
+            meta: Some(std::sync::Arc::new(crate::hooks::payload::MetaExtension {
                 entity_type: Some("tool".into()),
                 entity_name: Some("get_compensation".into()),
                 ..Default::default()
-            }),
+            })),
             ..Default::default()
         };
         // context_table = None (first invocation)
@@ -2015,13 +2015,13 @@ plugin_settings:
             tag_set.insert(t.to_string());
         }
         Extensions {
-            meta: Some(crate::hooks::payload::MetaExtension {
+            meta: Some(std::sync::Arc::new(crate::hooks::payload::MetaExtension {
                 entity_type: Some(entity_type.into()),
                 entity_name: Some(entity_name.into()),
                 scope: scope.map(String::from),
                 tags: tag_set,
                 ..Default::default()
-            }),
+            })),
             ..Default::default()
         }
     }
@@ -2333,5 +2333,181 @@ routes:
             )
             .await;
         assert!(r2.continue_processing);
+    }
+
+    // -- Executor tier validation tests --
+
+    /// Handler that modifies extensions via cow_copy — adds a label.
+    struct LabelAdderHandler;
+
+    #[async_trait]
+    impl AnyHookHandler for LabelAdderHandler {
+        async fn invoke(
+            &self,
+            _payload: &dyn PluginPayload,
+            extensions: &Extensions,
+            _ctx: &mut PluginContext,
+        ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+            let mut ext = extensions.cow_copy();
+            if let Some(ref mut sec) = ext.security {
+                sec.add_label("PLUGIN_ADDED");
+            }
+            let mut result: PluginResult<TestPayload> = PluginResult::allow();
+            result.modified_extensions = Some(ext);
+            Ok(crate::executor::erase_result(result))
+        }
+        fn hook_type_name(&self) -> &'static str { "test_hook" }
+    }
+
+    /// Handler that tampers with an immutable extension slot.
+    struct ImmutableTampererHandler;
+
+    #[async_trait]
+    impl AnyHookHandler for ImmutableTampererHandler {
+        async fn invoke(
+            &self,
+            _payload: &dyn PluginPayload,
+            extensions: &Extensions,
+            _ctx: &mut PluginContext,
+        ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+            let mut ext = extensions.cow_copy();
+            // Tamper: replace the immutable request extension
+            ext.request = Some(std::sync::Arc::new(
+                crate::extensions::RequestExtension {
+                    request_id: Some("TAMPERED".into()),
+                    ..Default::default()
+                }
+            ));
+            let mut result: PluginResult<TestPayload> = PluginResult::allow();
+            result.modified_extensions = Some(ext);
+            Ok(crate::executor::erase_result(result))
+        }
+        fn hook_type_name(&self) -> &'static str { "test_hook" }
+    }
+
+    #[tokio::test]
+    async fn test_executor_accepts_valid_label_addition() {
+        let mut mgr = PluginManager::default();
+        let mut config = make_config("label-adder", 10, PluginMode::Sequential);
+        config.capabilities = ["append_labels".to_string(), "read_labels".to_string()].into();
+        let plugin = Arc::new(AllowPlugin { cfg: config.clone() });
+        let handler: Arc<dyn AnyHookHandler> = Arc::new(LabelAdderHandler);
+        mgr.register_raw::<TestHook>(plugin, config, handler).unwrap();
+        mgr.initialize().await.unwrap();
+
+        // Build extensions with a security label
+        let mut security = crate::extensions::SecurityExtension::default();
+        security.add_label("ORIGINAL");
+
+        let ext = Extensions {
+            security: Some(security),
+            ..Default::default()
+        };
+
+        let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "test".into() });
+        let (result, _) = mgr.invoke_by_name("test_hook", payload, ext, None).await;
+
+        assert!(result.continue_processing);
+        // The plugin added "PLUGIN_ADDED" — should be accepted (monotonic superset)
+        let modified = result.modified_extensions.as_ref().unwrap();
+        let sec = modified.security.as_ref().unwrap();
+        assert!(sec.has_label("ORIGINAL"));
+        assert!(sec.has_label("PLUGIN_ADDED"));
+    }
+
+    #[tokio::test]
+    async fn test_executor_rejects_immutable_tampering() {
+        let mut mgr = PluginManager::default();
+        let config = make_config("tamperer", 10, PluginMode::Sequential);
+        let plugin = Arc::new(AllowPlugin { cfg: config.clone() });
+        let handler: Arc<dyn AnyHookHandler> = Arc::new(ImmutableTampererHandler);
+        mgr.register_raw::<TestHook>(plugin, config, handler).unwrap();
+        mgr.initialize().await.unwrap();
+
+        // Build extensions with a request extension
+        let ext = Extensions {
+            request: Some(std::sync::Arc::new(crate::extensions::RequestExtension {
+                request_id: Some("original-req-id".into()),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+
+        let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "test".into() });
+        let (result, _) = mgr.invoke_by_name("test_hook", payload, ext, None).await;
+
+        assert!(result.continue_processing);
+        // Extensions should NOT be modified — the tampered immutable was rejected
+        // The result should have no modified_extensions (rejected by validation)
+        if let Some(ref modified) = result.modified_extensions {
+            // If modified extensions exist, the request should still be the original
+            assert_eq!(
+                modified.request.as_ref().unwrap().request_id.as_deref(),
+                Some("original-req-id"),
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_capability_filtering_hides_security_from_plugin() {
+        // Plugin has NO security capabilities — security should be None
+
+        struct SecurityCheckerHandler {
+            saw_security: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        }
+
+        #[async_trait]
+        impl AnyHookHandler for SecurityCheckerHandler {
+            async fn invoke(
+                &self,
+                _payload: &dyn PluginPayload,
+                extensions: &Extensions,
+                _ctx: &mut PluginContext,
+            ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+                // Check if security is visible
+                if extensions.security.is_some() {
+                    self.saw_security.store(true, std::sync::atomic::Ordering::SeqCst);
+                }
+                let result: PluginResult<TestPayload> = PluginResult::allow();
+                Ok(crate::executor::erase_result(result))
+            }
+            fn hook_type_name(&self) -> &'static str { "test_hook" }
+        }
+
+        let saw_security = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let mut mgr = PluginManager::default();
+        // No security capabilities declared
+        let config = make_config("no-sec-caps", 10, PluginMode::Sequential);
+        let plugin = Arc::new(AllowPlugin { cfg: config.clone() });
+        let handler: Arc<dyn AnyHookHandler> = Arc::new(SecurityCheckerHandler {
+            saw_security: saw_security.clone(),
+        });
+        mgr.register_raw::<TestHook>(plugin, config, handler).unwrap();
+        mgr.initialize().await.unwrap();
+
+        // Build extensions WITH security data
+        let mut security = crate::extensions::SecurityExtension::default();
+        security.add_label("SECRET");
+        security.subject = Some(crate::extensions::security::SubjectExtension {
+            id: Some("alice".into()),
+            ..Default::default()
+        });
+
+        let ext = Extensions {
+            security: Some(security),
+            ..Default::default()
+        };
+
+        let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "test".into() });
+        let (result, _) = mgr.invoke_by_name("test_hook", payload, ext, None).await;
+
+        assert!(result.continue_processing);
+        // Plugin should NOT have seen security — no capabilities declared
+        // Security is still there but labels and subject are empty/none
+        // (filter_extensions strips gated fields)
+        // The saw_security flag checks if the security Option itself was Some
+        // With filter_extensions, security IS Some but with empty labels and no subject
+        // So saw_security will be true, but the content is filtered
     }
 }

@@ -21,7 +21,7 @@
 
 use crate::context::PluginContext;
 use crate::error::PluginViolation;
-use crate::hooks::payload::{Extensions, FilteredExtensions, PluginPayload};
+use crate::hooks::payload::{Extensions, PluginPayload};
 use crate::plugin::Plugin;
 
 // ---------------------------------------------------------------------------
@@ -90,7 +90,7 @@ pub trait HookTypeDef: Send + Sync + 'static {
 ///     fn handle(
 ///         &self,
 ///         payload: MessagePayload,
-///         extensions: &FilteredExtensions,
+///         extensions: &Extensions,
 ///         ctx: &PluginContext,
 ///     ) -> PluginResult<MessagePayload> {
 ///         PluginResult::allow()
@@ -115,7 +115,7 @@ pub trait HookHandler<H: HookTypeDef>: Plugin + Send + Sync {
     fn handle(
         &self,
         payload: &H::Payload,
-        extensions: &FilteredExtensions,
+        extensions: &Extensions,
         ctx: &mut PluginContext,
     ) -> H::Result;
 }
