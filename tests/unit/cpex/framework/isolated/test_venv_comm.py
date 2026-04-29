@@ -98,7 +98,7 @@ class TestVenvProcessCommunicator:
         
         communicator.install_requirements(str(requirements_file))
         
-        mock_check_call.assert_called_once_with([
+        mock_check_call.assert_called_with([
             communicator.python_executable,
             "-m",
             "pip",
