@@ -2537,7 +2537,7 @@ routes:
         security.add_label("ORIGINAL");
 
         let ext = Extensions {
-            security: Some(security),
+            security: Some(Arc::new(security)),
             ..Default::default()
         };
 
@@ -2632,7 +2632,7 @@ routes:
         });
 
         let ext = Extensions {
-            security: Some(security),
+            security: Some(Arc::new(security)),
             ..Default::default()
         };
 

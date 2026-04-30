@@ -328,7 +328,7 @@ impl<'a> MessageView<'a> {
     pub fn get_header(&self, name: &str) -> Option<&str> {
         self.extensions
             .and_then(|e| e.http.as_ref())
-            .and_then(|h| h.read().get_header(name))
+            .and_then(|h| h.get_header(name))
     }
 
     // -- Serialization --
@@ -438,8 +438,7 @@ impl<'a> MessageView<'a> {
 
                 // Request headers (strip sensitive)
                 if let Some(ref http) = ext.http {
-                    let http_ref = http.read();
-                    let safe: std::collections::HashMap<&String, &String> = http_ref
+                    let safe: std::collections::HashMap<&String, &String> = http
                         .request_headers
                         .iter()
                         .filter(|(k, _)| {
@@ -701,7 +700,8 @@ mod tests {
 
     #[test]
     fn test_view_with_extensions() {
-        use crate::extensions::{SecurityExtension, Guarded, HttpExtension};
+        use std::sync::Arc;
+        use crate::extensions::{SecurityExtension, HttpExtension};
 
         let mut security = SecurityExtension::default();
         security.add_label("PII");
@@ -710,8 +710,8 @@ mod tests {
         http.set_header("Authorization", "Bearer tok");
 
         let ext = Extensions {
-            security: Some(security),
-            http: Some(Guarded::new(http)),
+            security: Some(Arc::new(security)),
+            http: Some(Arc::new(http)),
             ..Default::default()
         };
 
@@ -768,7 +768,7 @@ mod tests {
     fn test_to_dict_with_extensions() {
         use std::sync::Arc;
         use crate::extensions::{
-            SecurityExtension, Guarded, HttpExtension, RequestExtension, AgentExtension,
+            SecurityExtension, HttpExtension, RequestExtension, AgentExtension,
         };
 
         let mut security = SecurityExtension::default();
@@ -785,8 +785,8 @@ mod tests {
         http.set_header("X-Request-ID", "req-123");
 
         let ext = Extensions {
-            security: Some(security),
-            http: Some(Guarded::new(http)),
+            security: Some(Arc::new(security)),
+            http: Some(Arc::new(http)),
             request: Some(Arc::new(RequestExtension {
                 environment: Some("production".into()),
                 ..Default::default()

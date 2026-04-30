@@ -11,8 +11,9 @@
 // Mirrors cpex/framework/extensions/tiers.py::filter_extensions().
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
-use crate::hooks::payload::Extensions;
+use super::container::Extensions;
 
 use super::security::{SecurityExtension, SubjectExtension};
 use super::tiers::{AccessPolicy, Capability, MutabilityTier, SlotPolicy};
@@ -279,7 +280,7 @@ pub fn filter_extensions(
 
     // Security — granular sub-field filtering
     if let Some(ref security) = extensions.security {
-        filtered.security = Some(build_filtered_security(security, capabilities));
+        filtered.security = Some(Arc::new(build_filtered_security(security, capabilities)));
     }
 
     filtered
@@ -362,7 +363,7 @@ fn build_filtered_subject(
 mod tests {
     use super::*;
     use crate::extensions::SecurityExtension;
-    use crate::hooks::payload::MetaExtension;
+    use crate::extensions::meta::MetaExtension;
 
     fn make_full_extensions() -> Extensions {
         let mut security = SecurityExtension::default();
@@ -385,22 +386,22 @@ mod tests {
                 request_id: Some("req-001".into()),
                 ..Default::default()
             })),
-            security: Some(security),
-            http: Some(crate::extensions::Guarded::new(http)),
+            security: Some(Arc::new(security)),
+            http: Some(std::sync::Arc::new(http)),
             agent: Some(std::sync::Arc::new(super::super::AgentExtension {
                 agent_id: Some("agent-1".into()),
                 ..Default::default()
             })),
-            delegation: Some(super::super::DelegationExtension {
+            delegation: Some(std::sync::Arc::new(super::super::DelegationExtension {
                 delegated: true,
                 ..Default::default()
-            }),
+            })),
             meta: Some(std::sync::Arc::new(MetaExtension {
                 entity_type: Some("tool".into()),
                 entity_name: Some("get_compensation".into()),
                 ..Default::default()
             })),
-            custom: Some([("key".to_string(), serde_json::json!("value"))].into()),
+            custom: Some(Arc::new([("key".to_string(), serde_json::json!("value"))].into())),
             ..Default::default()
         }
     }
@@ -422,7 +423,7 @@ mod tests {
         assert!(filtered.delegation.is_none());
 
         // Security: objects/data/classification visible, labels/subject hidden
-        let sec = filtered.security.unwrap();
+        let sec = filtered.security.as_ref().unwrap();
         assert!(sec.labels.is_empty());
         assert!(sec.subject.is_none());
         assert_eq!(sec.classification, Some("confidential".into()));
@@ -436,7 +437,7 @@ mod tests {
 
         assert!(filtered.http.is_some());
         assert_eq!(
-            filtered.http.unwrap().read().get_header("Authorization"),
+            filtered.http.unwrap().get_header("Authorization"),
             Some("Bearer token123")
         );
         // Still no agent access
@@ -463,7 +464,7 @@ mod tests {
         let caps: HashSet<String> = ["read_labels".to_string()].into();
         let filtered = filter_extensions(&ext, &caps);
 
-        let sec = filtered.security.unwrap();
+        let sec = filtered.security.as_ref().unwrap();
         assert!(sec.has_label("PII"));
         // No subject access — just label access
         assert!(sec.subject.is_none());
@@ -475,8 +476,8 @@ mod tests {
         let caps: HashSet<String> = ["read_subject".to_string()].into();
         let filtered = filter_extensions(&ext, &caps);
 
-        let sec = filtered.security.unwrap();
-        let subject = sec.subject.unwrap();
+        let sec = filtered.security.as_ref().unwrap();
+        let subject = sec.subject.as_ref().unwrap();
         assert_eq!(subject.id, Some("alice".into()));
         // Sub-fields empty without specific capabilities
         assert!(subject.roles.is_empty());
@@ -491,8 +492,8 @@ mod tests {
         let caps: HashSet<String> = ["read_roles".to_string()].into();
         let filtered = filter_extensions(&ext, &caps);
 
-        let sec = filtered.security.unwrap();
-        let subject = sec.subject.unwrap();
+        let sec = filtered.security.as_ref().unwrap();
+        let subject = sec.subject.as_ref().unwrap();
         // Has subject access (implied by read_roles)
         assert_eq!(subject.id, Some("alice".into()));
         // Has roles
@@ -527,9 +528,9 @@ mod tests {
         assert!(filtered.agent.is_some());
         assert!(filtered.delegation.is_some());
 
-        let sec = filtered.security.unwrap();
+        let sec = filtered.security.as_ref().unwrap();
         assert!(sec.has_label("PII"));
-        let subject = sec.subject.unwrap();
+        let subject = sec.subject.as_ref().unwrap();
         assert!(subject.roles.contains("admin"));
         assert!(subject.permissions.contains("read_all"));
         assert!(subject.teams.contains("engineering"));

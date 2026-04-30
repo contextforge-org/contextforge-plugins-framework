@@ -427,9 +427,9 @@ impl Executor {
                             if let Some(mp) = erased.modified_payload {
                                 *payload = mp;
                             }
-                            if let Some(me) = erased.modified_extensions {
+                            if let Some(owned) = erased.modified_extensions {
                                 // Validate tier constraints before accepting
-                                if !extensions.validate_immutable(&me) {
+                                if !extensions.validate_immutable(&owned) {
                                     warn!(
                                         "{} plugin '{}' violated immutable tier — \
                                          modified an immutable extension slot. \
@@ -437,7 +437,7 @@ impl Executor {
                                         phase_label, plugin_name
                                     );
                                 } else if let Some(ref orig_sec) = extensions.security {
-                                    if let Some(ref new_sec) = me.security {
+                                    if let Some(ref new_sec) = owned.security {
                                         if !new_sec.labels.is_superset(&orig_sec.labels) {
                                             warn!(
                                                 "{} plugin '{}' violated monotonic tier — \
@@ -446,13 +446,13 @@ impl Executor {
                                                 phase_label, plugin_name
                                             );
                                         } else {
-                                            *extensions = me;
+                                            extensions.merge_owned(owned);
                                         }
                                     } else {
-                                        *extensions = me;
+                                        extensions.merge_owned(owned);
                                     }
                                 } else {
-                                    *extensions = me;
+                                    extensions.merge_owned(owned);
                                 }
                             }
                         }
@@ -809,7 +809,7 @@ impl Default for Executor {
 pub struct ErasedResultFields {
     pub continue_processing: bool,
     pub modified_payload: Option<Box<dyn PluginPayload>>,
-    pub modified_extensions: Option<Extensions>,
+    pub modified_extensions: Option<crate::hooks::payload::OwnedExtensions>,
     pub violation: Option<crate::error::PluginViolation>,
 }
 
@@ -894,10 +894,11 @@ mod tests {
         let mut security = crate::extensions::SecurityExtension::default();
         security.add_label("PII");
         let ext = Extensions {
-            security: Some(security),
+            security: Some(Arc::new(security)),
             ..Default::default()
         };
-        let result: PluginResult<TestPayload> = PluginResult::modify_extensions(ext);
+        let owned = ext.cow_copy();
+        let result: PluginResult<TestPayload> = PluginResult::modify_extensions(owned);
         let erased = erase_result(result);
         let fields = extract_erased(erased).unwrap();
         assert!(fields.continue_processing);

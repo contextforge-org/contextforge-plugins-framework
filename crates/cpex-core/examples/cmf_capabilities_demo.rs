@@ -17,7 +17,7 @@ use cpex_core::cmf::{ContentPart, CmfHook, Message, MessagePayload, Role, ToolCa
 use cpex_core::context::PluginContext;
 use cpex_core::error::{PluginError, PluginViolation};
 use cpex_core::extensions::{
-    Guarded, HttpExtension, RequestExtension, SecurityExtension,
+    HttpExtension, RequestExtension, SecurityExtension,
 };
 use cpex_core::factory::{PluginFactory, PluginInstance};
 use cpex_core::hooks::adapter::TypedHandlerAdapter;
@@ -126,7 +126,7 @@ impl HookHandler<CmfHook> for HeaderInjector {
     ) -> PluginResult<MessagePayload> {
         // Can see HTTP (has read_headers)
         if let Some(ref http) = extensions.http {
-            println!("  [header-injector] HTTP headers visible: {:?}", http.read().request_headers);
+            println!("  [header-injector] HTTP headers visible: {:?}", http.request_headers);
         }
 
         // Can NOT see security subject (no read_subject)
@@ -202,7 +202,7 @@ impl HookHandler<CmfHook> for AuditLogger {
         }
 
         if let Some(ref http) = extensions.http {
-            if let Some(req_id) = http.read().get_header("X-Request-ID") {
+            if let Some(req_id) = http.get_header("X-Request-ID") {
                 print!("request_id='{}' ", req_id);
             }
         }
@@ -330,8 +330,8 @@ async fn main() {
             request_id: Some("req-abc-123".into()),
             ..Default::default()
         })),
-        security: Some(security),
-        http: Some(Guarded::new(http)),
+        security: Some(Arc::new(security)),
+        http: Some(Arc::new(http)),
         meta: Some(Arc::new(MetaExtension {
             entity_type: Some("tool".into()),
             entity_name: Some("get_compensation".into()),
@@ -362,7 +362,7 @@ async fn main() {
                 println!("  Labels after pre-invoke: {:?}", labels);
             }
             if let Some(ref http) = modified_ext.http {
-                println!("  Headers after pre-invoke: {:?}", http.read().request_headers);
+                println!("  Headers after pre-invoke: {:?}", http.request_headers);
             }
         }
     } else {
@@ -405,7 +405,7 @@ async fn main() {
         let mut security = SecurityExtension::default();
         security.add_label("PII");
         Extensions {
-            security: Some(security),
+            security: Some(Arc::new(security)),
             meta: Some(Arc::new(MetaExtension {
                 entity_type: Some("tool".into()),
                 entity_name: Some("get_compensation".into()),

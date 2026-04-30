@@ -12,19 +12,31 @@ use serde::{Deserialize, Serialize};
 
 /// Host-provided operational metadata.
 ///
-/// Carries entity identification for route resolution, tags for
-/// policy group inheritance, scope for host-defined grouping,
-/// and arbitrary properties.
+/// Carries entity identification (type + name) for route resolution,
+/// operational tags for policy group inheritance, scope for
+/// host-defined grouping, and arbitrary properties.
 ///
-/// Immutable — set by the host before invoking the hook.
+/// Immutable — set by the host before invoking the hook. Plugins
+/// can read but not modify.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MetaExtension {
+    /// Entity type: "tool", "resource", "prompt", "llm".
+    /// Used by the manager for route resolution.
+    #[serde(default)]
+    pub entity_type: Option<String>,
+
+    /// Entity name: "get_compensation", "hr://employees/*", etc.
+    /// Used by the manager for route resolution.
+    #[serde(default)]
+    pub entity_name: Option<String>,
+
     /// Operational tags — drive policy group inheritance.
+    /// Merged with static tags from the matching route's `meta.tags`.
     #[serde(default)]
     pub tags: HashSet<String>,
 
     /// Host-defined grouping (virtual server ID, namespace, etc.).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub scope: Option<String>,
 
     /// Arbitrary key-value metadata.

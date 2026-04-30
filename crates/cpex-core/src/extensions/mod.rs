@@ -13,6 +13,7 @@
 
 pub mod agent;
 pub mod completion;
+pub mod container;
 pub mod delegation;
 pub mod filter;
 pub mod framework;
@@ -27,15 +28,20 @@ pub mod request;
 pub mod security;
 pub mod tiers;
 
+// Re-export containers
+pub use container::{Extensions, OwnedExtensions};
+
 // Re-export all extension types
 pub use agent::{AgentExtension, ConversationContext};
 pub use completion::{CompletionExtension, StopReason, TokenUsage};
 pub use delegation::{DelegationExtension, DelegationHop};
 pub use framework::FrameworkExtension;
+pub use guarded::{Guarded, WriteToken};
 pub use http::HttpExtension;
 pub use llm::LLMExtension;
 pub use mcp::{MCPExtension, PromptMetadata, ResourceMetadata, ToolMetadata};
 pub use meta::MetaExtension;
+pub use monotonic::{DeclassifierToken, MonotonicSet};
 pub use provenance::ProvenanceExtension;
 pub use request::RequestExtension;
 pub use security::{
@@ -43,6 +49,4 @@ pub use security::{
     SubjectExtension, SubjectType,
 };
 pub use filter::{filter_extensions, SlotName};
-pub use guarded::{Guarded, WriteToken};
-pub use monotonic::{DeclassifierToken, MonotonicSet};
 pub use tiers::{AccessPolicy, Capability, MutabilityTier, SlotPolicy};
