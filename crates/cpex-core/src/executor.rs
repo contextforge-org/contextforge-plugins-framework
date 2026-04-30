@@ -429,15 +429,22 @@ impl Executor {
                             }
                             if let Some(owned) = erased.modified_extensions {
                                 // Validate tier constraints before accepting
-                                if !extensions.validate_immutable(&owned) {
+                                let valid = extensions.validate_immutable(&owned);
+                                if !valid {
                                     warn!(
                                         "{} plugin '{}' violated immutable tier — \
                                          modified an immutable extension slot. \
                                          Extension changes rejected.",
                                         phase_label, plugin_name
                                     );
-                                } else if let Some(ref orig_sec) = extensions.security {
-                                    if let Some(ref new_sec) = owned.security {
+                                } else if capabilities.contains("read_labels") {
+                                    // Only enforce monotonic labels if the plugin
+                                    // could see them. A plugin without read_labels
+                                    // has empty labels in its filtered view — that's
+                                    // not a removal.
+                                    if let (Some(ref orig_sec), Some(ref new_sec)) =
+                                        (&extensions.security, &owned.security)
+                                    {
                                         if !new_sec.labels.is_superset(&orig_sec.labels) {
                                             warn!(
                                                 "{} plugin '{}' violated monotonic tier — \

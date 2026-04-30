@@ -10,6 +10,8 @@ resolver = "2"
 members = [
     "crates/cpex-core",
     "crates/cpex-sdk",
+    "crates/cpex-ffi",
+    "examples/go-demo/ffi",
 ]
 
 [workspace.package]
@@ -30,3 +32,5 @@ uuid = { version = "1", features = ["v4"] }
 paste = "1"
 futures = "0.3"
 hashbrown = "0.15"
+rmp-serde = "1"
+serde_bytes = "0.11"
