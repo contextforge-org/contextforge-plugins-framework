@@ -66,7 +66,7 @@ from cpex.framework.hooks.tools import (
 )
 from cpex.framework.loader.config import ConfigLoader
 from cpex.framework.loader.plugin import PluginLoader
-from cpex.framework.manager import PluginManager, TenantPluginManager, TenantPluginManagerFactory
+from cpex.framework.manager import PluginManager, TenantPluginManager
 from cpex.framework.models import (
     GlobalContext,
     MCPClientConfig,
@@ -74,7 +74,6 @@ from cpex.framework.models import (
     OnError,
     PluginCondition,
     PluginConfig,
-    PluginConfigOverride,
     PluginContext,
     PluginContextTable,
     PluginErrorModel,
@@ -160,7 +159,6 @@ __all__ = [
     "Plugin",
     "PluginCondition",
     "PluginConfig",
-    "PluginConfigOverride",
     "PluginContext",
     "PluginContextTable",
     "PluginError",
@@ -187,7 +185,6 @@ __all__ = [
     "ToolPostInvokeResult",
     "ToolPreInvokeResult",
     "TenantPluginManager",
-    "TenantPluginManagerFactory",
     "ToolPreInvokePayload",
     "TransportType",
 ]
