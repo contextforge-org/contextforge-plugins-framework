@@ -116,9 +116,7 @@ async def test_manager_timeout_handling():
         # assert "timeout" in result.violation.description.lower()
 
     # Test with audit mode + on_error=IGNORE (errors are logged and ignored)
-    audit_config = plugin_config.model_copy(
-        update={"mode": PluginMode.AUDIT, "on_error": OnError.IGNORE}
-    )
+    audit_config = plugin_config.model_copy(update={"mode": PluginMode.AUDIT, "on_error": OnError.IGNORE})
     audit_plugin = TimeoutPlugin(audit_config)
     with patch.object(manager._registry, "get_hook_refs_for_hook") as mock_get:
         hook_ref = HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(audit_plugin))
@@ -179,9 +177,7 @@ async def test_manager_exception_handling():
         # assert "error" in result.violation.description.lower()
 
     # Test with audit mode + on_error=IGNORE (errors are logged and ignored)
-    audit_config = plugin_config.model_copy(
-        update={"mode": PluginMode.AUDIT, "on_error": OnError.IGNORE}
-    )
+    audit_config = plugin_config.model_copy(update={"mode": PluginMode.AUDIT, "on_error": OnError.IGNORE})
     audit_plugin = ErrorPlugin(audit_config)
     with patch.object(manager._registry, "get_hook_refs_for_hook") as mock_get:
         hook_ref = HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(audit_plugin))
@@ -194,16 +190,16 @@ async def test_manager_exception_handling():
         assert result.violation is None
 
     # Test with concurrent mode + on_error=IGNORE (repeated to verify consistency)
-    ignore_config = plugin_config.model_copy(
-        update={"mode": PluginMode.CONCURRENT, "on_error": OnError.IGNORE}
-    )
+    ignore_config = plugin_config.model_copy(update={"mode": PluginMode.CONCURRENT, "on_error": OnError.IGNORE})
     ignore_plugin = ErrorPlugin(ignore_config)
     for _ in range(3):
         with patch.object(manager._registry, "get_hook_refs_for_hook") as mock_get:
             hook_ref = HookRef(PromptHookType.PROMPT_PRE_FETCH, PluginRef(ignore_plugin))
             mock_get.return_value = [hook_ref]
 
-            result, _ = await manager.invoke_hook(PromptHookType.PROMPT_PRE_FETCH, prompt, global_context=global_context)
+            result, _ = await manager.invoke_hook(
+                PromptHookType.PROMPT_PRE_FETCH, prompt, global_context=global_context
+            )
 
             # Should continue with on_error=ignore
             assert result.continue_processing
@@ -1107,7 +1103,9 @@ async def test_manager_initialize_skips_plugin_load_errors_when_configured():
     ):
         await manager.initialize()
 
-    mock_logger.warning.assert_called_with("Skipping plugin %s because fail_on_plugin_error is disabled", "ReplaceBadWordsPlugin")
+    mock_logger.warning.assert_called_with(
+        "Skipping plugin %s because fail_on_plugin_error is disabled", "ReplaceBadWordsPlugin"
+    )
 
     assert manager.initialized is True
     assert manager.plugin_count == 0
@@ -1146,14 +1144,26 @@ async def test_executor_propagates_retry_delay_ms():
     await manager.initialize()
 
     config1 = PluginConfig(
-        name="RetryPlugin1", description="Test", author="Test", version="1.0",
-        tags=["test"], kind="RetryPlugin", mode=PluginMode.SEQUENTIAL,
-        hooks=["prompt_pre_fetch"], config={},
+        name="RetryPlugin1",
+        description="Test",
+        author="Test",
+        version="1.0",
+        tags=["test"],
+        kind="RetryPlugin",
+        mode=PluginMode.SEQUENTIAL,
+        hooks=["prompt_pre_fetch"],
+        config={},
     )
     config2 = PluginConfig(
-        name="RetryPlugin2", description="Test", author="Test", version="1.0",
-        tags=["test"], kind="RetryPlugin2", mode=PluginMode.SEQUENTIAL,
-        hooks=["prompt_pre_fetch"], config={},
+        name="RetryPlugin2",
+        description="Test",
+        author="Test",
+        version="1.0",
+        tags=["test"],
+        kind="RetryPlugin2",
+        mode=PluginMode.SEQUENTIAL,
+        hooks=["prompt_pre_fetch"],
+        config={},
     )
     plugin1 = RetryPlugin(config1)
     plugin2 = RetryPlugin2(config2)

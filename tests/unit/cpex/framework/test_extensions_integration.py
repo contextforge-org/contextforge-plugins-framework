@@ -10,14 +10,14 @@ Covers the end-to-end flow:
 
 import pytest
 
+from cpex.framework.extensions.delegation import DelegationExtension, DelegationHop
 from cpex.framework.extensions.extensions import Extensions
+from cpex.framework.extensions.http import HttpExtension
 from cpex.framework.extensions.security import (
     SecurityExtension,
     SubjectExtension,
     SubjectType,
 )
-from cpex.framework.extensions.delegation import DelegationExtension, DelegationHop
-from cpex.framework.extensions.http import HttpExtension
 from cpex.framework.extensions.tiers import (
     TierViolationError,
     filter_extensions,
@@ -104,7 +104,8 @@ class TestFilterAndMergeIntegration:
         modified = original.model_copy(update={"security": new_security})
 
         merged = merge_extensions(
-            original, modified,
+            original,
+            modified,
             frozenset({"read_labels", "append_labels"}),
             "test-plugin",
         )
@@ -120,7 +121,8 @@ class TestFilterAndMergeIntegration:
 
         with pytest.raises(TierViolationError):
             merge_extensions(
-                original, modified,
+                original,
+                modified,
                 frozenset({"read_labels", "append_labels"}),
                 "bad-plugin",
             )
@@ -133,7 +135,8 @@ class TestFilterAndMergeIntegration:
         modified = original.model_copy(update={"delegation": new_delegation})
 
         merged = merge_extensions(
-            original, modified,
+            original,
+            modified,
             frozenset({"read_delegation", "append_delegation"}),
             "test-plugin",
         )
@@ -148,7 +151,8 @@ class TestFilterAndMergeIntegration:
         modified = original.model_copy(update={"delegation": new_delegation})
 
         merged = merge_extensions(
-            original, modified,
+            original,
+            modified,
             frozenset(),  # no append_delegation
             "no-cap-plugin",
         )
@@ -168,7 +172,8 @@ class TestFilterAndMergeIntegration:
         shrunk = ext2.model_copy(update={"delegation": DelegationExtension()})
         with pytest.raises(TierViolationError):
             merge_extensions(
-                ext2, shrunk,
+                ext2,
+                shrunk,
                 frozenset({"read_delegation", "append_delegation"}),
                 "bad-plugin",
             )
@@ -182,14 +187,20 @@ class TestFilterAndMergeIntegration:
         # Tamper with the existing hop
         tampered_hop = DelegationHop(subject_id="mallory", subject_type="user")
         tampered = ext1.model_copy(
-            update={"delegation": DelegationExtension(
-                chain=(tampered_hop,), depth=1, delegated=True,
-                origin_subject_id="mallory", actor_subject_id="mallory",
-            )}
+            update={
+                "delegation": DelegationExtension(
+                    chain=(tampered_hop,),
+                    depth=1,
+                    delegated=True,
+                    origin_subject_id="mallory",
+                    actor_subject_id="mallory",
+                )
+            }
         )
         with pytest.raises(TierViolationError):
             merge_extensions(
-                ext1, tampered,
+                ext1,
+                tampered,
                 frozenset({"read_delegation", "append_delegation"}),
                 "tamper-plugin",
             )
@@ -210,7 +221,8 @@ class TestFilterAndMergeIntegration:
         modified = original.model_copy(update={"http": new_http})
 
         merged = merge_extensions(
-            original, modified,
+            original,
+            modified,
             frozenset({"read_headers", "write_headers"}),
             "test-plugin",
         )
@@ -223,7 +235,8 @@ class TestFilterAndMergeIntegration:
         modified = original.model_copy(update={"http": new_http})
 
         merged = merge_extensions(
-            original, modified,
+            original,
+            modified,
             frozenset(),  # no write_headers
             "no-cap-plugin",
         )

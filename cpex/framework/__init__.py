@@ -82,6 +82,7 @@ from cpex.framework.models import (
     PluginResult,
     PluginViolation,
     TransportType,
+    UserContext,
 )
 from cpex.framework.observability import ObservabilityProvider
 from cpex.framework.utils import get_attr
@@ -187,4 +188,5 @@ __all__ = [
     "TenantPluginManager",
     "ToolPreInvokePayload",
     "TransportType",
+    "UserContext",
 ]

@@ -13,6 +13,7 @@ import pytest
 
 # First-Party
 from cpex.framework.extensions.agent import AgentExtension
+from cpex.framework.extensions.constants import SlotName
 from cpex.framework.extensions.extensions import Extensions
 from cpex.framework.extensions.http import HttpExtension
 from cpex.framework.extensions.request import RequestExtension
@@ -21,7 +22,6 @@ from cpex.framework.extensions.security import (
     SubjectExtension,
     SubjectType,
 )
-from cpex.framework.extensions.constants import SlotName
 from cpex.framework.extensions.tiers import (
     AccessPolicy,
     Capability,
@@ -33,7 +33,6 @@ from cpex.framework.extensions.tiers import (
     merge_extensions,
     validate_tier_constraints,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -345,9 +344,7 @@ class TestValidateTierConstraints:
         validate_tier_constraints(None, None, frozenset(), "test-plugin")
 
     def test_no_change_passes(self, full_extensions):
-        validate_tier_constraints(
-            full_extensions, full_extensions, frozenset(), "test-plugin"
-        )
+        validate_tier_constraints(full_extensions, full_extensions, frozenset(), "test-plugin")
 
     def test_immutable_no_write_cap_rejects_change(self):
         before = Extensions(
@@ -565,14 +562,18 @@ class TestMergeExtensions:
         original = Extensions(
             security=SecurityExtension(
                 subject=SubjectExtension(
-                    id="alice", type=SubjectType.USER, roles=frozenset({"admin"}),
+                    id="alice",
+                    type=SubjectType.USER,
+                    roles=frozenset({"admin"}),
                 ),
             ),
         )
         output = Extensions(
             security=SecurityExtension(
                 subject=SubjectExtension(
-                    id="eve", type=SubjectType.USER, roles=frozenset({"root"}),
+                    id="eve",
+                    type=SubjectType.USER,
+                    roles=frozenset({"root"}),
                 ),
             ),
         )
@@ -583,12 +584,14 @@ class TestMergeExtensions:
 
     def test_mixed_changes(self, full_extensions):
         """Only writable slots are accepted in a single merge."""
-        output = full_extensions.model_copy(update={
-            # Immutable — should be ignored
-            "request": RequestExtension(environment="hijacked", request_id="r1"),
-            # Mutable — should be accepted
-            "custom": {"injected": True},
-        })
+        output = full_extensions.model_copy(
+            update={
+                # Immutable — should be ignored
+                "request": RequestExtension(environment="hijacked", request_id="r1"),
+                # Mutable — should be accepted
+                "custom": {"injected": True},
+            }
+        )
         result = merge_extensions(full_extensions, output, frozenset(), "p")
         assert result.request.environment == full_extensions.request.environment
         assert result.custom == {"injected": True}

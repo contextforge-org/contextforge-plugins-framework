@@ -20,7 +20,6 @@ from cpex.framework.hooks.message import (
 from cpex.framework.hooks.registry import get_hook_registry
 from cpex.framework.models import PluginPayload, PluginResult
 
-
 # ---------------------------------------------------------------------------
 # MessageHookType Tests
 # ---------------------------------------------------------------------------

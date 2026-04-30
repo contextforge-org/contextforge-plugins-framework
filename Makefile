@@ -241,7 +241,7 @@ test-file:
 
 doctest:
 	@echo "🧪 Running doctest on all modules..."
-	@PYTHONPATH="$(SRC_DIR)" $(VENV_BIN)/pytest --doctest-modules cpex/ --tb=short --no-cov --disable-warnings
+	@PYTHONPATH="$(SRC_DIR)" $(VENV_BIN)/pytest --doctest-modules cpex/ --ignore=cpex/templates --tb=short --no-cov --disable-warnings
 
 # =============================================================================
 # Documentation (Hugo Book theme — no Python deps required)

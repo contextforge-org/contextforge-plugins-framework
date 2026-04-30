@@ -163,9 +163,7 @@ async def test_concurrent_executes_have_isolated_hook_chain_spans():
             await barrier.wait()
             return PluginResult(
                 continue_processing=False,
-                violation=PluginViolation(
-                    reason="halt", description="halt", code="HALT", details={}
-                ),
+                violation=PluginViolation(reason="halt", description="halt", code="HALT", details={}),
             )
 
     class PassPlugin(Plugin):

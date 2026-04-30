@@ -8,7 +8,6 @@ Unit tests for MessageView.
 """
 
 # Standard
-from typing import Any
 
 # Third-Party
 import pytest
@@ -28,8 +27,8 @@ from cpex.framework.cmf.message import (
     PromptResultContentPart,
     Resource,
     ResourceContentPart,
-    ResourceReference,
     ResourceRefContentPart,
+    ResourceReference,
     ResourceType,
     Role,
     TextContent,
@@ -42,7 +41,6 @@ from cpex.framework.cmf.message import (
     VideoSource,
 )
 from cpex.framework.cmf.view import (
-    MessageView,
     ViewAction,
     ViewKind,
     iter_views,
@@ -59,7 +57,6 @@ from cpex.framework.extensions.security import (
     SubjectExtension,
     SubjectType,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -226,10 +223,20 @@ class TestIterViews:
                 ThinkingContent(text="hmm"),
                 ToolCallContentPart(content=ToolCall(tool_call_id="t1", name="x", arguments={})),
                 ToolResultContentPart(content=ToolResult(tool_call_id="t1", tool_name="x", content="ok")),
-                ResourceContentPart(content=Resource(resource_request_id="r1", uri="file:///a", resource_type=ResourceType.FILE, content="data")),
-                ResourceRefContentPart(content=ResourceReference(resource_request_id="r2", uri="db://b", resource_type=ResourceType.DATABASE)),
+                ResourceContentPart(
+                    content=Resource(
+                        resource_request_id="r1", uri="file:///a", resource_type=ResourceType.FILE, content="data"
+                    )
+                ),
+                ResourceRefContentPart(
+                    content=ResourceReference(
+                        resource_request_id="r2", uri="db://b", resource_type=ResourceType.DATABASE
+                    )
+                ),
                 PromptRequestContentPart(content=PromptRequest(prompt_request_id="p1", name="summarize")),
-                PromptResultContentPart(content=PromptResult(prompt_request_id="p1", prompt_name="summarize", content="summary")),
+                PromptResultContentPart(
+                    content=PromptResult(prompt_request_id="p1", prompt_name="summarize", content="summary")
+                ),
                 ImageContentPart(content=ImageSource(type="url", data="http://img")),
                 VideoContentPart(content=VideoSource(type="url", data="http://vid")),
                 AudioContentPart(content=AudioSource(type="url", data="http://aud")),
@@ -239,9 +246,18 @@ class TestIterViews:
         views = list(iter_views(msg))
         assert len(views) == 12
         expected_kinds = [
-            ViewKind.TEXT, ViewKind.THINKING, ViewKind.TOOL_CALL, ViewKind.TOOL_RESULT,
-            ViewKind.RESOURCE, ViewKind.RESOURCE_REF, ViewKind.PROMPT_REQUEST, ViewKind.PROMPT_RESULT,
-            ViewKind.IMAGE, ViewKind.VIDEO, ViewKind.AUDIO, ViewKind.DOCUMENT,
+            ViewKind.TEXT,
+            ViewKind.THINKING,
+            ViewKind.TOOL_CALL,
+            ViewKind.TOOL_RESULT,
+            ViewKind.RESOURCE,
+            ViewKind.RESOURCE_REF,
+            ViewKind.PROMPT_REQUEST,
+            ViewKind.PROMPT_RESULT,
+            ViewKind.IMAGE,
+            ViewKind.VIDEO,
+            ViewKind.AUDIO,
+            ViewKind.DOCUMENT,
         ]
         for view, expected in zip(views, expected_kinds):
             assert view.kind == expected
@@ -277,7 +293,9 @@ class TestCoreProperties:
     def test_content_tool_call(self):
         msg = Message(
             role=Role.ASSISTANT,
-            content=[ToolCallContentPart(content=ToolCall(tool_call_id="tc1", name="test", arguments={"key": "value"}))],
+            content=[
+                ToolCallContentPart(content=ToolCall(tool_call_id="tc1", name="test", arguments={"key": "value"}))
+            ],
         )
         view = list(iter_views(msg))[0]
         assert view.content == '{"key": "value"}'
@@ -285,7 +303,9 @@ class TestCoreProperties:
     def test_content_tool_result(self):
         msg = Message(
             role=Role.TOOL,
-            content=[ToolResultContentPart(content=ToolResult(tool_call_id="tc1", tool_name="test", content={"result": 42}))],
+            content=[
+                ToolResultContentPart(content=ToolResult(tool_call_id="tc1", tool_name="test", content={"result": 42}))
+            ],
         )
         view = list(iter_views(msg))[0]
         assert view.content == '{"result": 42}'
@@ -293,7 +313,9 @@ class TestCoreProperties:
     def test_content_tool_result_string(self):
         msg = Message(
             role=Role.TOOL,
-            content=[ToolResultContentPart(content=ToolResult(tool_call_id="tc1", tool_name="test", content="plain text"))],
+            content=[
+                ToolResultContentPart(content=ToolResult(tool_call_id="tc1", tool_name="test", content="plain text"))
+            ],
         )
         view = list(iter_views(msg))[0]
         assert view.content == "plain text"
@@ -309,10 +331,16 @@ class TestCoreProperties:
     def test_content_resource(self):
         msg = Message(
             role=Role.TOOL,
-            content=[ResourceContentPart(content=Resource(
-                resource_request_id="r1", uri="file:///a",
-                resource_type=ResourceType.FILE, content="file data",
-            ))],
+            content=[
+                ResourceContentPart(
+                    content=Resource(
+                        resource_request_id="r1",
+                        uri="file:///a",
+                        resource_type=ResourceType.FILE,
+                        content="file data",
+                    )
+                )
+            ],
         )
         view = list(iter_views(msg))[0]
         assert view.content == "file data"
@@ -320,7 +348,11 @@ class TestCoreProperties:
     def test_content_prompt_request(self):
         msg = Message(
             role=Role.ASSISTANT,
-            content=[PromptRequestContentPart(content=PromptRequest(prompt_request_id="p1", name="s", arguments={"text": "hi"}))],
+            content=[
+                PromptRequestContentPart(
+                    content=PromptRequest(prompt_request_id="p1", name="s", arguments={"text": "hi"})
+                )
+            ],
         )
         view = list(iter_views(msg))[0]
         assert view.content == '{"text": "hi"}'
@@ -328,7 +360,11 @@ class TestCoreProperties:
     def test_content_prompt_result(self):
         msg = Message(
             role=Role.TOOL,
-            content=[PromptResultContentPart(content=PromptResult(prompt_request_id="p1", prompt_name="s", content="rendered"))],
+            content=[
+                PromptResultContentPart(
+                    content=PromptResult(prompt_request_id="p1", prompt_name="s", content="rendered")
+                )
+            ],
         )
         view = list(iter_views(msg))[0]
         assert view.content == "rendered"
@@ -361,7 +397,11 @@ class TestURI:
     def test_tool_call_uri_with_namespace(self):
         msg = Message(
             role=Role.ASSISTANT,
-            content=[ToolCallContentPart(content=ToolCall(tool_call_id="tc1", name="get_user", namespace="user-svc", arguments={}))],
+            content=[
+                ToolCallContentPart(
+                    content=ToolCall(tool_call_id="tc1", name="get_user", namespace="user-svc", arguments={})
+                )
+            ],
         )
         view = list(iter_views(msg))[0]
         assert view.uri == "tool://user-svc/get_user"
@@ -377,10 +417,15 @@ class TestURI:
     def test_resource_uri(self):
         msg = Message(
             role=Role.TOOL,
-            content=[ResourceContentPart(content=Resource(
-                resource_request_id="r1", uri="file:///data/report.csv",
-                resource_type=ResourceType.FILE,
-            ))],
+            content=[
+                ResourceContentPart(
+                    content=Resource(
+                        resource_request_id="r1",
+                        uri="file:///data/report.csv",
+                        resource_type=ResourceType.FILE,
+                    )
+                )
+            ],
         )
         view = list(iter_views(msg))[0]
         assert view.uri == "file:///data/report.csv"
@@ -388,10 +433,15 @@ class TestURI:
     def test_resource_ref_uri(self):
         msg = Message(
             role=Role.ASSISTANT,
-            content=[ResourceRefContentPart(content=ResourceReference(
-                resource_request_id="r1", uri="db://users/42",
-                resource_type=ResourceType.DATABASE,
-            ))],
+            content=[
+                ResourceRefContentPart(
+                    content=ResourceReference(
+                        resource_request_id="r1",
+                        uri="db://users/42",
+                        resource_type=ResourceType.DATABASE,
+                    )
+                )
+            ],
         )
         view = list(iter_views(msg))[0]
         assert view.uri == "db://users/42"
@@ -399,7 +449,11 @@ class TestURI:
     def test_prompt_request_uri(self):
         msg = Message(
             role=Role.ASSISTANT,
-            content=[PromptRequestContentPart(content=PromptRequest(prompt_request_id="p1", name="summarize", server_id="prompt-svc"))],
+            content=[
+                PromptRequestContentPart(
+                    content=PromptRequest(prompt_request_id="p1", name="summarize", server_id="prompt-svc")
+                )
+            ],
         )
         view = list(iter_views(msg))[0]
         assert view.uri == "prompt://prompt-svc/summarize"
@@ -427,19 +481,31 @@ class TestName:
     """Tests for the name property."""
 
     def test_tool_call_name(self):
-        msg = Message(role=Role.ASSISTANT, content=[ToolCallContentPart(content=ToolCall(tool_call_id="tc1", name="get_user", arguments={}))])
+        msg = Message(
+            role=Role.ASSISTANT,
+            content=[ToolCallContentPart(content=ToolCall(tool_call_id="tc1", name="get_user", arguments={}))],
+        )
         assert list(iter_views(msg))[0].name == "get_user"
 
     def test_tool_result_name(self):
-        msg = Message(role=Role.TOOL, content=[ToolResultContentPart(content=ToolResult(tool_call_id="tc1", tool_name="get_user"))])
+        msg = Message(
+            role=Role.TOOL,
+            content=[ToolResultContentPart(content=ToolResult(tool_call_id="tc1", tool_name="get_user"))],
+        )
         assert list(iter_views(msg))[0].name == "get_user"
 
     def test_prompt_request_name(self):
-        msg = Message(role=Role.ASSISTANT, content=[PromptRequestContentPart(content=PromptRequest(prompt_request_id="p1", name="summarize"))])
+        msg = Message(
+            role=Role.ASSISTANT,
+            content=[PromptRequestContentPart(content=PromptRequest(prompt_request_id="p1", name="summarize"))],
+        )
         assert list(iter_views(msg))[0].name == "summarize"
 
     def test_prompt_result_name(self):
-        msg = Message(role=Role.TOOL, content=[PromptResultContentPart(content=PromptResult(prompt_request_id="p1", prompt_name="summarize"))])
+        msg = Message(
+            role=Role.TOOL,
+            content=[PromptResultContentPart(content=PromptResult(prompt_request_id="p1", prompt_name="summarize"))],
+        )
         assert list(iter_views(msg))[0].name == "summarize"
 
     def test_text_name_is_none(self):
@@ -459,12 +525,36 @@ class TestAction:
         pairs = [
             (TextContent(text="hi"), Role.USER, ViewAction.SEND),
             (ThinkingContent(text="hmm"), Role.ASSISTANT, ViewAction.GENERATE),
-            (ToolCallContentPart(content=ToolCall(tool_call_id="t", name="x", arguments={})), Role.ASSISTANT, ViewAction.EXECUTE),
+            (
+                ToolCallContentPart(content=ToolCall(tool_call_id="t", name="x", arguments={})),
+                Role.ASSISTANT,
+                ViewAction.EXECUTE,
+            ),
             (ToolResultContentPart(content=ToolResult(tool_call_id="t", tool_name="x")), Role.TOOL, ViewAction.RECEIVE),
-            (ResourceContentPart(content=Resource(resource_request_id="r", uri="f:///a", resource_type=ResourceType.FILE)), Role.TOOL, ViewAction.READ),
-            (ResourceRefContentPart(content=ResourceReference(resource_request_id="r", uri="f:///a", resource_type=ResourceType.FILE)), Role.ASSISTANT, ViewAction.READ),
-            (PromptRequestContentPart(content=PromptRequest(prompt_request_id="p", name="s")), Role.ASSISTANT, ViewAction.INVOKE),
-            (PromptResultContentPart(content=PromptResult(prompt_request_id="p", prompt_name="s")), Role.TOOL, ViewAction.RECEIVE),
+            (
+                ResourceContentPart(
+                    content=Resource(resource_request_id="r", uri="f:///a", resource_type=ResourceType.FILE)
+                ),
+                Role.TOOL,
+                ViewAction.READ,
+            ),
+            (
+                ResourceRefContentPart(
+                    content=ResourceReference(resource_request_id="r", uri="f:///a", resource_type=ResourceType.FILE)
+                ),
+                Role.ASSISTANT,
+                ViewAction.READ,
+            ),
+            (
+                PromptRequestContentPart(content=PromptRequest(prompt_request_id="p", name="s")),
+                Role.ASSISTANT,
+                ViewAction.INVOKE,
+            ),
+            (
+                PromptResultContentPart(content=PromptResult(prompt_request_id="p", prompt_name="s")),
+                Role.TOOL,
+                ViewAction.RECEIVE,
+            ),
             (ImageContentPart(content=ImageSource(type="url", data="http://img")), Role.USER, ViewAction.SEND),
         ]
         for part, role, expected_action in pairs:
@@ -482,38 +572,59 @@ class TestDirection:
     """Tests for is_pre / is_post direction logic."""
 
     def test_tool_call_is_pre(self):
-        msg = Message(role=Role.ASSISTANT, content=[ToolCallContentPart(content=ToolCall(tool_call_id="t", name="x", arguments={}))])
+        msg = Message(
+            role=Role.ASSISTANT,
+            content=[ToolCallContentPart(content=ToolCall(tool_call_id="t", name="x", arguments={}))],
+        )
         view = list(iter_views(msg))[0]
         assert view.is_pre is True
         assert view.is_post is False
 
     def test_tool_result_is_post(self):
-        msg = Message(role=Role.TOOL, content=[ToolResultContentPart(content=ToolResult(tool_call_id="t", tool_name="x"))])
+        msg = Message(
+            role=Role.TOOL, content=[ToolResultContentPart(content=ToolResult(tool_call_id="t", tool_name="x"))]
+        )
         view = list(iter_views(msg))[0]
         assert view.is_pre is False
         assert view.is_post is True
 
     def test_prompt_request_is_pre(self):
-        msg = Message(role=Role.ASSISTANT, content=[PromptRequestContentPart(content=PromptRequest(prompt_request_id="p", name="s"))])
+        msg = Message(
+            role=Role.ASSISTANT,
+            content=[PromptRequestContentPart(content=PromptRequest(prompt_request_id="p", name="s"))],
+        )
         view = list(iter_views(msg))[0]
         assert view.is_pre is True
 
     def test_prompt_result_is_post(self):
-        msg = Message(role=Role.TOOL, content=[PromptResultContentPart(content=PromptResult(prompt_request_id="p", prompt_name="s"))])
+        msg = Message(
+            role=Role.TOOL,
+            content=[PromptResultContentPart(content=PromptResult(prompt_request_id="p", prompt_name="s"))],
+        )
         view = list(iter_views(msg))[0]
         assert view.is_post is True
 
     def test_resource_ref_is_pre(self):
-        msg = Message(role=Role.ASSISTANT, content=[
-            ResourceRefContentPart(content=ResourceReference(resource_request_id="r", uri="f:///a", resource_type=ResourceType.FILE)),
-        ])
+        msg = Message(
+            role=Role.ASSISTANT,
+            content=[
+                ResourceRefContentPart(
+                    content=ResourceReference(resource_request_id="r", uri="f:///a", resource_type=ResourceType.FILE)
+                ),
+            ],
+        )
         view = list(iter_views(msg))[0]
         assert view.is_pre is True
 
     def test_resource_is_post(self):
-        msg = Message(role=Role.TOOL, content=[
-            ResourceContentPart(content=Resource(resource_request_id="r", uri="f:///a", resource_type=ResourceType.FILE)),
-        ])
+        msg = Message(
+            role=Role.TOOL,
+            content=[
+                ResourceContentPart(
+                    content=Resource(resource_request_id="r", uri="f:///a", resource_type=ResourceType.FILE)
+                ),
+            ],
+        )
         view = list(iter_views(msg))[0]
         assert view.is_post is True
 
@@ -555,21 +666,34 @@ class TestEntityTypeHelpers:
     """Tests for is_tool, is_prompt, is_resource, is_text, is_media."""
 
     def test_is_tool(self):
-        msg = Message(role=Role.ASSISTANT, content=[ToolCallContentPart(content=ToolCall(tool_call_id="t", name="x", arguments={}))])
+        msg = Message(
+            role=Role.ASSISTANT,
+            content=[ToolCallContentPart(content=ToolCall(tool_call_id="t", name="x", arguments={}))],
+        )
         assert list(iter_views(msg))[0].is_tool is True
 
     def test_is_tool_result(self):
-        msg = Message(role=Role.TOOL, content=[ToolResultContentPart(content=ToolResult(tool_call_id="t", tool_name="x"))])
+        msg = Message(
+            role=Role.TOOL, content=[ToolResultContentPart(content=ToolResult(tool_call_id="t", tool_name="x"))]
+        )
         assert list(iter_views(msg))[0].is_tool is True
 
     def test_is_prompt(self):
-        msg = Message(role=Role.ASSISTANT, content=[PromptRequestContentPart(content=PromptRequest(prompt_request_id="p", name="s"))])
+        msg = Message(
+            role=Role.ASSISTANT,
+            content=[PromptRequestContentPart(content=PromptRequest(prompt_request_id="p", name="s"))],
+        )
         assert list(iter_views(msg))[0].is_prompt is True
 
     def test_is_resource(self):
-        msg = Message(role=Role.TOOL, content=[
-            ResourceContentPart(content=Resource(resource_request_id="r", uri="f:///a", resource_type=ResourceType.FILE)),
-        ])
+        msg = Message(
+            role=Role.TOOL,
+            content=[
+                ResourceContentPart(
+                    content=Resource(resource_request_id="r", uri="f:///a", resource_type=ResourceType.FILE)
+                ),
+            ],
+        )
         assert list(iter_views(msg))[0].is_resource is True
 
     def test_is_text(self):
@@ -782,7 +906,9 @@ class TestProperties:
     def test_tool_call_properties(self):
         msg = Message(
             role=Role.ASSISTANT,
-            content=[ToolCallContentPart(content=ToolCall(tool_call_id="tc1", name="test", namespace="ns", arguments={}))],
+            content=[
+                ToolCallContentPart(content=ToolCall(tool_call_id="tc1", name="test", namespace="ns", arguments={}))
+            ],
         )
         view = list(iter_views(msg))[0]
         assert view.get_property("namespace") == "ns"
@@ -803,11 +929,17 @@ class TestProperties:
     def test_resource_properties(self):
         msg = Message(
             role=Role.TOOL,
-            content=[ResourceContentPart(content=Resource(
-                resource_request_id="r1", uri="f:///a",
-                resource_type=ResourceType.FILE, version="v2",
-                annotations={"key": "val"},
-            ))],
+            content=[
+                ResourceContentPart(
+                    content=Resource(
+                        resource_request_id="r1",
+                        uri="f:///a",
+                        resource_type=ResourceType.FILE,
+                        version="v2",
+                        annotations={"key": "val"},
+                    )
+                )
+            ],
         )
         view = list(iter_views(msg))[0]
         assert view.get_property("resource_type") == "file"
@@ -817,14 +949,19 @@ class TestProperties:
     def test_prompt_result_properties(self):
         msg = Message(
             role=Role.TOOL,
-            content=[PromptResultContentPart(content=PromptResult(
-                prompt_request_id="p1", prompt_name="s",
-                messages=[
-                    Message(role=Role.USER, content=[TextContent(text="m1")]),
-                    Message(role=Role.ASSISTANT, content=[TextContent(text="m2")]),
-                ],
-                is_error=False,
-            ))],
+            content=[
+                PromptResultContentPart(
+                    content=PromptResult(
+                        prompt_request_id="p1",
+                        prompt_name="s",
+                        messages=[
+                            Message(role=Role.USER, content=[TextContent(text="m1")]),
+                            Message(role=Role.ASSISTANT, content=[TextContent(text="m2")]),
+                        ],
+                        is_error=False,
+                    )
+                )
+            ],
         )
         view = list(iter_views(msg))[0]
         assert view.get_property("is_error") is False
@@ -851,16 +988,28 @@ class TestMiscProperties:
     """Tests for mime_type, size_bytes, args."""
 
     def test_mime_type_resource(self):
-        msg = Message(role=Role.TOOL, content=[ResourceContentPart(content=Resource(
-            resource_request_id="r1", uri="f:///a",
-            resource_type=ResourceType.FILE, mime_type="text/csv",
-        ))])
+        msg = Message(
+            role=Role.TOOL,
+            content=[
+                ResourceContentPart(
+                    content=Resource(
+                        resource_request_id="r1",
+                        uri="f:///a",
+                        resource_type=ResourceType.FILE,
+                        mime_type="text/csv",
+                    )
+                )
+            ],
+        )
         assert list(iter_views(msg))[0].mime_type == "text/csv"
 
     def test_mime_type_image(self):
-        msg = Message(role=Role.USER, content=[
-            ImageContentPart(content=ImageSource(type="url", data="http://img", media_type="image/png")),
-        ])
+        msg = Message(
+            role=Role.USER,
+            content=[
+                ImageContentPart(content=ImageSource(type="url", data="http://img", media_type="image/png")),
+            ],
+        )
         assert list(iter_views(msg))[0].mime_type == "image/png"
 
     def test_mime_type_text_none(self):
@@ -872,17 +1021,35 @@ class TestMiscProperties:
         assert list(iter_views(msg))[0].size_bytes == 5
 
     def test_size_bytes_resource_explicit(self):
-        msg = Message(role=Role.TOOL, content=[ResourceContentPart(content=Resource(
-            resource_request_id="r1", uri="f:///a",
-            resource_type=ResourceType.FILE, size_bytes=1024,
-        ))])
+        msg = Message(
+            role=Role.TOOL,
+            content=[
+                ResourceContentPart(
+                    content=Resource(
+                        resource_request_id="r1",
+                        uri="f:///a",
+                        resource_type=ResourceType.FILE,
+                        size_bytes=1024,
+                    )
+                )
+            ],
+        )
         assert list(iter_views(msg))[0].size_bytes == 1024
 
     def test_size_bytes_resource_from_content(self):
-        msg = Message(role=Role.TOOL, content=[ResourceContentPart(content=Resource(
-            resource_request_id="r1", uri="f:///a",
-            resource_type=ResourceType.FILE, content="hello",
-        ))])
+        msg = Message(
+            role=Role.TOOL,
+            content=[
+                ResourceContentPart(
+                    content=Resource(
+                        resource_request_id="r1",
+                        uri="f:///a",
+                        resource_type=ResourceType.FILE,
+                        content="hello",
+                    )
+                )
+            ],
+        )
         assert list(iter_views(msg))[0].size_bytes == 5
 
     def test_args_tool_call(self):
@@ -1035,7 +1202,8 @@ class TestContentEdgeCases:
 
     def test_prompt_request_content(self):
         pr = PromptRequest(
-            prompt_request_id="pr1", name="test",
+            prompt_request_id="pr1",
+            name="test",
             arguments={"key": "val"},
         )
         msg = Message(role=Role.USER, content=[PromptRequestContentPart(content=pr)])
@@ -1044,7 +1212,8 @@ class TestContentEdgeCases:
 
     def test_prompt_result_content(self):
         pr = PromptResult(
-            prompt_request_id="pr1", prompt_name="test",
+            prompt_request_id="pr1",
+            prompt_name="test",
             content="rendered text",
         )
         msg = Message(role=Role.TOOL, content=[PromptResultContentPart(content=pr)])
@@ -1054,8 +1223,10 @@ class TestContentEdgeCases:
     def test_resource_blob_size(self):
         """Resource with blob but no content still reports size_bytes."""
         res = Resource(
-            resource_request_id="r1", uri="file:///a.bin",
-            resource_type=ResourceType.FILE, blob=b"\x00\x01\x02",
+            resource_request_id="r1",
+            uri="file:///a.bin",
+            resource_type=ResourceType.FILE,
+            blob=b"\x00\x01\x02",
         )
         msg = Message(role=Role.TOOL, content=[ResourceContentPart(content=res)])
         view = list(iter_views(msg))[0]
@@ -1065,8 +1236,10 @@ class TestContentEdgeCases:
     def test_resource_explicit_size(self):
         """Resource with explicit size_bytes uses that value."""
         res = Resource(
-            resource_request_id="r1", uri="file:///a.txt",
-            resource_type=ResourceType.FILE, content="hello",
+            resource_request_id="r1",
+            uri="file:///a.txt",
+            resource_type=ResourceType.FILE,
+            content="hello",
             size_bytes=999,
         )
         msg = Message(role=Role.TOOL, content=[ResourceContentPart(content=res)])
@@ -1076,8 +1249,10 @@ class TestContentEdgeCases:
     def test_to_dict_no_content_with_blob_size(self):
         """to_dict includes size_bytes even when content is None (blob path)."""
         res = Resource(
-            resource_request_id="r1", uri="file:///a.bin",
-            resource_type=ResourceType.FILE, blob=b"\x00\x01",
+            resource_request_id="r1",
+            uri="file:///a.bin",
+            resource_type=ResourceType.FILE,
+            blob=b"\x00\x01",
         )
         msg = Message(role=Role.TOOL, content=[ResourceContentPart(content=res)])
         view = list(iter_views(msg))[0]
@@ -1096,9 +1271,12 @@ class TestPropertiesEdgeCases:
 
     def test_resource_properties(self):
         res = Resource(
-            resource_request_id="r1", uri="file:///a.txt",
-            resource_type=ResourceType.FILE, content="hi",
-            version="v1", annotations={"label": "pii"},
+            resource_request_id="r1",
+            uri="file:///a.txt",
+            resource_type=ResourceType.FILE,
+            content="hi",
+            version="v1",
+            annotations={"label": "pii"},
         )
         msg = Message(role=Role.TOOL, content=[ResourceContentPart(content=res)])
         view = list(iter_views(msg))[0]
@@ -1109,8 +1287,10 @@ class TestPropertiesEdgeCases:
 
     def test_tool_call_properties(self):
         tc = ToolCall(
-            tool_call_id="tc1", name="test",
-            namespace="ns", arguments={},
+            tool_call_id="tc1",
+            name="test",
+            namespace="ns",
+            arguments={},
         )
         msg = Message(role=Role.ASSISTANT, content=[ToolCallContentPart(content=tc)])
         view = list(iter_views(msg))[0]
@@ -1120,8 +1300,10 @@ class TestPropertiesEdgeCases:
 
     def test_tool_result_properties(self):
         tr = ToolResult(
-            tool_call_id="tc1", tool_name="test",
-            content="result", is_error=True,
+            tool_call_id="tc1",
+            tool_name="test",
+            content="result",
+            is_error=True,
         )
         msg = Message(role=Role.TOOL, content=[ToolResultContentPart(content=tr)])
         view = list(iter_views(msg))[0]
@@ -1131,7 +1313,8 @@ class TestPropertiesEdgeCases:
 
     def test_prompt_request_properties(self):
         pr = PromptRequest(
-            prompt_request_id="pr1", name="test",
+            prompt_request_id="pr1",
+            name="test",
             server_id="srv1",
         )
         msg = Message(role=Role.USER, content=[PromptRequestContentPart(content=pr)])
