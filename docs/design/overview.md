@@ -10,11 +10,11 @@ sequenceDiagram
 autonumber
 
 participant App as Host Application
-participant Mgr as PluginManager
-participant Fac as PluginFactoryRegistry
-participant CL as ConfigLoader
+participant Mgr as PluginManager<br>cpex-core
+participant Fac as PluginFactoryRegistry<br>cpex-core
+participant CL as ConfigLoader<br>cpex-core
 participant Cfg as config.yaml
-participant Reg as PluginRegistry
+participant Reg as PluginRegistry<br>cpex-core
 
 note over App,Reg: Application Startup
 
@@ -57,7 +57,7 @@ sequenceDiagram
 autonumber
 
 participant App as Host application
-participant Core as cpex-core
+participant Core as PluginManager<br>cpex-core
 participant Host as cpex-hosts
 participant P1 as Plugin 1
 participant P2 as Plugin 2
