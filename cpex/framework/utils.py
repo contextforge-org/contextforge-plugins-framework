@@ -271,7 +271,9 @@ def matches(condition: PluginCondition, context: GlobalContext) -> bool:
     # Check content types (strict AND logic - fail if content_type is None but condition requires it)
     if condition.content_types:
         if not context.content_type:
-            logger.debug("Content-type mismatch: content_type is None but condition requires: %s", condition.content_types)
+            logger.debug(
+                "Content-type mismatch: content_type is None but condition requires: %s", condition.content_types
+            )
             return False
         normalized_request = normalize_content_type(context.content_type)
         if normalized_request not in condition.content_types:

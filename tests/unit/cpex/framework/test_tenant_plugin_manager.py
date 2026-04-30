@@ -413,3 +413,90 @@ async def test_factory_build_exception_with_shutdown_error():
             manager_mock.shutdown.assert_called_once()
     finally:
         await factory.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# Inflight build-task lifecycle (ported from CF main #4068 follow-up tests)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_factory_reload_cancels_inflight_build():
+    """reload_tenant() must cancel an in-progress build task for the same context."""
+    factory = ToolScopedPluginManagerFactory(yaml_path=FIXTURE_NO_PLUGIN)
+
+    try:
+        with patch("cpex.framework.manager.TenantPluginManager.initialize", new_callable=AsyncMock) as mock_init:
+
+            async def slow_init(*_args, **_kwargs):
+                await asyncio.sleep(1)
+
+            mock_init.side_effect = slow_init
+
+            task = asyncio.create_task(factory.get_manager(context_id="slow_tool"))
+            await asyncio.sleep(0.05)  # let the build register as inflight
+
+            # reload_tenant should cancel the inflight task and start a fresh build
+            manager = await factory.reload_tenant(context_id="slow_tool")
+            assert manager is not None
+
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+            # The cancelled task is removed from _inflight; the fresh build is gone too.
+            assert "slow_tool" not in factory._inflight
+    finally:
+        await factory.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_factory_reload_cleans_up_inflight_after_completion():
+    """After reload_tenant returns, _inflight has no entry for the context."""
+    factory = ToolScopedPluginManagerFactory(yaml_path=FIXTURE_NO_PLUGIN)
+
+    try:
+        with patch("cpex.framework.manager.TenantPluginManager.initialize", new_callable=AsyncMock) as mock_init:
+
+            async def slow_init(*_args, **_kwargs):
+                await asyncio.sleep(0.1)
+
+            mock_init.side_effect = slow_init
+
+            task = asyncio.create_task(factory.get_manager(context_id="reload_cleanup"))
+            await asyncio.sleep(0.02)
+
+            manager = await factory.reload_tenant(context_id="reload_cleanup")
+            assert manager is not None
+            # original build was cancelled by reload
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+            assert "reload_cleanup" not in factory._inflight
+    finally:
+        await factory.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_factory_shutdown_cancels_active_inflight_builds():
+    """factory.shutdown() must cancel any builds still in flight."""
+    factory = ToolScopedPluginManagerFactory(yaml_path=FIXTURE_NO_PLUGIN)
+
+    with patch("cpex.framework.manager.TenantPluginManager.initialize", new_callable=AsyncMock) as mock_init:
+
+        async def slow_init(*_args, **_kwargs):
+            await asyncio.sleep(0.5)
+
+        mock_init.side_effect = slow_init
+
+        tasks = [asyncio.create_task(factory.get_manager(context_id=f"tool{i}")) for i in range(3)]
+        await asyncio.sleep(0.05)  # let them register as inflight
+
+        await factory.shutdown()
+
+        for t in tasks:
+            # Each task is either cancelled or completed (with CancelledError raised on await).
+            assert t.cancelled() or t.done()
+            with pytest.raises((asyncio.CancelledError, BaseException)):
+                await t
+
+        assert len(factory._inflight) == 0

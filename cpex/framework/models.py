@@ -1467,6 +1467,8 @@ class PluginViolation(BaseModel):
         details: (dict[str, Any]): additional violation details.
         _plugin_name (str): the plugin name, private attribute set by the plugin manager.
         mcp_error_code(Optional[int]): A valid mcp error code which will be sent back to the client if plugin enabled.
+        http_status_code (Optional[int]): HTTP status code to return (e.g., 429 for rate limiting).
+        http_headers (Optional[dict[str, str]]): HTTP headers to include in the response.
 
     Examples:
         >>> violation = PluginViolation(
@@ -1490,6 +1492,8 @@ class PluginViolation(BaseModel):
     details: Optional[dict[str, Any]] = Field(default_factory=dict)
     _plugin_name: str = PrivateAttr(default="")
     mcp_error_code: Optional[int] = None
+    http_status_code: Optional[int] = None
+    http_headers: Optional[dict[str, str]] = None
 
     @property
     def plugin_name(self) -> str:
@@ -1549,6 +1553,7 @@ class PluginResult(BaseModel, Generic[T]):
             background_tasks (list[asyncio.Task]): asyncio.Task handles for any FIRE_AND_FORGET
                 plugins scheduled during this invocation. Use ``wait_for_background_tasks()``
                 to await them and collect any errors. This field is excluded from model serialization.
+            http_headers (Optional[dict[str, str]]): HTTP headers to include in successful responses.
             retry_delay_ms (int): Milliseconds the gateway should wait before retrying the tool call.
 
      Examples:
@@ -1585,6 +1590,7 @@ class PluginResult(BaseModel, Generic[T]):
     violation: Optional[PluginViolation] = None
     metadata: Optional[dict[str, Any]] = Field(default_factory=dict)
     background_tasks: list[asyncio.Task] = Field(default_factory=list, exclude=True)
+    http_headers: Optional[dict[str, str]] = None
     retry_delay_ms: int = 0
 
     async def wait_for_background_tasks(self) -> "list[PluginErrorModel]":
@@ -1600,6 +1606,7 @@ class PluginResult(BaseModel, Generic[T]):
             return []
         results = await asyncio.gather(*self.background_tasks, return_exceptions=True)
         return [r for r in results if isinstance(r, PluginErrorModel)]
+
 
 class GlobalContext(BaseModel):
     """The global context, which shared across all plugins.
