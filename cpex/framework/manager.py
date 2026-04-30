@@ -72,8 +72,33 @@ MAX_PAYLOAD_SIZE = 1_000_000  # 1MB
 CONTEXT_CLEANUP_INTERVAL = 300  # 5 minutes
 CONTEXT_MAX_AGE = 3600  # 1 hour
 HTTP_AUTH_CHECK_PERMISSION_HOOK = "http_auth_check_permission"
+
+# Metadata constants
 DECISION_PLUGIN_METADATA_KEY = "_decision_plugin"
 RESERVED_INTERNAL_METADATA_KEYS = frozenset({DECISION_PLUGIN_METADATA_KEY})
+
+
+@dataclass
+class ExecutionContext:
+    """Per-call mutable state for one PluginExecutor.execute() invocation.
+
+    Attributes:
+        max_retry_delay_ms: Largest retry delay requested by any plugin in the
+            chain. Returned to the caller via PluginResult.retry_delay_ms.
+        hook_chain_executed: Count of plugins that ran (used for observability).
+        hook_chain_skipped: Count of plugins that were skipped (statically
+            disabled, runtime-disabled, or conditions unmet).
+        hook_chain_stopped_by: Name of the plugin that halted the pipeline,
+            or None if the chain ran to completion.
+        hook_chain_span_id: Observability span id for the hook-chain span,
+            or None if observability is unavailable.
+    """
+
+    max_retry_delay_ms: int = 0
+    hook_chain_executed: int = 0
+    hook_chain_skipped: int = 0
+    hook_chain_stopped_by: Optional[str] = None
+    hook_chain_span_id: Optional[str] = None
 
 
 @dataclass
@@ -148,7 +173,13 @@ class PluginExecutor:
         self.default_hook_policy = DefaultHookPolicy(
             default_hook_policy if default_hook_policy else settings.default_hook_policy
         )
+        # Persistent-per-executor: plugins that hit OnError.DISABLE stay out of rotation
+        # for the lifetime of this executor. Multi-tenant isolation is provided by
+        # TenantPluginManager (each tenant owns its own executor). Mutations are guarded
+        # by _runtime_disabled_lock; the membership read in _group_by_mode is unguarded
+        # because set.__contains__ is atomic under the GIL.
         self._runtime_disabled: set[str] = set()
+        self._runtime_disabled_lock = asyncio.Lock()
 
     async def execute(
         self,
@@ -210,9 +241,26 @@ class PluginExecutor:
         current_payload: PluginPayload | None = None
         current_extensions: Extensions | None = None
         decision_plugin_name: Optional[str] = None
+        ctx = ExecutionContext()
+
+        # Start hook-chain observability span
+        trace_id = current_trace_id.get()
+        if trace_id and self.observability:
+            try:
+                ctx.hook_chain_span_id = self.observability.start_span(
+                    trace_id=trace_id,
+                    name="plugin.hook.invoke",
+                    kind="internal",
+                    attributes={
+                        "plugin.hook.type": hook_type,
+                        "plugin.chain.length": len(hook_refs),
+                    },
+                )
+            except Exception as e:
+                logger.debug("Hook-chain observability start_span failed: %s", e)
 
         sequential_refs, transform_refs, audit_refs, concurrent_refs, fire_and_forget_refs = self._group_by_mode(
-            hook_refs, payload, hook_type, global_context
+            hook_refs, payload, hook_type, global_context, ctx
         )
 
         # Independent semaphores prevent one mode from starving the other
@@ -236,6 +284,7 @@ class PluginExecutor:
             decision_plugin_name=decision_plugin_name,
             apply_modifications=True,
             allow_blocking=True,
+            ctx=ctx,
             current_extensions=current_extensions,
             fire_and_forget_refs=fire_and_forget_refs,
             fire_and_forget_semaphore=fire_and_forget_semaphore,
@@ -245,6 +294,7 @@ class PluginExecutor:
         decision_plugin_name = phase.decision_plugin
         current_extensions = phase.extensions
         if halt_result is not None:
+            self._end_hook_chain_span(ctx, status="ok")
             return halt_result
 
         # TRANSFORM: serial, chained execution — can modify payloads but cannot halt pipeline
@@ -263,6 +313,7 @@ class PluginExecutor:
             decision_plugin_name=decision_plugin_name,
             apply_modifications=True,
             allow_blocking=False,
+            ctx=ctx,
             current_extensions=current_extensions,
             extensions=extensions,
         )
@@ -286,6 +337,7 @@ class PluginExecutor:
             decision_plugin_name=decision_plugin_name,
             apply_modifications=False,
             allow_blocking=False,
+            ctx=ctx,
             current_extensions=current_extensions,
             extensions=extensions,
         )
@@ -316,6 +368,9 @@ class PluginExecutor:
             for completed_coro in asyncio.as_completed(concurrent_tasks):
                 result, idx = await completed_coro
                 ref, _, _ = concurrent_ctx_list[idx]
+                ctx.hook_chain_executed += 1
+                # Propagate retry signal from concurrent plugins
+                ctx.max_retry_delay_ms = max(ctx.max_retry_delay_ms, result.retry_delay_ms)
                 if result.modified_payload is not None:
                     logger.debug(
                         "CONCURRENT plugin %s returned modified_payload on hook %s; "
@@ -339,7 +394,8 @@ class PluginExecutor:
                         if not task.done():
                             task.cancel()
                     await asyncio.gather(*concurrent_tasks, return_exceptions=True)
-                    return self._build_halt_result(
+                    ctx.hook_chain_stopped_by = ref.plugin_ref.name
+                    halt = self._build_halt_result(
                         current_payload,
                         result.violation,
                         combined_metadata,
@@ -352,6 +408,8 @@ class PluginExecutor:
                         decision_plugin_name,
                         extensions=extensions,
                     )
+                    self._end_hook_chain_span(ctx, status="ok")
+                    return halt
 
         # FIRE_AND_FORGET: fire-and-forget background tasks (fires last with final payload snapshot)
         bg_tasks = self._fire_and_forget_tasks(
@@ -366,6 +424,8 @@ class PluginExecutor:
         if hook_type == HTTP_AUTH_CHECK_PERMISSION_HOOK and decision_plugin_name:
             combined_metadata[DECISION_PLUGIN_METADATA_KEY] = decision_plugin_name
 
+        self._end_hook_chain_span(ctx, status="ok")
+
         return (
             PluginResult(
                 continue_processing=True,
@@ -374,6 +434,7 @@ class PluginExecutor:
                 violation=None,
                 metadata=combined_metadata,
                 background_tasks=bg_tasks,
+                retry_delay_ms=ctx.max_retry_delay_ms,
             ),
             res_local_contexts,
         )
@@ -384,6 +445,7 @@ class PluginExecutor:
         payload: PluginPayload,
         hook_type: str,
         global_context: GlobalContext,
+        ctx: ExecutionContext,
     ) -> tuple[list[HookRef], list[HookRef], list[HookRef], list[HookRef], list[HookRef]]:
         """Group hook references by mode, filtering disabled and condition-unmatched plugins.
 
@@ -392,6 +454,7 @@ class PluginExecutor:
             payload: The current payload (used for condition matching).
             hook_type: The hook type identifier.
             global_context: Shared context for condition evaluation.
+            ctx: Per-call execution context; skip count is accumulated here.
 
         Returns:
             A tuple of (sequential_refs, transform_refs, audit_refs, concurrent_refs,
@@ -407,16 +470,19 @@ class PluginExecutor:
             # Skip statically disabled plugins
             if ref.plugin_ref.mode == PluginMode.DISABLED:
                 logger.debug("Skipping plugin %s — statically disabled", ref.plugin_ref.name)
+                ctx.hook_chain_skipped += 1
                 continue
             # Skip runtime-disabled plugins
             if ref.plugin_ref.name in self._runtime_disabled:
                 logger.debug("Skipping plugin %s — runtime-disabled after previous error", ref.plugin_ref.name)
+                ctx.hook_chain_skipped += 1
                 continue
             # Check conditions
             if ref.plugin_ref.conditions and not payload_matches(
                 payload, hook_type, ref.plugin_ref.conditions, global_context
             ):
                 logger.debug("Skipping plugin %s - conditions not met", ref.plugin_ref.name)
+                ctx.hook_chain_skipped += 1
                 continue
             # Bucket by mode
             if ref.plugin_ref.mode == PluginMode.SEQUENTIAL:
@@ -438,6 +504,24 @@ class PluginExecutor:
 
         return sequential_refs, transform_refs, audit_refs, concurrent_refs, fire_and_forget_refs
 
+    def _end_hook_chain_span(self, ctx: ExecutionContext, status: str = "ok") -> None:
+        """End the hook-chain observability span with accumulated counters."""
+        if ctx.hook_chain_span_id is not None and self.observability:
+            try:
+                self.observability.end_span(
+                    span_id=ctx.hook_chain_span_id,
+                    status=status,
+                    attributes={
+                        "plugin.executed_count": ctx.hook_chain_executed,
+                        "plugin.skipped_count": ctx.hook_chain_skipped,
+                        "plugin.chain.stopped": ctx.hook_chain_stopped_by is not None,
+                        "plugin.chain.stopped_by": ctx.hook_chain_stopped_by or "",
+                    },
+                )
+            except Exception as e:
+                logger.debug("Hook-chain observability end_span failed: %s", e)
+            ctx.hook_chain_span_id = None
+
     async def _run_serial_phase(
         self,
         hook_refs: list[HookRef],
@@ -454,6 +538,7 @@ class PluginExecutor:
         decision_plugin_name: Optional[str],
         apply_modifications: bool,
         allow_blocking: bool,
+        ctx: ExecutionContext,
         current_extensions: Optional[Extensions] = None,
         fire_and_forget_refs: Optional[list[HookRef]] = None,
         fire_and_forget_semaphore: Optional[asyncio.Semaphore] = None,
@@ -479,6 +564,7 @@ class PluginExecutor:
             decision_plugin_name: Name of the plugin that last modified the payload.
             apply_modifications: Whether to apply payload modifications from plugins.
             allow_blocking: Whether plugins can halt the pipeline.
+            ctx: Per-call execution context; counters and stop reason accumulate here.
             fire_and_forget_refs: Fire-and-forget refs to schedule on halt (only used when allow_blocking=True).
             fire_and_forget_semaphore: Semaphore for fire-and-forget tasks (only used when allow_blocking=True).
 
@@ -499,6 +585,10 @@ class PluginExecutor:
                 combined_metadata,
                 extensions=extensions,
             )
+            ctx.hook_chain_executed += 1
+
+            # Propagate retry signal — take the largest delay requested by any plugin
+            ctx.max_retry_delay_ms = max(ctx.max_retry_delay_ms, result.retry_delay_ms)
 
             if result.modified_payload is not None:
                 if apply_modifications:
@@ -535,6 +625,7 @@ class PluginExecutor:
                         hook_type,
                         violation_detail,
                     )
+                    ctx.hook_chain_stopped_by = hook_ref.plugin_ref.name
                     state = PhaseState(
                         payload=current_payload, decision_plugin=decision_plugin_name, extensions=current_extensions
                     )
@@ -786,7 +877,8 @@ class PluginExecutor:
         except Exception as exc:
             logger.error("Plugin %s failed in fire-and-forget mode (ignored)", hook_ref.plugin_ref.name)
             if hook_ref.plugin_ref.on_error == OnError.DISABLE:
-                self._runtime_disabled.add(hook_ref.plugin_ref.name)
+                async with self._runtime_disabled_lock:
+                    self._runtime_disabled.add(hook_ref.plugin_ref.name)
             # FAIL and IGNORE both just log for FIRE_AND_FORGET mode (background can't halt pipeline)
             return PluginErrorModel(message=repr(exc), plugin_name=hook_ref.plugin_ref.name)
 
@@ -927,7 +1019,8 @@ class PluginExecutor:
                     )
                 ) from exc
             if on_error == OnError.DISABLE:
-                self._runtime_disabled.add(hook_ref.plugin_ref.name)
+                async with self._runtime_disabled_lock:
+                    self._runtime_disabled.add(hook_ref.plugin_ref.name)
         except PluginViolationError:
             raise
         except PluginError as pe:
@@ -936,16 +1029,29 @@ class PluginExecutor:
             if on_error == OnError.FAIL:
                 raise
             if on_error == OnError.DISABLE:
-                self._runtime_disabled.add(hook_ref.plugin_ref.name)
+                async with self._runtime_disabled_lock:
+                    self._runtime_disabled.add(hook_ref.plugin_ref.name)
         except Exception as e:
             on_error = hook_ref.plugin_ref.on_error
             logger.error("Plugin %s failed with error: %s", hook_ref.plugin_ref.name, str(e))
             if on_error == OnError.FAIL:
                 raise PluginError(error=convert_exception_to_error(e, hook_ref.plugin_ref.name)) from e
             if on_error == OnError.DISABLE:
-                self._runtime_disabled.add(hook_ref.plugin_ref.name)
+                async with self._runtime_disabled_lock:
+                    self._runtime_disabled.add(hook_ref.plugin_ref.name)
         # Return a result indicating processing should continue despite the error
         return PluginResult(continue_processing=True)
+
+    async def reset_runtime_disabled(self) -> None:
+        """Clear the runtime-disabled plugin set.
+
+        Intended for tests and operational reset (e.g., after the underlying error
+        condition has been addressed and previously-disabled plugins should be
+        re-enabled without restarting the process). Acquires the same lock used
+        by the disable path, so it is safe to call concurrently with hook dispatch.
+        """
+        async with self._runtime_disabled_lock:
+            self._runtime_disabled.clear()
 
     async def _execute_with_timeout(
         self,
@@ -1369,6 +1475,11 @@ class PluginManager:
                 except Exception as e:
                     # Clean error message without stack trace spam
                     logger.error("Failed to load plugin %s: {%s}", plugin_config.name, str(e))
+                    if not settings.fail_on_plugin_error:
+                        logger.warning(
+                            "Skipping plugin %s because fail_on_plugin_error is disabled", plugin_config.name
+                        )
+                        continue
                     # Let it crash gracefully with a clean error
                     raise RuntimeError(f"Plugin initialization failed: {plugin_config.name} - {str(e)}") from e
 
@@ -1537,3 +1648,57 @@ class PluginManager:
         if not isinstance(payload, PluginPayload):
             raise ValueError(f"When payload_as_json=False, payload must be a PluginPayload, got {type(payload)}")
         return await self._get_executor().execute_plugin(hook_ref, payload, context, violations_as_exceptions)
+
+
+class TenantPluginManager(PluginManager):
+    """PluginManager with per-context configuration overrides.
+
+    Each instance has independent state (Borg pattern is disabled).
+    Fully compatible with PluginManager API.
+
+    Examples:
+        >>> from cpex.framework.models import Config
+        >>> config = Config(plugins=[])
+        >>> tpm = TenantPluginManager(config=config)
+        >>> tpm.initialized
+        False
+    """
+
+    def enable_borg(self) -> None:
+        """Opt out of Borg singleton — each tenant instance manages its own state."""
+
+    def __init__(  # pylint: disable=super-init-not-called
+        self,
+        config: Union[str, Config],
+        timeout: int = DEFAULT_PLUGIN_TIMEOUT,
+        observability: Optional[ObservabilityProvider] = None,
+        hook_policies: Optional[dict[str, HookPayloadPolicy]] = None,
+    ):
+        """Initialize a TenantPluginManager with independent state.
+
+        Bypasses PluginManager.__init__ entirely — Borg logic doesn't apply here.
+        Each TenantPluginManager is fully independent.
+
+        Args:
+            config: Plugin configuration (path or Config object).
+            timeout: Per-plugin call timeout in seconds.
+            observability: Optional observability provider.
+            hook_policies: Optional hook payload policy map.
+        """
+        if isinstance(config, Config):
+            self._config_path = None
+            self._config = config
+        else:
+            self._config_path = config
+            self._config = ConfigLoader.load_config(config)
+
+        self._executor = PluginExecutor(
+            config=self._config,
+            timeout=timeout,
+            observability=observability,
+            hook_policies=hook_policies,
+        )
+        self._initialized = False
+        self._registry = PluginInstanceRegistry()
+        self._loader = PluginLoader()
+        self._async_lock: asyncio.Lock | None = None

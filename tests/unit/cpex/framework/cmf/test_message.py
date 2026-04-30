@@ -8,7 +8,6 @@ Unit tests for CMF message models.
 """
 
 # Standard
-from typing import Any
 
 # Third-Party
 import pytest
@@ -31,8 +30,8 @@ from cpex.framework.cmf.message import (
     PromptResultContentPart,
     Resource,
     ResourceContentPart,
-    ResourceReference,
     ResourceRefContentPart,
+    ResourceReference,
     ResourceType,
     Role,
     TextContent,
@@ -44,7 +43,6 @@ from cpex.framework.cmf.message import (
     VideoContentPart,
     VideoSource,
 )
-
 
 # ---------------------------------------------------------------------------
 # Enum Tests
@@ -93,9 +91,18 @@ class TestContentType:
 
     def test_all_types_present(self):
         expected = {
-            "text", "thinking", "tool_call", "tool_result",
-            "resource", "resource_ref", "prompt_request", "prompt_result",
-            "image", "video", "audio", "document",
+            "text",
+            "thinking",
+            "tool_call",
+            "tool_result",
+            "resource",
+            "resource_ref",
+            "prompt_request",
+            "prompt_result",
+            "image",
+            "video",
+            "audio",
+            "document",
         }
         assert {ct.value for ct in ContentType} == expected
 
@@ -465,8 +472,10 @@ class TestDocumentContentPart:
 
     def test_creation(self):
         doc = DocumentSource(
-            type="base64", data="JVBERi0xLjQ...",
-            media_type="application/pdf", title="Annual Report",
+            type="base64",
+            data="JVBERi0xLjQ...",
+            media_type="application/pdf",
+            title="Annual Report",
         )
         part = DocumentContentPart(content=doc)
         assert part.content_type == ContentType.DOCUMENT
@@ -532,41 +541,60 @@ class TestMessage:
         assert updated.role == Role.USER
 
     def test_deserialization_from_dict(self):
-        msg = Message.model_validate({
-            "role": "user",
-            "content": [
-                {"content_type": "text", "text": "Hello"},
-                {"content_type": "tool_call", "content": {"tool_call_id": "tc1", "name": "foo", "arguments": {}}},
-            ],
-        })
+        msg = Message.model_validate(
+            {
+                "role": "user",
+                "content": [
+                    {"content_type": "text", "text": "Hello"},
+                    {"content_type": "tool_call", "content": {"tool_call_id": "tc1", "name": "foo", "arguments": {}}},
+                ],
+            }
+        )
         assert msg.role == Role.USER
         assert len(msg.content) == 2
         assert isinstance(msg.content[0], TextContent)
         assert isinstance(msg.content[1], ToolCallContentPart)
 
     def test_deserialization_all_content_types(self):
-        msg = Message.model_validate({
-            "role": "assistant",
-            "content": [
-                {"content_type": "text", "text": "hi"},
-                {"content_type": "thinking", "text": "hmm"},
-                {"content_type": "tool_call", "content": {"tool_call_id": "t1", "name": "x", "arguments": {}}},
-                {"content_type": "tool_result", "content": {"tool_call_id": "t1", "tool_name": "x"}},
-                {"content_type": "resource", "content": {"resource_request_id": "r1", "uri": "file:///a", "resource_type": "file"}},
-                {"content_type": "resource_ref", "content": {"resource_request_id": "r2", "uri": "db://b", "resource_type": "database"}},
-                {"content_type": "prompt_request", "content": {"prompt_request_id": "p1", "name": "s"}},
-                {"content_type": "prompt_result", "content": {"prompt_request_id": "p1", "prompt_name": "s"}},
-                {"content_type": "image", "content": {"type": "url", "data": "http://img"}},
-                {"content_type": "video", "content": {"type": "url", "data": "http://vid"}},
-                {"content_type": "audio", "content": {"type": "url", "data": "http://aud"}},
-                {"content_type": "document", "content": {"type": "url", "data": "http://doc"}},
-            ],
-        })
+        msg = Message.model_validate(
+            {
+                "role": "assistant",
+                "content": [
+                    {"content_type": "text", "text": "hi"},
+                    {"content_type": "thinking", "text": "hmm"},
+                    {"content_type": "tool_call", "content": {"tool_call_id": "t1", "name": "x", "arguments": {}}},
+                    {"content_type": "tool_result", "content": {"tool_call_id": "t1", "tool_name": "x"}},
+                    {
+                        "content_type": "resource",
+                        "content": {"resource_request_id": "r1", "uri": "file:///a", "resource_type": "file"},
+                    },
+                    {
+                        "content_type": "resource_ref",
+                        "content": {"resource_request_id": "r2", "uri": "db://b", "resource_type": "database"},
+                    },
+                    {"content_type": "prompt_request", "content": {"prompt_request_id": "p1", "name": "s"}},
+                    {"content_type": "prompt_result", "content": {"prompt_request_id": "p1", "prompt_name": "s"}},
+                    {"content_type": "image", "content": {"type": "url", "data": "http://img"}},
+                    {"content_type": "video", "content": {"type": "url", "data": "http://vid"}},
+                    {"content_type": "audio", "content": {"type": "url", "data": "http://aud"}},
+                    {"content_type": "document", "content": {"type": "url", "data": "http://doc"}},
+                ],
+            }
+        )
         assert len(msg.content) == 12
         expected_types = [
-            TextContent, ThinkingContent, ToolCallContentPart, ToolResultContentPart,
-            ResourceContentPart, ResourceRefContentPart, PromptRequestContentPart, PromptResultContentPart,
-            ImageContentPart, VideoContentPart, AudioContentPart, DocumentContentPart,
+            TextContent,
+            ThinkingContent,
+            ToolCallContentPart,
+            ToolResultContentPart,
+            ResourceContentPart,
+            ResourceRefContentPart,
+            PromptRequestContentPart,
+            PromptResultContentPart,
+            ImageContentPart,
+            VideoContentPart,
+            AudioContentPart,
+            DocumentContentPart,
         ]
         for part, expected in zip(msg.content, expected_types):
             assert isinstance(part, expected), f"Expected {expected.__name__}, got {type(part).__name__}"
@@ -612,23 +640,28 @@ class TestResourceValidation:
 
     def test_content_only(self):
         res = Resource(
-            resource_request_id="r1", uri="file:///a.txt",
-            resource_type=ResourceType.FILE, content="hello",
+            resource_request_id="r1",
+            uri="file:///a.txt",
+            resource_type=ResourceType.FILE,
+            content="hello",
         )
         assert res.content == "hello"
         assert res.blob is None
 
     def test_blob_only(self):
         res = Resource(
-            resource_request_id="r1", uri="file:///a.bin",
-            resource_type=ResourceType.FILE, blob=b"\x00\x01",
+            resource_request_id="r1",
+            uri="file:///a.bin",
+            resource_type=ResourceType.FILE,
+            blob=b"\x00\x01",
         )
         assert res.blob == b"\x00\x01"
         assert res.content is None
 
     def test_neither_content_nor_blob(self):
         res = Resource(
-            resource_request_id="r1", uri="file:///a.txt",
+            resource_request_id="r1",
+            uri="file:///a.txt",
             resource_type=ResourceType.FILE,
         )
         assert res.content is None
@@ -637,9 +670,11 @@ class TestResourceValidation:
     def test_content_and_blob_raises(self):
         with pytest.raises(ValueError, match="cannot have both"):
             Resource(
-                resource_request_id="r1", uri="file:///a.txt",
+                resource_request_id="r1",
+                uri="file:///a.txt",
                 resource_type=ResourceType.FILE,
-                content="hello", blob=b"\x00",
+                content="hello",
+                blob=b"\x00",
             )
 
 
@@ -648,41 +683,51 @@ class TestResourceReferenceValidation:
 
     def test_valid_range(self):
         ref = ResourceReference(
-            resource_request_id="r1", uri="file:///a.txt",
+            resource_request_id="r1",
+            uri="file:///a.txt",
             resource_type=ResourceType.FILE,
-            range_start=10, range_end=20,
+            range_start=10,
+            range_end=20,
         )
         assert ref.range_start == 10
         assert ref.range_end == 20
 
     def test_equal_range(self):
         ref = ResourceReference(
-            resource_request_id="r1", uri="file:///a.txt",
+            resource_request_id="r1",
+            uri="file:///a.txt",
             resource_type=ResourceType.FILE,
-            range_start=5, range_end=5,
+            range_start=5,
+            range_end=5,
         )
         assert ref.range_start == ref.range_end
 
     def test_invalid_range_raises(self):
         with pytest.raises(ValueError, match="range_end.*must be >= range_start"):
             ResourceReference(
-                resource_request_id="r1", uri="file:///a.txt",
+                resource_request_id="r1",
+                uri="file:///a.txt",
                 resource_type=ResourceType.FILE,
-                range_start=20, range_end=10,
+                range_start=20,
+                range_end=10,
             )
 
     def test_start_only(self):
         ref = ResourceReference(
-            resource_request_id="r1", uri="file:///a.txt",
-            resource_type=ResourceType.FILE, range_start=5,
+            resource_request_id="r1",
+            uri="file:///a.txt",
+            resource_type=ResourceType.FILE,
+            range_start=5,
         )
         assert ref.range_start == 5
         assert ref.range_end is None
 
     def test_end_only(self):
         ref = ResourceReference(
-            resource_request_id="r1", uri="file:///a.txt",
-            resource_type=ResourceType.FILE, range_end=10,
+            resource_request_id="r1",
+            uri="file:///a.txt",
+            resource_type=ResourceType.FILE,
+            range_end=10,
         )
         assert ref.range_start is None
         assert ref.range_end == 10

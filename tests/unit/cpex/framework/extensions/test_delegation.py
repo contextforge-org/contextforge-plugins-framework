@@ -9,8 +9,9 @@ Covers:
 - Immutability of frozen models
 """
 
-import pytest
 from datetime import UTC, datetime, timedelta
+
+import pytest
 
 from cpex.framework.extensions.delegation import DelegationExtension, DelegationHop
 
