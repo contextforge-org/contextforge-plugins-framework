@@ -733,8 +733,10 @@ class PluginExecutor:
         tmp_gc = GlobalContext(
             request_id=global_context.request_id,
             user=global_context.user,
+            user_context=global_context.user_context,
             tenant_id=global_context.tenant_id,
             server_id=global_context.server_id,
+            content_type=global_context.content_type,
             state={} if not global_context.state else copyonwrite(global_context.state),
             metadata={} if not global_context.metadata else copyonwrite(global_context.metadata),
         )
@@ -840,8 +842,10 @@ class PluginExecutor:
             tmp_gc = GlobalContext(
                 request_id=global_context.request_id,
                 user=global_context.user,
+                user_context=global_context.user_context,
                 tenant_id=global_context.tenant_id,
                 server_id=global_context.server_id,
+                content_type=global_context.content_type,
                 state={} if not global_context.state else copyonwrite(global_context.state),
                 metadata={} if not global_context.metadata else copyonwrite(global_context.metadata),
             )
@@ -1673,6 +1677,7 @@ class TenantPluginManager(PluginManager):
         timeout: int = DEFAULT_PLUGIN_TIMEOUT,
         observability: Optional[ObservabilityProvider] = None,
         hook_policies: Optional[dict[str, HookPayloadPolicy]] = None,
+        default_hook_policy: Optional[str] = None,
     ):
         """Initialize a TenantPluginManager with independent state.
 
@@ -1684,6 +1689,7 @@ class TenantPluginManager(PluginManager):
             timeout: Per-plugin call timeout in seconds.
             observability: Optional observability provider.
             hook_policies: Optional hook payload policy map.
+            default_hook_policy: Fallback hook policy when not specified for a hook type.
         """
         if isinstance(config, Config):
             self._config_path = None
@@ -1697,6 +1703,7 @@ class TenantPluginManager(PluginManager):
             timeout=timeout,
             observability=observability,
             hook_policies=hook_policies,
+            default_hook_policy=default_hook_policy,
         )
         self._initialized = False
         self._registry = PluginInstanceRegistry()

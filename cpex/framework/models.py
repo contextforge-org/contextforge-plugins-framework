@@ -305,6 +305,10 @@ class PluginCondition(BaseModel):
     def normalize_content_types(cls, value: list[str] | None) -> list[str] | None:
         """Pre-normalize content types during initialization.
 
+        Uses the same normalization as utils.normalize_content_type() — strip
+        parameters after ';', trim whitespace, lowercase.  Kept inline here to
+        avoid a circular import (utils imports models).
+
         Args:
             value: List of content types to normalize.
 

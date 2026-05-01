@@ -268,11 +268,11 @@ def matches(condition: PluginCondition, context: GlobalContext) -> bool:
             return False
         logger.debug("Tenant ID matched: %s", context.tenant_id)
 
-    # Check content types (strict AND logic - fail if content_type is None but condition requires it)
+    # Check content types (strict AND logic - fail if content_type is None/empty but condition requires it)
     if condition.content_types:
-        if not context.content_type:
+        if not context.content_type or not context.content_type.strip():
             logger.debug(
-                "Content-type mismatch: content_type is None but condition requires: %s", condition.content_types
+                "Content-type mismatch: content_type is None/empty but condition requires: %s", condition.content_types
             )
             return False
         normalized_request = normalize_content_type(context.content_type)

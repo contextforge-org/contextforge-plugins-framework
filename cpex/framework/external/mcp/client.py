@@ -87,6 +87,7 @@ class ExternalPlugin(Plugin):
         self._http_client_factory: Optional[Callable[..., httpx.AsyncClient]] = None
         self._reconnect_attempts: int = 3
         self._reconnect_delay: float = 0.1
+        self._reconnect_lock: asyncio.Lock = asyncio.Lock()
 
     async def initialize(self) -> None:
         """Initialize the plugin's connection to the MCP server.
@@ -425,7 +426,14 @@ class ExternalPlugin(Plugin):
             if self._stdio_stop:
                 self._stdio_stop.set()
             try:
-                await self._stdio_task
+                await asyncio.wait_for(self._stdio_task, timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.warning("Stdio task for plugin %s did not exit within 5s, cancelling", self.name)
+                self._stdio_task.cancel()
+                try:
+                    await self._stdio_task
+                except (asyncio.CancelledError, Exception):
+                    pass
             except Exception as e:
                 logger.debug("Error stopping stdio task during cleanup: %s", e)
             self._stdio_task = None
@@ -547,20 +555,37 @@ class ExternalPlugin(Plugin):
             if "session" in error_msg and "terminated" in error_msg:
                 logger.warning("Session terminated for plugin %s, attempting reconnection...", self.name)
                 try:
-                    await self._reconnect_session()
+                    async with self._reconnect_lock:
+                        await self._reconnect_session()
                     return await _execute_call()
+                except PluginError:
+                    raise
                 except Exception as reconn_err:
                     logger.exception("Reconnection failed for plugin %s: %s", self.name, reconn_err)
+                    raise PluginError(
+                        error=PluginErrorModel(
+                            message=f"Reconnection failed for plugin {self.name}: {reconn_err}",
+                            plugin_name=self.name,
+                        )
+                    ) from reconn_err
             logger.exception(pe)
             raise
         except McpError as e:
             logger.warning("McpError for plugin %s: %s", self.name, e)
             try:
-                await self._reconnect_session()
+                async with self._reconnect_lock:
+                    await self._reconnect_session()
                 return await _execute_call()
+            except PluginError:
+                raise
             except Exception as reconn_err:
                 logger.exception("Reconnection failed for plugin %s: %s", self.name, reconn_err)
-            raise PluginError(error=convert_exception_to_error(e, plugin_name=self.name))
+                raise PluginError(
+                    error=PluginErrorModel(
+                        message=f"Reconnection failed for plugin {self.name}: {reconn_err}",
+                        plugin_name=self.name,
+                    )
+                ) from reconn_err
         except Exception as e:
             logger.exception(e)
             raise PluginError(error=convert_exception_to_error(e, plugin_name=self.name))

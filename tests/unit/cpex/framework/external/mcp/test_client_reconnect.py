@@ -314,7 +314,7 @@ class TestInvokeHookWithReconnection:
                 with pytest.raises(PluginError) as exc_info:
                     await plugin.invoke_hook("tool_pre_invoke", payload, mock_plugin_context)
                 error_msg = str(exc_info.value.error.message)
-                assert "Connection lost" in error_msg or "Reconnection failed" in error_msg
+                assert "Reconnection failed" in error_msg
 
     @pytest.mark.asyncio
     async def test_invoke_hook_session_terminated_reconnect_failure_reraises_original(
@@ -344,7 +344,7 @@ class TestInvokeHookWithReconnection:
                 payload = ToolPreInvokePayload(name="test", args={})
                 with pytest.raises(PluginError) as exc_info:
                     await plugin.invoke_hook("tool_pre_invoke", payload, mock_plugin_context)
-                assert "Session terminated" in str(exc_info.value.error.message)
+                assert "Reconnection failed" in str(exc_info.value.error.message)
 
     @pytest.mark.asyncio
     async def test_invoke_hook_generic_exception_converted_to_plugin_error(
