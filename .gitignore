@@ -53,6 +53,7 @@ FIXMEs
 *.old
 logs/
 *.log
+.sketchpad
 
 # Fuzzing artifacts and reports
 reports/
@@ -248,3 +249,4 @@ db_path/
 tmp/
 
 .continue
+
