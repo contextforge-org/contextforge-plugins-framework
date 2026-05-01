@@ -1668,9 +1668,6 @@ class TenantPluginManager(PluginManager):
         False
     """
 
-    def enable_borg(self) -> None:
-        """Opt out of Borg singleton — each tenant instance manages its own state."""
-
     def __init__(  # pylint: disable=super-init-not-called
         self,
         config: Union[str, Config],
