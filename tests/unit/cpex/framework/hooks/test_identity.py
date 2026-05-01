@@ -10,16 +10,15 @@ Covers:
 """
 
 import pytest
-
 from pydantic import SecretStr
 
+from cpex.framework.extensions.security import SubjectExtension, SubjectType
 from cpex.framework.hooks.identity import (
     AttenuationConfig,
     DelegationPayload,
     IdentityPayload,
     IdentityResult,
 )
-from cpex.framework.extensions.security import SubjectExtension, SubjectType
 
 
 class TestIdentityPayload:

@@ -8,7 +8,6 @@ Unit tests for extension models.
 """
 
 # Standard
-from typing import Any
 
 # Third-Party
 import pytest
@@ -40,7 +39,6 @@ from cpex.framework.extensions.security import (
     SubjectExtension,
     SubjectType,
 )
-
 
 # ---------------------------------------------------------------------------
 # RequestExtension

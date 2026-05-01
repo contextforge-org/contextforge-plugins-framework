@@ -419,9 +419,7 @@ class TestResourceHookIntegration:
             assert result.continue_processing is True  # Continues despite error
 
         # Test with concurrent mode + on_error=FAIL (default) - should raise PluginError
-        fail_config = config.model_copy(
-            update={"mode": PluginMode.CONCURRENT, "on_error": OnError.FAIL}
-        )
+        fail_config = config.model_copy(update={"mode": PluginMode.CONCURRENT, "on_error": OnError.FAIL})
         fail_plugin = ErrorPlugin(fail_config)
         fail_ref = HookRef(ResourceHookType.RESOURCE_PRE_FETCH, PluginRef(fail_plugin))
         with patch.object(manager._registry, "get_hook_refs_for_hook", return_value=[fail_ref]):
