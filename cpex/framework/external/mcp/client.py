@@ -507,6 +507,7 @@ class ExternalPlugin(Plugin):
             raise PluginError(error=PluginErrorModel(message="Plugin session not initialized", plugin_name=self.name))
 
         async def _execute_call() -> PluginResult:
+            """Execute the MCP tool call and parse the result."""
             call_result = await self._session.call_tool(
                 INVOKE_HOOK, {HOOK_TYPE: hook_type, PLUGIN_NAME: self.name, PAYLOAD: payload, CONTEXT: context}
             )
