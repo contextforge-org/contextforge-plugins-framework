@@ -100,6 +100,18 @@ pub struct PluginSettings {
     /// Whether to halt the pipeline on any plugin error.
     #[serde(default)]
     pub fail_on_plugin_error: bool,
+
+    /// Maximum number of entries in the routing cache.
+    ///
+    /// When the cache reaches this size, new resolutions are computed
+    /// normally but not memoized — the cache rejects further inserts
+    /// and emits a warning. This bounds memory growth from
+    /// attacker-controlled entity names without the reasoning hazards
+    /// of eviction (silently dropped entries, stale-vs-current
+    /// confusion). Operators see the warning and tune the cap or
+    /// investigate the entity-name growth.
+    #[serde(default = "default_route_cache_max_entries")]
+    pub route_cache_max_entries: usize,
 }
 
 impl Default for PluginSettings {
@@ -110,8 +122,13 @@ impl Default for PluginSettings {
             short_circuit_on_deny: true,
             parallel_execution_within_band: false,
             fail_on_plugin_error: false,
+            route_cache_max_entries: default_route_cache_max_entries(),
         }
     }
+}
+
+fn default_route_cache_max_entries() -> usize {
+    10_000
 }
 
 fn default_timeout() -> u64 {

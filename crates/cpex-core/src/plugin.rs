@@ -335,6 +335,7 @@ impl PluginCondition {
 /// | FireAndForget  | No         | No          | Background      |
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum PluginMode {
     /// Policy enforcement + transformation. Serial, chained. Can block and modify.
     #[default]
@@ -397,6 +398,7 @@ impl fmt::Display for PluginMode {
 /// skipped, or cause the plugin to be auto-disabled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum OnError {
     /// Pipeline halts and error propagates. Fail-safe enforcement.
     #[default]

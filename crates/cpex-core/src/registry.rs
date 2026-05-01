@@ -31,6 +31,8 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+use uuid::Uuid;
 use std::sync::Arc;
 
 use crate::context::PluginContext;
@@ -68,7 +70,10 @@ pub struct PluginRef {
     trusted_config: PluginConfig,
 
     /// Unique identifier assigned by the registry.
-    id: String,
+    /// Stored as `Uuid` (16 bytes, `Copy`) rather than a 36-char `String`
+    /// to avoid heap allocation per registered plugin and to give
+    /// downstream `HashMap<Uuid, _>` keys fixed-size hashing.
+    id: Uuid,
 
     /// Runtime circuit breaker — set to true when `on_error: Disable`
     /// triggers. Once set, `mode()` returns `Disabled` and the plugin
@@ -84,11 +89,10 @@ impl PluginRef {
     /// NOT from `plugin.config()`. The plugin may hold its own copy
     /// for reading during execute(), but the manager never consults it.
     pub fn new(plugin: Arc<dyn Plugin>, trusted_config: PluginConfig) -> Self {
-        let id = uuid::Uuid::new_v4().to_string();
         Self {
             plugin,
             trusted_config,
-            id,
+            id: Uuid::new_v4(),
             disabled: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -104,8 +108,9 @@ impl PluginRef {
     }
 
     /// Unique identifier assigned at registration.
-    pub fn id(&self) -> &str {
-        &self.id
+    /// Returned by value — `Uuid` is `Copy` (16 bytes).
+    pub fn id(&self) -> Uuid {
+        self.id
     }
 
     /// Convenience: plugin name from the trusted config.
@@ -115,8 +120,12 @@ impl PluginRef {
 
     /// Effective mode — returns `Disabled` if the runtime circuit breaker
     /// has tripped, otherwise returns the configured mode.
+    ///
+    /// `Acquire` on the load pairs with `Release` on the disable() store
+    /// so weak-memory-ordering hardware (ARM64) propagates the disable
+    /// promptly across threads.
     pub fn mode(&self) -> PluginMode {
-        if self.disabled.load(Ordering::Relaxed) {
+        if self.disabled.load(Ordering::Acquire) {
             PluginMode::Disabled
         } else {
             self.trusted_config.mode
@@ -127,14 +136,20 @@ impl PluginRef {
     ///
     /// Called by the executor when a plugin errors with `on_error: Disable`.
     /// All clones of this PluginRef (in HookEntry, etc.) share the same
-    /// `AtomicBool`, so the disable is instantly visible across the system.
+    /// `AtomicBool`, so the disable is visible across the system.
+    ///
+    /// `Release` ordering establishes a happens-before with `Acquire`
+    /// loads in `is_disabled()` and `mode()` — required for correctness
+    /// on weak-memory hardware (ARM64) where `Relaxed` allows the new
+    /// value to remain unobserved by other threads for an unbounded window.
     pub fn disable(&self) {
-        self.disabled.store(true, Ordering::Relaxed);
+        self.disabled.store(true, Ordering::Release);
     }
 
     /// Whether this plugin has been runtime-disabled.
+    /// `Acquire` pairs with the `Release` in `disable()` (see `mode()`).
     pub fn is_disabled(&self) -> bool {
-        self.disabled.load(Ordering::Relaxed)
+        self.disabled.load(Ordering::Acquire)
     }
 
     /// Convenience: plugin priority from the trusted config.
@@ -189,10 +204,15 @@ pub trait AnyHookHandler: Send + Sync {
 ///
 /// The executor uses `plugin_ref` for scheduling decisions (mode,
 /// priority, capabilities) and `handler` for actual dispatch.
+///
+/// `plugin_ref` is `Arc<PluginRef>` so cloning a `HookEntry` is two
+/// reference-count bumps rather than a deep clone of the embedded
+/// `PluginConfig`. `group_by_mode` (called once per invoke) clones N
+/// entries — keeping that cheap matters at high request rates.
 #[derive(Clone)]
 pub struct HookEntry {
     /// The plugin wrapper with authoritative config.
-    pub plugin_ref: PluginRef,
+    pub plugin_ref: Arc<PluginRef>,
 
     /// The type-erased handler for this specific hook.
     pub handler: Arc<dyn AnyHookHandler>,
@@ -217,8 +237,11 @@ pub struct HookEntry {
 ///   hook names (the CMF pattern where one handler covers
 ///   `cmf.tool_pre_invoke`, `cmf.llm_input`, etc.).
 pub struct PluginRegistry {
-    /// Plugins keyed by name (for lookup and lifecycle).
-    plugins: HashMap<String, PluginRef>,
+    /// Plugins keyed by name (for lookup and lifecycle). Wrapped in `Arc`
+    /// so the same instance is shared with every `HookEntry` in
+    /// `hook_index` — registering a plugin allocates one `PluginRef`,
+    /// not one per hook.
+    plugins: HashMap<String, Arc<PluginRef>>,
 
     /// Hook name → list of HookEntries, sorted by priority.
     hook_index: HashMap<HookType, Vec<HookEntry>>,
@@ -315,12 +338,12 @@ impl PluginRegistry {
             return Err(format!("plugin '{}' is already registered", name));
         }
 
-        let plugin_ref = PluginRef::new(plugin, config);
+        let plugin_ref = Arc::new(PluginRef::new(plugin, config));
 
         for (hook_name, handler) in &handlers {
             let hook_type = HookType::new(*hook_name);
             let entry = HookEntry {
-                plugin_ref: plugin_ref.clone(),
+                plugin_ref: Arc::clone(&plugin_ref),
                 handler: Arc::clone(handler),
             };
             self.hook_index.entry(hook_type).or_default().push(entry);
@@ -352,13 +375,13 @@ impl PluginRegistry {
             return Err(format!("plugin '{}' is already registered", name));
         }
 
-        let plugin_ref = PluginRef::new(plugin, config);
+        let plugin_ref = Arc::new(PluginRef::new(plugin, config));
 
         // Add to hook index for each specified hook name
         for hook_name in names {
             let hook_type = HookType::new(*hook_name);
             let entry = HookEntry {
-                plugin_ref: plugin_ref.clone(),
+                plugin_ref: Arc::clone(&plugin_ref),
                 handler: Arc::clone(&handler),
             };
             self.hook_index.entry(hook_type).or_default().push(entry);
@@ -379,8 +402,8 @@ impl PluginRegistry {
     /// Unregister a plugin by name.
     ///
     /// Removes the PluginRef from the name index and all HookEntries
-    /// from the hook index. Returns the PluginRef if found.
-    pub fn unregister(&mut self, name: &str) -> Option<PluginRef> {
+    /// from the hook index. Returns the (Arc-wrapped) PluginRef if found.
+    pub fn unregister(&mut self, name: &str) -> Option<Arc<PluginRef>> {
         let plugin_ref = self.plugins.remove(name)?;
 
         // Remove from hook index
@@ -396,7 +419,7 @@ impl PluginRegistry {
 
     /// Look up a PluginRef by name.
     pub fn get(&self, name: &str) -> Option<&PluginRef> {
-        self.plugins.get(name)
+        self.plugins.get(name).map(|arc| arc.as_ref())
     }
 
     /// Returns all HookEntries for a given hook name, sorted by priority.
