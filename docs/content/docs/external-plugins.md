@@ -1,6 +1,6 @@
 ---
 title: "External Plugins"
-weight: 90
+weight: 70
 ---
 
 # External Plugins

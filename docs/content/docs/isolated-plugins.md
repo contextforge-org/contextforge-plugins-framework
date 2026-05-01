@@ -1,6 +1,6 @@
 ---
 title: "Isolated Plugins"
-weight: 100
+weight: 80
 ---
 
 # Isolated Plugins (venv)

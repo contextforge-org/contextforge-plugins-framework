@@ -1,6 +1,6 @@
 ---
 title: "Extensions & Capabilities"
-weight: 70
+weight: 60
 ---
 
 # Extensions & Capabilities
