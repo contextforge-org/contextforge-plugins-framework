@@ -228,6 +228,7 @@ impl fmt::Debug for BackgroundTasks {
 ///
 /// The executor is stateless — all state comes from the arguments.
 /// One executor instance can serve multiple concurrent hook invocations.
+#[derive(Clone)]
 pub struct Executor {
     config: ExecutorConfig,
 }
@@ -262,6 +263,7 @@ impl Executor {
         payload: Box<dyn PluginPayload>,
         extensions: Extensions,
         context_table: Option<PluginContextTable>,
+        task_tracker: &tokio_util::task::TaskTracker,
     ) -> (PipelineResult, BackgroundTasks) {
         let mut ctx_table = context_table.unwrap_or_default();
 
@@ -332,6 +334,7 @@ impl Executor {
             &*current_payload,
             &current_extensions,
             &ctx_table,
+            task_tracker,
         );
 
         (
@@ -792,6 +795,7 @@ impl Executor {
         payload: &dyn PluginPayload,
         extensions: &Extensions,
         ctx_table: &PluginContextTable,
+        task_tracker: &tokio_util::task::TaskTracker,
     ) -> Vec<(String, tokio::task::JoinHandle<()>)> {
         if entries.is_empty() {
             return Vec::new();
@@ -821,7 +825,12 @@ impl Executor {
                 .collect();
             let filtered = Arc::new(filter_extensions(extensions, &capabilities));
 
-            let handle = tokio::spawn(async move {
+            // Spawn through TaskTracker so `PluginManager::shutdown()`
+            // can drain in-flight fire-and-forget tasks before tearing
+            // down. The returned JoinHandle is the same shape as
+            // tokio::spawn's, so callers using BackgroundTasks still
+            // wait_for_background_tasks() over their own handles.
+            let handle = task_tracker.spawn(async move {
                 let result = timeout(
                     dur,
                     handler.invoke(&*owned_payload, &filtered, &mut ctx),
@@ -999,11 +1008,12 @@ mod tests {
     #[tokio::test]
     async fn test_executor_empty_entries() {
         let executor = Executor::default();
+        let tracker = tokio_util::task::TaskTracker::new();
         let payload: Box<dyn PluginPayload> = Box::new(TestPayload {
             value: "test".into(),
         });
         let (result, _) = executor
-            .execute(&[], payload, Extensions::default(), None)
+            .execute(&[], payload, Extensions::default(), None, &tracker)
             .await;
         assert!(result.continue_processing);
         assert!(result.modified_payload.is_some());

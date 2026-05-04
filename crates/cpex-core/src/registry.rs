@@ -236,6 +236,13 @@ pub struct HookEntry {
 /// - `register_for_names::<H>()` — typed registration for multiple
 ///   hook names (the CMF pattern where one handler covers
 ///   `cmf.tool_pre_invoke`, `cmf.llm_input`, etc.).
+///
+/// `Clone` is cheap-ish: the HashMaps duplicate, but their values are all
+/// `Arc`-counted (`Arc<PluginRef>`, `Arc<dyn AnyHookHandler>`), so the
+/// inner data is shared. Used by `PluginManager`'s `ArcSwap` snapshot
+/// pattern, where every mutating method clones the registry, mutates the
+/// clone, and atomically swaps in a new snapshot.
+#[derive(Clone)]
 pub struct PluginRegistry {
     /// Plugins keyed by name (for lookup and lifecycle). Wrapped in `Arc`
     /// so the same instance is shared with every `HookEntry` in
@@ -417,9 +424,11 @@ impl PluginRegistry {
         Some(plugin_ref)
     }
 
-    /// Look up a PluginRef by name.
-    pub fn get(&self, name: &str) -> Option<&PluginRef> {
-        self.plugins.get(name).map(|arc| arc.as_ref())
+    /// Look up a PluginRef by name. Returns an `Arc` clone so callers
+    /// don't hold borrows on internal storage — works with snapshot-based
+    /// dispatch where the registry may sit behind a transient guard.
+    pub fn get(&self, name: &str) -> Option<Arc<PluginRef>> {
+        self.plugins.get(name).map(Arc::clone)
     }
 
     /// Returns all HookEntries for a given hook name, sorted by priority.
@@ -445,9 +454,11 @@ impl PluginRegistry {
         self.plugins.len()
     }
 
-    /// All registered plugin names.
-    pub fn plugin_names(&self) -> Vec<&str> {
-        self.plugins.keys().map(|s| s.as_str()).collect()
+    /// All registered plugin names. Returns owned `String`s so callers
+    /// don't hold borrows on internal storage — works with snapshot-based
+    /// dispatch where the registry may sit behind a transient guard.
+    pub fn plugin_names(&self) -> Vec<String> {
+        self.plugins.keys().cloned().collect()
     }
 }
 

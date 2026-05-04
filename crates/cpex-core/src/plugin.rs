@@ -204,6 +204,87 @@ pub struct PluginConfig {
     pub config: Option<serde_json::Value>,
 }
 
+impl PluginConfig {
+    /// Whether this plugin's `conditions` allow it to fire for the given
+    /// request `Extensions`. Used in legacy mode (`routing_enabled: false`)
+    /// to filter which plugins run per request — mirrors the Python
+    /// implementation's per-plugin condition filtering.
+    ///
+    /// Semantics:
+    /// - Empty `conditions` Vec → fire always (no restriction).
+    /// - Non-empty → fire if ANY condition matches (OR across the list,
+    ///   AND within each individual condition).
+    ///
+    /// Field-source mapping (see project memory `project_conditions_field_mapping`):
+    /// - `server_ids` ← `extensions.mcp.{tool|resource|prompt}.server_id`
+    /// - `tenant_ids` ← `extensions.security.subject.claims["tenant"]`
+    /// - `tools|prompts|resources` ← `extensions.meta.entity_name` (when matching `entity_type`)
+    /// - `agents` ← `extensions.agent.agent_id`
+    /// - `user_patterns` ← `extensions.security.subject.id` (glob match)
+    /// - `content_types` ← `extensions.mcp.resource.mime_type`
+    pub fn passes_conditions(&self, extensions: &crate::hooks::payload::Extensions) -> bool {
+        if self.conditions.is_empty() {
+            return true;
+        }
+
+        // Source values once from the extensions tree.
+        let server_id = extensions.mcp.as_ref().and_then(|m| {
+            m.tool
+                .as_ref()
+                .and_then(|t| t.server_id.as_deref())
+                .or_else(|| m.resource.as_ref().and_then(|r| r.server_id.as_deref()))
+                .or_else(|| m.prompt.as_ref().and_then(|p| p.server_id.as_deref()))
+        });
+        let tenant_id = extensions
+            .security
+            .as_ref()
+            .and_then(|s| s.subject.as_ref())
+            .and_then(|sub| sub.claims.get("tenant"))
+            .map(|s| s.as_str());
+        let entity_name = extensions
+            .meta
+            .as_ref()
+            .and_then(|m| m.entity_name.as_deref());
+        let entity_type = extensions
+            .meta
+            .as_ref()
+            .and_then(|m| m.entity_type.as_deref());
+        let (tool, prompt, resource) = match entity_type {
+            Some("tool") => (entity_name, None, None),
+            Some("prompt") => (None, entity_name, None),
+            Some("resource") => (None, None, entity_name),
+            _ => (None, None, None),
+        };
+        let agent = extensions
+            .agent
+            .as_ref()
+            .and_then(|a| a.agent_id.as_deref());
+        let user = extensions
+            .security
+            .as_ref()
+            .and_then(|s| s.subject.as_ref())
+            .and_then(|sub| sub.id.as_deref());
+        let content_type = extensions
+            .mcp
+            .as_ref()
+            .and_then(|m| m.resource.as_ref())
+            .and_then(|r| r.mime_type.as_deref());
+
+        self.conditions.iter().any(|c| {
+            c.matches(
+                server_id,
+                tenant_id,
+                tool,
+                prompt,
+                resource,
+                agent,
+                user,
+                content_type,
+            )
+        })
+    }
+}
+
 fn default_priority() -> i32 {
     100
 }
@@ -278,8 +359,10 @@ impl PluginCondition {
     /// Whether this condition matches the given context.
     ///
     /// A field that is `None` is treated as "any" (no restriction).
-    /// A field that is `Some(set)` matches if the given value is in the set.
-    /// All specified fields must match (AND semantics).
+    /// A `Some(set)` field matches if the given value is in the set
+    /// (exact match for ID-shaped fields; glob match via `wildmatch`
+    /// for `user_patterns`).
+    /// All specified fields must match — AND semantics within one condition.
     pub fn matches(
         &self,
         server_id: Option<&str>,
@@ -288,8 +371,10 @@ impl PluginCondition {
         prompt: Option<&str>,
         resource: Option<&str>,
         agent: Option<&str>,
+        user: Option<&str>,
+        content_type: Option<&str>,
     ) -> bool {
-        let check = |field: &Option<HashSet<String>>, value: Option<&str>| -> bool {
+        let check_set = |field: &Option<HashSet<String>>, value: Option<&str>| -> bool {
             match field {
                 None => true, // not specified — matches anything
                 Some(set) => match value {
@@ -299,12 +384,38 @@ impl PluginCondition {
             }
         };
 
-        check(&self.server_ids, server_id)
-            && check(&self.tenant_ids, tenant_id)
-            && check(&self.tools, tool)
-            && check(&self.prompts, prompt)
-            && check(&self.resources, resource)
-            && check(&self.agents, agent)
+        // user_patterns: list of globs. Match if any pattern matches the user.
+        let check_patterns = |field: &Option<Vec<String>>, value: Option<&str>| -> bool {
+            match field {
+                None => true,
+                Some(patterns) => match value {
+                    Some(v) => patterns
+                        .iter()
+                        .any(|p| wildmatch::WildMatch::new(p).matches(v)),
+                    None => false,
+                },
+            }
+        };
+
+        // content_types: list of exact strings.
+        let check_list = |field: &Option<Vec<String>>, value: Option<&str>| -> bool {
+            match field {
+                None => true,
+                Some(list) => match value {
+                    Some(v) => list.iter().any(|s| s == v),
+                    None => false,
+                },
+            }
+        };
+
+        check_set(&self.server_ids, server_id)
+            && check_set(&self.tenant_ids, tenant_id)
+            && check_set(&self.tools, tool)
+            && check_set(&self.prompts, prompt)
+            && check_set(&self.resources, resource)
+            && check_set(&self.agents, agent)
+            && check_patterns(&self.user_patterns, user)
+            && check_list(&self.content_types, content_type)
     }
 }
 

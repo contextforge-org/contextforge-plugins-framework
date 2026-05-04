@@ -162,7 +162,7 @@ pub unsafe extern "C" fn cpex_manager_new(
         }
     };
 
-    let mut manager = PluginManager::default();
+    let manager = PluginManager::default();
 
     // Load config — factories must be registered separately via cpex_register_factory
     if let Err(e) = manager.load_config(cpex_config) {
@@ -266,7 +266,7 @@ pub unsafe extern "C" fn cpex_shutdown(mgr: *mut CpexManagerInner) {
     if mgr.is_null() {
         return;
     }
-    let mut inner = Box::from_raw(mgr);
+    let inner = Box::from_raw(mgr);
     inner.runtime.block_on(inner.manager.shutdown());
     // inner is dropped here, freeing the manager and runtime
 }
