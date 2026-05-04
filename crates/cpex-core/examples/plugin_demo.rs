@@ -312,17 +312,10 @@ async fn main() {
     let ext = make_tool_extensions("get_compensation", &[]);
     // Simulate clearance by pre-populating global_state
     // (In production, an earlier hook would set this from a token claim)
-    let mut global_state = std::collections::HashMap::new();
-    global_state.insert(
+    let mut ctx_table = cpex_core::context::PluginContextTable::new();
+    ctx_table.global_state.insert(
         "pii_clearance".into(),
         serde_json::Value::Bool(true),
-    );
-    // Pass global state via context table
-    let mut ctx_table = cpex_core::context::PluginContextTable::new();
-    // We need to seed global_state — create a dummy entry
-    ctx_table.insert(
-        "__seed__".into(),
-        cpex_core::context::PluginContext::with_global_state(global_state),
     );
     let (result, bg) = mgr.invoke::<ToolPreInvoke>(
         payload, ext, Some(ctx_table),
