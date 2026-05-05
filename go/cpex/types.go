@@ -13,14 +13,6 @@ package cpex
 
 import "github.com/vmihailenco/msgpack/v5"
 
-// Payload type IDs — must match Rust PAYLOAD_* constants.
-const (
-	// PayloadGeneric is a generic JSON-like payload (map[string]any).
-	PayloadGeneric uint8 = 0
-	// PayloadCMFMessage is a CMF MessagePayload.
-	PayloadCMFMessage uint8 = 1
-)
-
 // Extensions carries capability-gated data alongside the payload.
 // Serialized to/from MessagePack when crossing the FFI boundary.
 type Extensions struct {
@@ -49,13 +41,13 @@ type MetaExtension struct {
 
 // SecurityExtension carries identity, labels, and data policies.
 type SecurityExtension struct {
-	Labels         []string                      `msgpack:"labels,omitempty"`
-	Classification string                        `msgpack:"classification,omitempty"`
-	Subject        *SubjectExtension             `msgpack:"subject,omitempty"`
-	Agent          *AgentIdentity                `msgpack:"agent,omitempty"`
-	AuthMethod     string                        `msgpack:"auth_method,omitempty"`
+	Labels         []string                         `msgpack:"labels,omitempty"`
+	Classification string                           `msgpack:"classification,omitempty"`
+	Subject        *SubjectExtension                `msgpack:"subject,omitempty"`
+	Agent          *AgentIdentity                   `msgpack:"agent,omitempty"`
+	AuthMethod     string                           `msgpack:"auth_method,omitempty"`
 	Objects        map[string]ObjectSecurityProfile `msgpack:"objects,omitempty"`
-	Data           map[string]DataPolicy         `msgpack:"data,omitempty"`
+	Data           map[string]DataPolicy            `msgpack:"data,omitempty"`
 }
 
 // SubjectExtension represents the authenticated caller.
@@ -131,9 +123,27 @@ type AgentExtension struct {
 	Input          string `msgpack:"input,omitempty"`
 	SessionID      string `msgpack:"session_id,omitempty"`
 	ConversationID string `msgpack:"conversation_id,omitempty"`
-	Turn           *int   `msgpack:"turn,omitempty"`
-	AgentID        string `msgpack:"agent_id,omitempty"`
-	ParentAgentID  string `msgpack:"parent_agent_id,omitempty"`
+	// Turn is *uint32 to match Rust's Option<u32>. Previously *int (64-bit
+	// in Go) — values >2^32 would overflow the Rust side silently.
+	Turn          *uint32 `msgpack:"turn,omitempty"`
+	AgentID       string  `msgpack:"agent_id,omitempty"`
+	ParentAgentID string  `msgpack:"parent_agent_id,omitempty"`
+	// Conversation mirrors Rust's `conversation: Option<ConversationContext>`.
+	// Previously absent — Rust serialized this field but Go silently dropped
+	// it (P2 #16).
+	Conversation *ConversationContext `msgpack:"conversation,omitempty"`
+}
+
+// ConversationContext is per-conversation summary state, shared across
+// turns. Mirrors `cpex_core::extensions::agent::ConversationContext`.
+type ConversationContext struct {
+	// Recent conversation history, lightweight summaries (free-form
+	// JSON-style values to match Rust's Vec<serde_json::Value>).
+	History []any `msgpack:"history,omitempty"`
+	// LLM-generated conversation summary.
+	Summary string `msgpack:"summary,omitempty"`
+	// Detected topics for routing / classification.
+	Topics []string `msgpack:"topics,omitempty"`
 }
 
 // RequestExtension carries execution environment and tracing.
@@ -158,8 +168,12 @@ type ToolMetadata struct {
 	Title       string         `msgpack:"title,omitempty"`
 	Description string         `msgpack:"description,omitempty"`
 	InputSchema map[string]any `msgpack:"input_schema,omitempty"`
-	ServerID    string         `msgpack:"server_id,omitempty"`
-	Namespace   string         `msgpack:"namespace,omitempty"`
+	// OutputSchema and Annotations were missing — Rust serialized them,
+	// Go silently dropped them (P2 #15).
+	OutputSchema map[string]any `msgpack:"output_schema,omitempty"`
+	ServerID     string         `msgpack:"server_id,omitempty"`
+	Namespace    string         `msgpack:"namespace,omitempty"`
+	Annotations  map[string]any `msgpack:"annotations,omitempty"`
 }
 
 // ResourceMetadata is MCP resource metadata.
@@ -183,7 +197,11 @@ type CompletionExtension struct {
 	StopReason string      `msgpack:"stop_reason,omitempty"`
 	Tokens     *TokenUsage `msgpack:"tokens,omitempty"`
 	Model      string      `msgpack:"model,omitempty"`
-	LatencyMs  *uint64     `msgpack:"latency_ms,omitempty"`
+	// RawFormat and CreatedAt were missing — Rust serialized them,
+	// Go silently dropped them (P2 #14).
+	RawFormat string  `msgpack:"raw_format,omitempty"`
+	CreatedAt string  `msgpack:"created_at,omitempty"`
+	LatencyMs *uint64 `msgpack:"latency_ms,omitempty"`
 }
 
 // TokenUsage is token usage statistics.
@@ -239,7 +257,12 @@ type PluginError struct {
 type PipelineResult struct {
 	ContinueProcessing bool             `msgpack:"continue_processing"`
 	Violation          *PluginViolation `msgpack:"violation,omitempty"`
-	Metadata           map[string]any   `msgpack:"metadata,omitempty"`
+	// Errors from plugins that ran with on_error: ignore or
+	// on_error: disable. Empty when no plugin errored on a non-halt
+	// path. Fire-and-forget errors live on BackgroundTasks.Wait()
+	// instead.
+	Errors   []PluginError  `msgpack:"errors,omitempty"`
+	Metadata map[string]any `msgpack:"metadata,omitempty"`
 	// Payload type ID — tells the caller how to deserialize ModifiedPayload.
 	PayloadType uint8 `msgpack:"payload_type"`
 	// Modified payload as raw MessagePack bytes.
@@ -253,6 +276,7 @@ type PipelineResult struct {
 type TypedPipelineResult[P any] struct {
 	ContinueProcessing bool
 	Violation          *PluginViolation
+	Errors             []PluginError
 	Metadata           map[string]any
 	PayloadType        uint8
 	ModifiedPayload    *P

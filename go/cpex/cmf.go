@@ -66,82 +66,77 @@ type ContentPart struct {
 
 	// Structured content — "content" field wrapping a domain object.
 	// Only one is set based on ContentType.
-	ToolCallContent          *ToolCall
-	ToolResultContent        *ToolResult
-	ResourceContent          *Resource
-	ResourceRefContent       *ResourceReference
-	PromptRequestContent     *PromptRequest
-	PromptResultContent      *PromptResult
-	ImageContent             *ImageSource
-	VideoContent             *VideoSource
-	AudioContent             *AudioSource
-	DocumentContent          *DocumentSource
+	ToolCallContent      *ToolCall
+	ToolResultContent    *ToolResult
+	ResourceContent      *Resource
+	ResourceRefContent   *ResourceReference
+	PromptRequestContent *PromptRequest
+	PromptResultContent  *PromptResult
+	ImageContent         *ImageSource
+	VideoContent         *VideoSource
+	AudioContent         *AudioSource
+	DocumentContent      *DocumentSource
+
+	// rawMap captures the full original wire form for content_type
+	// values this Go SDK doesn't have a typed accessor for. Lets a
+	// newer Rust runtime emitting a future variant pass through
+	// older Go bindings without losing data on round-trip — Encode
+	// emits rawMap verbatim when ContentType isn't a known case.
+	// Private because users with an unknown ContentType have no
+	// safe way to interpret it; they can only forward it.
+	rawMap map[string]any
 }
 
 // EncodeMsgpack produces the tagged-union wire format.
 func (cp ContentPart) EncodeMsgpack(enc *msgpack.Encoder) error {
+	// Helper: a body envelope wrapping a typed `content` value.
+	body := func(content any) map[string]any {
+		return map[string]any{
+			wireKeyContentType: cp.ContentType,
+			wireKeyContent:     content,
+		}
+	}
+
 	switch cp.ContentType {
-	case "text", "thinking":
+	case ContentTypeText, ContentTypeThinking:
 		return enc.Encode(map[string]any{
-			"content_type": cp.ContentType,
-			"text":         cp.Text,
+			wireKeyContentType: cp.ContentType,
+			wireKeyText:        cp.Text,
 		})
-	case "tool_call":
-		return enc.Encode(map[string]any{
-			"content_type": cp.ContentType,
-			"content":      cp.ToolCallContent,
-		})
-	case "tool_result":
-		return enc.Encode(map[string]any{
-			"content_type": cp.ContentType,
-			"content":      cp.ToolResultContent,
-		})
-	case "resource":
-		return enc.Encode(map[string]any{
-			"content_type": cp.ContentType,
-			"content":      cp.ResourceContent,
-		})
-	case "resource_ref":
-		return enc.Encode(map[string]any{
-			"content_type": cp.ContentType,
-			"content":      cp.ResourceRefContent,
-		})
-	case "prompt_request":
-		return enc.Encode(map[string]any{
-			"content_type": cp.ContentType,
-			"content":      cp.PromptRequestContent,
-		})
-	case "prompt_result":
-		return enc.Encode(map[string]any{
-			"content_type": cp.ContentType,
-			"content":      cp.PromptResultContent,
-		})
-	case "image":
-		return enc.Encode(map[string]any{
-			"content_type": cp.ContentType,
-			"content":      cp.ImageContent,
-		})
-	case "video":
-		return enc.Encode(map[string]any{
-			"content_type": cp.ContentType,
-			"content":      cp.VideoContent,
-		})
-	case "audio":
-		return enc.Encode(map[string]any{
-			"content_type": cp.ContentType,
-			"content":      cp.AudioContent,
-		})
-	case "document":
-		return enc.Encode(map[string]any{
-			"content_type": cp.ContentType,
-			"content":      cp.DocumentContent,
-		})
+	case ContentTypeToolCall:
+		return enc.Encode(body(cp.ToolCallContent))
+	case ContentTypeToolResult:
+		return enc.Encode(body(cp.ToolResultContent))
+	case ContentTypeResource:
+		return enc.Encode(body(cp.ResourceContent))
+	case ContentTypeResourceRef:
+		return enc.Encode(body(cp.ResourceRefContent))
+	case ContentTypePromptRequest:
+		return enc.Encode(body(cp.PromptRequestContent))
+	case ContentTypePromptResult:
+		return enc.Encode(body(cp.PromptResultContent))
+	case ContentTypeImage:
+		return enc.Encode(body(cp.ImageContent))
+	case ContentTypeVideo:
+		return enc.Encode(body(cp.VideoContent))
+	case ContentTypeAudio:
+		return enc.Encode(body(cp.AudioContent))
+	case ContentTypeDocument:
+		return enc.Encode(body(cp.DocumentContent))
 	default:
-		// Unknown type — encode as text fallback
-		return enc.Encode(map[string]any{
-			"content_type": cp.ContentType,
-			"text":         cp.Text,
-		})
+		// Unknown content_type. If we captured the raw wire form on
+		// decode (forward-compat path), emit it verbatim so we don't
+		// lose data on round-trip. Otherwise fall back to a minimal
+		// content_type-only message (a Go-side construction with an
+		// unrecognized ContentType — rare).
+		if cp.rawMap != nil {
+			return enc.Encode(cp.rawMap)
+		}
+		out := map[string]any{wireKeyContentType: cp.ContentType}
+		if cp.Text != "" {
+			out[wireKeyText] = cp.Text
+		}
+		return enc.Encode(out)
 	}
 }
 
@@ -152,35 +147,41 @@ func (cp *ContentPart) DecodeMsgpack(dec *msgpack.Decoder) error {
 		return err
 	}
 
-	if ct, ok := raw["content_type"].(string); ok {
+	if ct, ok := raw[wireKeyContentType].(string); ok {
 		cp.ContentType = ct
 	}
 
 	switch cp.ContentType {
-	case "text", "thinking":
-		if t, ok := raw["text"].(string); ok {
+	case ContentTypeText, ContentTypeThinking:
+		if t, ok := raw[wireKeyText].(string); ok {
 			cp.Text = t
 		}
-	case "tool_call":
-		cp.ToolCallContent = decodeToolCall(raw["content"])
-	case "tool_result":
-		cp.ToolResultContent = decodeToolResult(raw["content"])
-	case "resource":
-		cp.ResourceContent = decodeResource(raw["content"])
-	case "resource_ref":
-		cp.ResourceRefContent = decodeResourceRef(raw["content"])
-	case "prompt_request":
-		cp.PromptRequestContent = decodePromptRequest(raw["content"])
-	case "prompt_result":
-		cp.PromptResultContent = decodePromptResult(raw["content"])
-	case "image":
-		cp.ImageContent = decodeImageSource(raw["content"])
-	case "video":
-		cp.VideoContent = decodeVideoSource(raw["content"])
-	case "audio":
-		cp.AudioContent = decodeAudioSource(raw["content"])
-	case "document":
-		cp.DocumentContent = decodeDocumentSource(raw["content"])
+	case ContentTypeToolCall:
+		cp.ToolCallContent = decodeAs[ToolCall](raw[wireKeyContent])
+	case ContentTypeToolResult:
+		cp.ToolResultContent = decodeAs[ToolResult](raw[wireKeyContent])
+	case ContentTypeResource:
+		cp.ResourceContent = decodeAs[Resource](raw[wireKeyContent])
+	case ContentTypeResourceRef:
+		cp.ResourceRefContent = decodeAs[ResourceReference](raw[wireKeyContent])
+	case ContentTypePromptRequest:
+		cp.PromptRequestContent = decodeAs[PromptRequest](raw[wireKeyContent])
+	case ContentTypePromptResult:
+		cp.PromptResultContent = decodeAs[PromptResult](raw[wireKeyContent])
+	case ContentTypeImage:
+		cp.ImageContent = decodeAs[ImageSource](raw[wireKeyContent])
+	case ContentTypeVideo:
+		cp.VideoContent = decodeAs[VideoSource](raw[wireKeyContent])
+	case ContentTypeAudio:
+		cp.AudioContent = decodeAs[AudioSource](raw[wireKeyContent])
+	case ContentTypeDocument:
+		cp.DocumentContent = decodeAs[DocumentSource](raw[wireKeyContent])
+	default:
+		// Unknown content_type — preserve the full wire form so
+		// EncodeMsgpack can pass it through unchanged. Forward
+		// compat for newer Rust variants the Go SDK doesn't know
+		// about yet (P2 #17).
+		cp.rawMap = raw
 	}
 
 	return nil
@@ -190,64 +191,71 @@ func (cp *ContentPart) DecodeMsgpack(dec *msgpack.Decoder) error {
 // Content Part Constructors
 // ---------------------------------------------------------------------------
 
-// TextContent creates a text content part.
-func TextContent(text string) ContentPart {
-	return ContentPart{ContentType: "text", Text: text}
+// Constructor functions are named `NewXPart` to avoid shadowing the
+// matching `XContent` field on ContentPart. Previously a constructor
+// like `ToolCallContent(tc)` had the same name as the field
+// `cp.ToolCallContent` — confusing in code and hostile to IDE
+// autocomplete. The `New*Part` form mirrors common Go conventions
+// (`NewClient`, `NewBuffer`).
+
+// NewTextPart creates a text content part.
+func NewTextPart(text string) ContentPart {
+	return ContentPart{ContentType: ContentTypeText, Text: text}
 }
 
-// ThinkingContent creates a thinking content part.
-func ThinkingContent(text string) ContentPart {
-	return ContentPart{ContentType: "thinking", Text: text}
+// NewThinkingPart creates a thinking content part.
+func NewThinkingPart(text string) ContentPart {
+	return ContentPart{ContentType: ContentTypeThinking, Text: text}
 }
 
-// ToolCallContent creates a tool_call content part.
-func ToolCallContent(tc ToolCall) ContentPart {
-	return ContentPart{ContentType: "tool_call", ToolCallContent: &tc}
+// NewToolCallPart creates a tool_call content part.
+func NewToolCallPart(tc ToolCall) ContentPart {
+	return ContentPart{ContentType: ContentTypeToolCall, ToolCallContent: &tc}
 }
 
-// ToolResultContent creates a tool_result content part.
-func ToolResultContent(tr ToolResult) ContentPart {
-	return ContentPart{ContentType: "tool_result", ToolResultContent: &tr}
+// NewToolResultPart creates a tool_result content part.
+func NewToolResultPart(tr ToolResult) ContentPart {
+	return ContentPart{ContentType: ContentTypeToolResult, ToolResultContent: &tr}
 }
 
-// ResourceContent creates a resource content part.
-func ResourceContent(r Resource) ContentPart {
-	return ContentPart{ContentType: "resource", ResourceContent: &r}
+// NewResourcePart creates a resource content part.
+func NewResourcePart(r Resource) ContentPart {
+	return ContentPart{ContentType: ContentTypeResource, ResourceContent: &r}
 }
 
-// ResourceRefContent creates a resource_ref content part.
-func ResourceRefContent(r ResourceReference) ContentPart {
-	return ContentPart{ContentType: "resource_ref", ResourceRefContent: &r}
+// NewResourceRefPart creates a resource_ref content part.
+func NewResourceRefPart(r ResourceReference) ContentPart {
+	return ContentPart{ContentType: ContentTypeResourceRef, ResourceRefContent: &r}
 }
 
-// PromptRequestContent creates a prompt_request content part.
-func PromptRequestContent(pr PromptRequest) ContentPart {
-	return ContentPart{ContentType: "prompt_request", PromptRequestContent: &pr}
+// NewPromptRequestPart creates a prompt_request content part.
+func NewPromptRequestPart(pr PromptRequest) ContentPart {
+	return ContentPart{ContentType: ContentTypePromptRequest, PromptRequestContent: &pr}
 }
 
-// PromptResultContent creates a prompt_result content part.
-func PromptResultContent(pr PromptResult) ContentPart {
-	return ContentPart{ContentType: "prompt_result", PromptResultContent: &pr}
+// NewPromptResultPart creates a prompt_result content part.
+func NewPromptResultPart(pr PromptResult) ContentPart {
+	return ContentPart{ContentType: ContentTypePromptResult, PromptResultContent: &pr}
 }
 
-// ImageContent creates an image content part.
-func ImageContent(img ImageSource) ContentPart {
-	return ContentPart{ContentType: "image", ImageContent: &img}
+// NewImagePart creates an image content part.
+func NewImagePart(img ImageSource) ContentPart {
+	return ContentPart{ContentType: ContentTypeImage, ImageContent: &img}
 }
 
-// VideoContent creates a video content part.
-func VideoContent(vid VideoSource) ContentPart {
-	return ContentPart{ContentType: "video", VideoContent: &vid}
+// NewVideoPart creates a video content part.
+func NewVideoPart(vid VideoSource) ContentPart {
+	return ContentPart{ContentType: ContentTypeVideo, VideoContent: &vid}
 }
 
-// AudioContent creates an audio content part.
-func AudioContent(aud AudioSource) ContentPart {
-	return ContentPart{ContentType: "audio", AudioContent: &aud}
+// NewAudioPart creates an audio content part.
+func NewAudioPart(aud AudioSource) ContentPart {
+	return ContentPart{ContentType: ContentTypeAudio, AudioContent: &aud}
 }
 
-// DocumentContent creates a document content part.
-func DocumentContent(doc DocumentSource) ContentPart {
-	return ContentPart{ContentType: "document", DocumentContent: &doc}
+// NewDocumentPart creates a document content part.
+func NewDocumentPart(doc DocumentSource) ContentPart {
+	return ContentPart{ContentType: ContentTypeDocument, DocumentContent: &doc}
 }
 
 // ---------------------------------------------------------------------------
@@ -350,230 +358,33 @@ type DocumentSource struct {
 }
 
 // ---------------------------------------------------------------------------
-// Decode helpers — extract typed domain objects from map[string]any
+// Decode helpers — extract typed domain objects from a decoded `any` value.
 // ---------------------------------------------------------------------------
 
-func decodeToolCall(v any) *ToolCall {
-	m, ok := v.(map[string]any)
-	if !ok {
+// decodeAs re-encodes a decoded msgpack value and unmarshals it into a
+// typed struct, letting the struct's msgpack tags drive field selection.
+// Replaces 11 hand-rolled decoders that each had to enumerate fields
+// manually — that pattern was the source of the silent data loss
+// reviewer flagged in #13 (`DurationMs`, `RangeStart/End`, `Blob`,
+// `SizeBytes`, `Messages` were all dropped). Adding a new field to a
+// struct now Just Works without a corresponding decoder edit.
+//
+// Cost: an extra msgpack marshal + unmarshal per content part. This is
+// on the per-message decode path, not per-pipeline-step. msgpack is
+// fast; in practice it's microseconds. If this ever shows up on a hot
+// path we can switch to msgpack's `Decoder.Query()` or hand-roll
+// targeted decoders for specific high-volume types.
+func decodeAs[T any](v any) *T {
+	if v == nil {
 		return nil
 	}
-	tc := &ToolCall{}
-	if id, ok := m["tool_call_id"].(string); ok {
-		tc.ToolCallID = id
-	}
-	if name, ok := m["name"].(string); ok {
-		tc.Name = name
-	}
-	if args, ok := m["arguments"].(map[string]any); ok {
-		tc.Arguments = args
-	}
-	if ns, ok := m["namespace"].(string); ok {
-		tc.Namespace = ns
-	}
-	return tc
-}
-
-func decodeToolResult(v any) *ToolResult {
-	m, ok := v.(map[string]any)
-	if !ok {
+	bytes, err := msgpack.Marshal(v)
+	if err != nil {
 		return nil
 	}
-	tr := &ToolResult{}
-	if id, ok := m["tool_call_id"].(string); ok {
-		tr.ToolCallID = id
-	}
-	if name, ok := m["tool_name"].(string); ok {
-		tr.ToolName = name
-	}
-	if content, ok := m["content"]; ok {
-		tr.Content = content
-	}
-	if isErr, ok := m["is_error"].(bool); ok {
-		tr.IsError = isErr
-	}
-	return tr
-}
-
-func decodeResource(v any) *Resource {
-	m, ok := v.(map[string]any)
-	if !ok {
+	var out T
+	if err := msgpack.Unmarshal(bytes, &out); err != nil {
 		return nil
 	}
-	r := &Resource{}
-	if id, ok := m["resource_request_id"].(string); ok {
-		r.ResourceRequestID = id
-	}
-	if uri, ok := m["uri"].(string); ok {
-		r.URI = uri
-	}
-	if name, ok := m["name"].(string); ok {
-		r.Name = name
-	}
-	if desc, ok := m["description"].(string); ok {
-		r.Description = desc
-	}
-	if rt, ok := m["resource_type"].(string); ok {
-		r.ResourceType = rt
-	}
-	if content, ok := m["content"].(string); ok {
-		r.Content = content
-	}
-	if mime, ok := m["mime_type"].(string); ok {
-		r.MimeType = mime
-	}
-	if ann, ok := m["annotations"].(map[string]any); ok {
-		r.Annotations = ann
-	}
-	if ver, ok := m["version"].(string); ok {
-		r.Version = ver
-	}
-	return r
-}
-
-func decodeResourceRef(v any) *ResourceReference {
-	m, ok := v.(map[string]any)
-	if !ok {
-		return nil
-	}
-	r := &ResourceReference{}
-	if id, ok := m["resource_request_id"].(string); ok {
-		r.ResourceRequestID = id
-	}
-	if uri, ok := m["uri"].(string); ok {
-		r.URI = uri
-	}
-	if name, ok := m["name"].(string); ok {
-		r.Name = name
-	}
-	if rt, ok := m["resource_type"].(string); ok {
-		r.ResourceType = rt
-	}
-	if sel, ok := m["selector"].(string); ok {
-		r.Selector = sel
-	}
-	return r
-}
-
-func decodePromptRequest(v any) *PromptRequest {
-	m, ok := v.(map[string]any)
-	if !ok {
-		return nil
-	}
-	pr := &PromptRequest{}
-	if id, ok := m["prompt_request_id"].(string); ok {
-		pr.PromptRequestID = id
-	}
-	if name, ok := m["name"].(string); ok {
-		pr.Name = name
-	}
-	if args, ok := m["arguments"].(map[string]any); ok {
-		pr.Arguments = args
-	}
-	if sid, ok := m["server_id"].(string); ok {
-		pr.ServerID = sid
-	}
-	return pr
-}
-
-func decodePromptResult(v any) *PromptResult {
-	m, ok := v.(map[string]any)
-	if !ok {
-		return nil
-	}
-	pr := &PromptResult{}
-	if id, ok := m["prompt_request_id"].(string); ok {
-		pr.PromptRequestID = id
-	}
-	if name, ok := m["prompt_name"].(string); ok {
-		pr.PromptName = name
-	}
-	if content, ok := m["content"].(string); ok {
-		pr.Content = content
-	}
-	if isErr, ok := m["is_error"].(bool); ok {
-		pr.IsError = isErr
-	}
-	if errMsg, ok := m["error_message"].(string); ok {
-		pr.ErrorMessage = errMsg
-	}
-	// Note: messages ([]Message) decoding is not handled here —
-	// PromptResult.Messages containing nested Messages would require
-	// recursive decode. For now, leave empty; can be added if needed.
-	return pr
-}
-
-func decodeImageSource(v any) *ImageSource {
-	m, ok := v.(map[string]any)
-	if !ok {
-		return nil
-	}
-	s := &ImageSource{}
-	if t, ok := m["type"].(string); ok {
-		s.SourceType = t
-	}
-	if d, ok := m["data"].(string); ok {
-		s.Data = d
-	}
-	if mt, ok := m["media_type"].(string); ok {
-		s.MediaType = mt
-	}
-	return s
-}
-
-func decodeVideoSource(v any) *VideoSource {
-	m, ok := v.(map[string]any)
-	if !ok {
-		return nil
-	}
-	s := &VideoSource{}
-	if t, ok := m["type"].(string); ok {
-		s.SourceType = t
-	}
-	if d, ok := m["data"].(string); ok {
-		s.Data = d
-	}
-	if mt, ok := m["media_type"].(string); ok {
-		s.MediaType = mt
-	}
-	return s
-}
-
-func decodeAudioSource(v any) *AudioSource {
-	m, ok := v.(map[string]any)
-	if !ok {
-		return nil
-	}
-	s := &AudioSource{}
-	if t, ok := m["type"].(string); ok {
-		s.SourceType = t
-	}
-	if d, ok := m["data"].(string); ok {
-		s.Data = d
-	}
-	if mt, ok := m["media_type"].(string); ok {
-		s.MediaType = mt
-	}
-	return s
-}
-
-func decodeDocumentSource(v any) *DocumentSource {
-	m, ok := v.(map[string]any)
-	if !ok {
-		return nil
-	}
-	s := &DocumentSource{}
-	if t, ok := m["type"].(string); ok {
-		s.SourceType = t
-	}
-	if d, ok := m["data"].(string); ok {
-		s.Data = d
-	}
-	if mt, ok := m["media_type"].(string); ok {
-		s.MediaType = mt
-	}
-	if title, ok := m["title"].(string); ok {
-		s.Title = title
-	}
-	return s
+	return &out
 }

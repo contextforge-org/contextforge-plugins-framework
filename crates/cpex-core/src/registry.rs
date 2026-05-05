@@ -32,8 +32,8 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use uuid::Uuid;
 use std::sync::Arc;
+use uuid::Uuid;
 
 use crate::context::PluginContext;
 use crate::hooks::payload::{Extensions, PluginPayload};
@@ -324,7 +324,6 @@ impl PluginRegistry {
         self.register_for_names_inner(plugin, config, handler, names)
     }
 
-
     /// Register a plugin with multiple handlers, each for a specific hook.
     ///
     /// Used when a plugin implements multiple hook types with different
@@ -478,15 +477,15 @@ impl Default for PluginRegistry {
 /// Returns a tuple of five vectors in execution order:
 /// (sequential, transform, audit, concurrent, fire_and_forget).
 /// Disabled plugins are excluded.
-pub fn group_by_mode(
-    entries: &[HookEntry],
-) -> (
+pub type GroupedHookEntries = (
     Vec<HookEntry>,
     Vec<HookEntry>,
     Vec<HookEntry>,
     Vec<HookEntry>,
     Vec<HookEntry>,
-) {
+);
+
+pub fn group_by_mode(entries: &[HookEntry]) -> GroupedHookEntries {
     let mut sequential = Vec::new();
     let mut transform = Vec::new();
     let mut audit = Vec::new();
@@ -622,7 +621,11 @@ mod tests {
             plugin,
             config,
             handler,
-            &["cmf.tool_pre_invoke", "cmf.tool_post_invoke", "cmf.llm_input"],
+            &[
+                "cmf.tool_pre_invoke",
+                "cmf.tool_post_invoke",
+                "cmf.llm_input",
+            ],
         )
         .unwrap();
 
@@ -643,8 +646,12 @@ mod tests {
         let h1: Arc<dyn AnyHookHandler> = Arc::new(TestHandler);
         let h2: Arc<dyn AnyHookHandler> = Arc::new(TestHandler);
 
-        assert!(reg.register_for_names_inner(p1, c1, h1, &["hook_a"]).is_ok());
-        assert!(reg.register_for_names_inner(p2, c2, h2, &["hook_a"]).is_err());
+        assert!(reg
+            .register_for_names_inner(p1, c1, h1, &["hook_a"])
+            .is_ok());
+        assert!(reg
+            .register_for_names_inner(p2, c2, h2, &["hook_a"])
+            .is_err());
     }
 
     #[test]
@@ -657,8 +664,10 @@ mod tests {
         let h1: Arc<dyn AnyHookHandler> = Arc::new(TestHandler);
         let h2: Arc<dyn AnyHookHandler> = Arc::new(TestHandler);
 
-        reg.register_for_names_inner(p_low, c_low, h1, &["hook_a"]).unwrap();
-        reg.register_for_names_inner(p_high, c_high, h2, &["hook_a"]).unwrap();
+        reg.register_for_names_inner(p_low, c_low, h1, &["hook_a"])
+            .unwrap();
+        reg.register_for_names_inner(p_high, c_high, h2, &["hook_a"])
+            .unwrap();
 
         let entries = reg.entries_for_hook(&HookType::new("hook_a"));
         assert_eq!(entries[0].plugin_ref.name(), "high"); // priority 10 first
@@ -712,7 +721,10 @@ mod tests {
         let ext = Extensions::default();
         let mut ctx = PluginContext::new();
 
-        let result = handler.invoke(&payload as &dyn PluginPayload, &ext, &mut ctx).await.unwrap();
+        let result = handler
+            .invoke(&payload as &dyn PluginPayload, &ext, &mut ctx)
+            .await
+            .unwrap();
         let fields = crate::executor::extract_erased(result).unwrap();
         assert!(fields.continue_processing);
     }

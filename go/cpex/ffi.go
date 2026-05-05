@@ -13,7 +13,6 @@ package cpex
 
 /*
 #cgo LDFLAGS: -L${SRCDIR}/../../target/release -lcpex_ffi
-#cgo CFLAGS: -I${SRCDIR}/../../crates/cpex-ffi/include
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -22,6 +21,9 @@ package cpex
 typedef void* CpexManager;
 typedef void* CpexContextTable;
 typedef void* CpexBackgroundTasks;
+
+// Runtime configuration
+int cpex_configure_runtime(int worker_threads);
 
 // Manager lifecycle
 CpexManager cpex_manager_new(const char* config_yaml, int config_len);
@@ -33,6 +35,8 @@ void cpex_shutdown(CpexManager mgr);
 // Query
 int cpex_has_hooks_for(CpexManager mgr, const char* hook_name, int hook_len);
 int cpex_plugin_count(CpexManager mgr);
+int cpex_is_initialized(CpexManager mgr);
+int cpex_plugin_names(CpexManager mgr, uint8_t** names_msgpack_out, int* names_len_out);
 
 // Invoke
 int cpex_invoke(

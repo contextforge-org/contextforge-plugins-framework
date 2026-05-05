@@ -166,7 +166,11 @@ impl PluginContextTable {
     /// per-plugin mutations should not influence subsequent plugins.
     pub fn snapshot_context(&self, plugin_id: Uuid) -> PluginContext {
         PluginContext {
-            local_state: self.local_states.get(&plugin_id).cloned().unwrap_or_default(),
+            local_state: self
+                .local_states
+                .get(&plugin_id)
+                .cloned()
+                .unwrap_or_default(),
             global_state: self.global_state.clone(),
         }
     }

@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"sync"
 	"unsafe"
 
 	"github.com/vmihailenco/msgpack/v5"
@@ -37,7 +38,23 @@ typedef void* CpexManager;
 typedef void* CpexContextTable;
 typedef void* CpexBackgroundTasks;
 
-// Extern declarations — implemented in libcpex_ffi
+// Extern declarations - implemented in libcpex_ffi.
+//
+// These are duplicated with ffi.go's preamble. CGO does NOT merge
+// declarations across multiple files' preambles in a single package -
+// each file's `import "C"` resolves only against its own preceding
+// comment block. The reviewer's "remove these, CGO resolves
+// package-wide" suggestion was tested and didn't work; CGO reports
+// "could not determine what C.cpex_X refers to" for any function
+// declared only in a sibling file's preamble.
+//
+// If you change a signature, edit BOTH this block and ffi.go's. The
+// build will fail loudly on a mismatch (Go's C type system catches
+// it), but the duplication is unavoidable until either:
+//   - all cgo entry points move to ffi.go (refactor), or
+//   - we generate the C header via cbindgen and #include it from
+//     both files.
+extern int cpex_configure_runtime(int worker_threads);
 extern CpexManager cpex_manager_new(const char* config_yaml, int config_len);
 extern CpexManager cpex_manager_new_default();
 extern int cpex_load_config(CpexManager mgr, const char* config_yaml, int config_len);
@@ -45,6 +62,8 @@ extern int cpex_initialize(CpexManager mgr);
 extern void cpex_shutdown(CpexManager mgr);
 extern int cpex_has_hooks_for(CpexManager mgr, const char* hook_name, int hook_len);
 extern int cpex_plugin_count(CpexManager mgr);
+extern int cpex_is_initialized(CpexManager mgr);
+extern int cpex_plugin_names(CpexManager mgr, uint8_t** names_msgpack_out, int* names_len_out);
 extern int cpex_invoke(
     CpexManager mgr,
     const char* hook_name, int hook_len,
@@ -69,8 +88,16 @@ import "C"
 
 // PluginManager manages the lifecycle of CPEX plugins and hook dispatch.
 // Wraps the Rust PluginManager — all plugin execution happens in Rust.
+//
+// Concurrency: `mu` serializes lifecycle (Shutdown, finalizer) against
+// in-flight cgo calls. Operations (Invoke, Initialize, queries) take
+// the *read* lock and may run in parallel with each other — the
+// underlying Rust API is `&self` and ArcSwap-backed, so concurrent
+// dispatch is safe. `Shutdown` and the GC finalizer take the *write*
+// lock so the C handle can't be freed while a cgo call is mid-flight.
 type PluginManager struct {
-	handle C.CpexManager
+	mu     sync.RWMutex
+	handle C.CpexManager // protected by mu; nil after Shutdown
 }
 
 // ContextTable holds per-plugin context state across hook invocations.
@@ -81,9 +108,39 @@ type ContextTable struct {
 
 // BackgroundTasks holds fire-and-forget task handles.
 // Opaque handle to Rust-owned data — not serialized.
+//
+// Holds *PluginManager (not the raw C handle) so `Wait()` can check
+// `mgr.handle != nil` under the manager's RWMutex — preventing a
+// use-after-free if the manager was Shutdown after the invoke that
+// produced this `BackgroundTasks`.
 type BackgroundTasks struct {
 	handle C.CpexBackgroundTasks
-	mgr    C.CpexManager // needed for wait
+	mgr    *PluginManager
+}
+
+// ConfigureRuntime sets the worker thread count for the shared tokio
+// runtime that backs every PluginManager in the process. Must be
+// called before the first NewPluginManager — once a manager has
+// been created the runtime is fixed for the process lifetime.
+//
+// Precedence: ConfigureRuntime > CPEX_FFI_WORKER_THREADS env var >
+// num_cpus default. Returns ErrCpexInvalidInput if workerThreads <= 0
+// or the runtime has already been initialized.
+func ConfigureRuntime(workerThreads int) error {
+	rc := C.cpex_configure_runtime(C.int(workerThreads))
+	return errorFromRC(int(rc), "ConfigureRuntime")
+}
+
+// finalizeManager is the GC fallback path when the caller forgot to
+// call Shutdown. Takes the write lock so it can't race with an
+// explicit Shutdown that's already running.
+func finalizeManager(m *PluginManager) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.handle != nil {
+		C.cpex_shutdown(m.handle)
+		m.handle = nil
+	}
 }
 
 // NewPluginManager creates a manager from a YAML config string.
@@ -98,13 +155,7 @@ func NewPluginManager(yaml string) (*PluginManager, error) {
 	}
 
 	mgr := &PluginManager{handle: handle}
-	runtime.SetFinalizer(mgr, func(m *PluginManager) {
-		if m.handle != nil {
-			C.cpex_shutdown(m.handle)
-			m.handle = nil
-		}
-	})
-
+	runtime.SetFinalizer(mgr, finalizeManager)
 	return mgr, nil
 }
 
@@ -117,13 +168,7 @@ func NewPluginManagerDefault() (*PluginManager, error) {
 	}
 
 	mgr := &PluginManager{handle: handle}
-	runtime.SetFinalizer(mgr, func(m *PluginManager) {
-		if m.handle != nil {
-			C.cpex_shutdown(m.handle)
-			m.handle = nil
-		}
-	})
-
+	runtime.SetFinalizer(mgr, finalizeManager)
 	return mgr, nil
 }
 
@@ -136,49 +181,65 @@ type FactoryRegistrar func(handle unsafe.Pointer) error
 // allowing callers to register plugin factories via their own FFI.
 // Must be called before LoadConfig.
 func (m *PluginManager) RegisterFactories(fn FactoryRegistrar) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if m.handle == nil {
-		return errors.New("cpex: manager is nil")
+		return fmt.Errorf("RegisterFactories: %w", ErrCpexInvalidHandle)
 	}
 	return fn(unsafe.Pointer(m.handle))
 }
 
 // LoadConfig loads a YAML config string into the manager.
 // Factories must be registered before calling this method.
+//
+// On failure, the returned error wraps one of the typed sentinels
+// (ErrCpexInvalidHandle, ErrCpexInvalidInput, ErrCpexParse,
+// ErrCpexPipeline, ErrCpexPanic). Use `errors.Is` to classify.
 func (m *PluginManager) LoadConfig(yaml string) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if m.handle == nil {
-		return errors.New("cpex: manager is nil")
+		return fmt.Errorf("LoadConfig: %w", ErrCpexInvalidHandle)
 	}
 
 	cYaml := C.CString(yaml)
 	defer C.free(unsafe.Pointer(cYaml))
 
 	rc := C.cpex_load_config(m.handle, cYaml, C.int(len(yaml)))
-	if rc != 0 {
-		return errors.New("cpex: load config failed")
-	}
-	return nil
+	return errorFromRC(int(rc), "LoadConfig")
 }
 
 // Initialize calls Initialize on all registered plugins.
 // Must be called before invoking any hooks.
+//
+// On failure, the returned error wraps one of the typed sentinels
+// (ErrCpexInvalidHandle, ErrCpexPipeline, ErrCpexTimeout, ErrCpexPanic).
 func (m *PluginManager) Initialize() error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if m.handle == nil {
-		return errors.New("cpex: manager is nil")
+		return fmt.Errorf("Initialize: %w", ErrCpexInvalidHandle)
 	}
 
 	rc := C.cpex_initialize(m.handle)
-	if rc != 0 {
-		return errors.New("cpex: initialization failed")
-	}
-	return nil
+	return errorFromRC(int(rc), "Initialize")
 }
 
 // Shutdown gracefully shuts down all plugins and releases resources.
 // After this call, the manager is invalid and must not be used.
+//
+// Takes the write lock to ensure no in-flight cgo call is racing with
+// the destruction of the C handle. Also clears the GC finalizer so
+// the finalizer can't fire later and double-free.
 func (m *PluginManager) Shutdown() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.handle == nil {
 		return
 	}
+	// Clear the finalizer first — if cpex_shutdown panics or aborts,
+	// we still don't want the finalizer to run later and try again.
+	runtime.SetFinalizer(m, nil)
 	C.cpex_shutdown(m.handle)
 	m.handle = nil
 }
@@ -186,6 +247,8 @@ func (m *PluginManager) Shutdown() {
 // HasHooksFor returns true if any plugins are registered for the hook.
 // No serialization — just a hash lookup across the FFI boundary.
 func (m *PluginManager) HasHooksFor(hookName string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if m.handle == nil {
 		return false
 	}
@@ -196,10 +259,50 @@ func (m *PluginManager) HasHooksFor(hookName string) bool {
 
 // PluginCount returns the number of registered plugins.
 func (m *PluginManager) PluginCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if m.handle == nil {
 		return 0
 	}
 	return int(C.cpex_plugin_count(m.handle))
+}
+
+// IsInitialized reports whether Initialize has been called and Shutdown
+// has not. Useful for agent control loops that may inspect manager
+// state before deciding whether to dispatch.
+func (m *PluginManager) IsInitialized() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.handle == nil {
+		return false
+	}
+	return C.cpex_is_initialized(m.handle) == 1
+}
+
+// PluginNames returns the names of all registered plugins. Order is
+// not stable across calls — the underlying registry uses a HashMap.
+func (m *PluginManager) PluginNames() ([]string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.handle == nil {
+		return nil, fmt.Errorf("PluginNames: %w", ErrCpexInvalidHandle)
+	}
+
+	var namesPtr *C.uint8_t
+	var namesLen C.int
+	rc := C.cpex_plugin_names(m.handle, &namesPtr, &namesLen)
+	if rc != 0 {
+		return nil, errorFromRC(int(rc), "PluginNames")
+	}
+
+	bytes := C.GoBytes(unsafe.Pointer(namesPtr), namesLen)
+	C.cpex_free_bytes((*C.uint8_t)(unsafe.Pointer(namesPtr)), namesLen)
+
+	var names []string
+	if err := msgpack.Unmarshal(bytes, &names); err != nil {
+		return nil, fmt.Errorf("PluginNames: decode failed: %w", err)
+	}
+	return names, nil
 }
 
 // InvokeByName invokes a hook by name with a payload and extensions.
@@ -213,8 +316,10 @@ func (m *PluginManager) InvokeByName(
 	extensions *Extensions,
 	contextTable *ContextTable,
 ) (*PipelineResult, *ContextTable, *BackgroundTasks, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if m.handle == nil {
-		return nil, nil, nil, errors.New("cpex: manager is nil")
+		return nil, nil, nil, fmt.Errorf("InvokeByName: %w", ErrCpexInvalidHandle)
 	}
 
 	// Serialize payload to MessagePack
@@ -236,10 +341,19 @@ func (m *PluginManager) InvokeByName(
 	cHookName := C.CString(hookName)
 	defer C.free(unsafe.Pointer(cHookName))
 
+	// Pass the context-table handle to Rust but DO NOT nil our local
+	// reference until we know Rust succeeded. Rust consumes the handle
+	// only at the moment of invoke (after all input validation), so
+	// pre-invoke failures (bad payload, bad extensions, etc.) leave
+	// the handle untouched and the caller's ContextTable remains valid.
+	//
+	// Caveat: on a post-invoke failure (rare — only result-serialization
+	// OOM), Rust has consumed the box but doesn't write ctOut, so the
+	// caller's ContextTable handle becomes dangling. The caller should
+	// not reuse a ContextTable after an InvokeByName error.
 	var ctHandle C.CpexContextTable
 	if contextTable != nil {
 		ctHandle = contextTable.handle
-		contextTable.handle = nil // consumed by Rust
 	}
 
 	var resultPtr *C.uint8_t
@@ -272,7 +386,14 @@ func (m *PluginManager) InvokeByName(
 	)
 
 	if rc != 0 {
-		return nil, nil, nil, errors.New("cpex: invoke failed")
+		return nil, nil, nil, errorFromRC(int(rc), "InvokeByName")
+	}
+
+	// Rust succeeded — it consumed ctHandle and produced ctOut.
+	// NOW it's safe to nil the caller's reference (the original Box
+	// was consumed by Rust; its successor is in ctOut).
+	if contextTable != nil {
+		contextTable.handle = nil
 	}
 
 	// Deserialize result from MessagePack
@@ -290,7 +411,10 @@ func (m *PluginManager) InvokeByName(
 		ct.Close()
 	})
 
-	bg := &BackgroundTasks{handle: bgOut, mgr: m.handle}
+	// Hold *PluginManager (not the raw C handle) so Wait() can check
+	// mgr.handle != nil under the manager's mutex — preventing UAF
+	// if Shutdown is called between this invoke and Wait().
+	bg := &BackgroundTasks{handle: bgOut, mgr: m}
 
 	return &result, resultCT, bg, nil
 }
@@ -323,6 +447,7 @@ func Invoke[P any](
 	typed := &TypedPipelineResult[P]{
 		ContinueProcessing: raw.ContinueProcessing,
 		Violation:          raw.Violation,
+		Errors:             raw.Errors,
 		Metadata:           raw.Metadata,
 		PayloadType:        raw.PayloadType,
 	}
@@ -349,24 +474,60 @@ func Invoke[P any](
 }
 
 // Wait blocks until all background tasks complete.
-// Returns errors from any tasks that panicked.
-func (bg *BackgroundTasks) Wait() []string {
-	if bg.handle == nil || bg.mgr == nil {
-		return nil
+// Returns structured errors from any tasks that failed (panicked,
+// errored, or timed out), plus an error if the underlying FFI call
+// failed (e.g., the manager was already shutdown). On FFI failure the
+// returned slice is nil.
+//
+// Each PluginError carries the failing plugin's name, a message, an
+// optional error code, structured details, and an optional protocol
+// error code (JSON-RPC / HTTP) — enough for an agent to classify
+// failures without parsing strings.
+//
+// Holds the manager's read lock for the duration of the cgo call so
+// the C handle can't be freed by a concurrent Shutdown.
+func (bg *BackgroundTasks) Wait() ([]PluginError, error) {
+	if bg.handle == nil {
+		return nil, nil
+	}
+	if bg.mgr == nil {
+		return nil, fmt.Errorf("BackgroundTasks.Wait: %w", ErrCpexInvalidHandle)
+	}
+
+	bg.mgr.mu.RLock()
+	defer bg.mgr.mu.RUnlock()
+	if bg.mgr.handle == nil {
+		// Rust still owns the BackgroundTasks box. The Rust-side
+		// `cpex_wait_background` consumes it even on the
+		// null-mgr path (P2 #11 fix), so we must not call into
+		// Rust without a live manager — the box would leak.
+		// Best we can do is null our handle so the caller doesn't
+		// try again, and report the error.
+		bg.handle = nil
+		return nil, fmt.Errorf("BackgroundTasks.Wait: %w (manager shutdown; background tasks abandoned)", ErrCpexInvalidHandle)
 	}
 
 	var errorsPtr *C.uint8_t
 	var errorsLen C.int
 
-	C.cpex_wait_background(bg.mgr, bg.handle, &errorsPtr, &errorsLen)
-	bg.handle = nil // consumed
+	rc := C.cpex_wait_background(bg.mgr.handle, bg.handle, &errorsPtr, &errorsLen)
+	bg.handle = nil // consumed by Rust regardless of rc (per P2 #11 fix)
+
+	if rc != 0 {
+		// Output pointers are uninitialized on rc != 0 — must NOT
+		// read them. C.GoBytes(nil, 0) is safe but reading garbage
+		// errorsPtr / errorsLen is UB.
+		return nil, errorFromRC(int(rc), "BackgroundTasks.Wait")
+	}
 
 	errorsBytes := C.GoBytes(unsafe.Pointer(errorsPtr), errorsLen)
 	C.cpex_free_bytes((*C.uint8_t)(unsafe.Pointer(errorsPtr)), errorsLen)
 
-	var errorStrings []string
-	_ = msgpack.Unmarshal(errorsBytes, &errorStrings)
-	return errorStrings
+	var pluginErrors []PluginError
+	if err := msgpack.Unmarshal(errorsBytes, &pluginErrors); err != nil {
+		return nil, fmt.Errorf("BackgroundTasks.Wait: error decode failed: %w", err)
+	}
+	return pluginErrors, nil
 }
 
 // Close releases the background task handles without waiting.
@@ -387,4 +548,3 @@ func (ct *ContextTable) Close() {
 	C.cpex_free_context_table(ct.handle)
 	ct.handle = nil
 }
-

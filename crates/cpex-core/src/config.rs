@@ -392,10 +392,9 @@ pub fn load_config(path: &Path) -> Result<CpexConfig, PluginError> {
 
 /// Parse a CPEX config from a YAML string.
 pub fn parse_config(yaml: &str) -> Result<CpexConfig, PluginError> {
-    let config: CpexConfig =
-        serde_yaml::from_str(yaml).map_err(|e| PluginError::Config {
-            message: format!("failed to parse config YAML: {}", e),
-        })?;
+    let config: CpexConfig = serde_yaml::from_str(yaml).map_err(|e| PluginError::Config {
+        message: format!("failed to parse config YAML: {}", e),
+    })?;
     validate_config(&config)?;
     Ok(config)
 }
@@ -416,8 +415,7 @@ fn validate_config(config: &CpexConfig) -> Result<(), PluginError> {
     }
 
     if config.routing_enabled() {
-        let plugin_names: HashSet<&str> =
-            config.plugins.iter().map(|p| p.name.as_str()).collect();
+        let plugin_names: HashSet<&str> = config.plugins.iter().map(|p| p.name.as_str()).collect();
 
         for (i, route) in config.routes.iter().enumerate() {
             let count = [
@@ -440,14 +438,21 @@ fn validate_config(config: &CpexConfig) -> Result<(), PluginError> {
             }
             if count > 1 {
                 return Err(PluginError::Config {
-                    message: format!("route {} has multiple entity matchers (need exactly one)", i),
+                    message: format!(
+                        "route {} has multiple entity matchers (need exactly one)",
+                        i
+                    ),
                 });
             }
 
             for plugin_ref in &route.plugins {
                 if !plugin_names.contains(plugin_ref.name()) {
                     return Err(PluginError::Config {
-                        message: format!("route {} references unknown plugin '{}'", i, plugin_ref.name()),
+                        message: format!(
+                            "route {} references unknown plugin '{}'",
+                            i,
+                            plugin_ref.name()
+                        ),
                     });
                 }
             }
@@ -620,9 +625,9 @@ fn find_matching_route<'a>(
         // Check scope compatibility
         let route_scope = route.meta.as_ref().and_then(|m| m.scope.as_deref());
         let scope_bonus = match (route_scope, request_scope) {
-            (None, _) => 0,                              // route is global
-            (Some(rs), Some(rq)) if rs == rq => 100,     // scopes match
-            (Some(_), _) => continue,                     // scope mismatch — skip
+            (None, _) => 0,                          // route is global
+            (Some(rs), Some(rq)) if rs == rq => 100, // scopes match
+            (Some(_), _) => continue,                // scope mismatch — skip
         };
 
         let entity_matcher = match entity_type {
@@ -637,10 +642,14 @@ fn find_matching_route<'a>(
             None => continue,
         };
 
-        let when_bonus = if route.when.is_some() { SPECIFICITY_WHEN_ONLY } else { 0 };
+        let when_bonus = if route.when.is_some() {
+            SPECIFICITY_WHEN_ONLY
+        } else {
+            0
+        };
         let total = base_specificity + scope_bonus + when_bonus;
 
-        if best.map_or(true, |(s, _)| total > s) {
+        if best.is_none_or(|(s, _)| total > s) {
             best = Some((total, route));
         }
     }
@@ -840,7 +849,8 @@ routes:
       tags: [pii]
 "#;
         let config = parse_config(yaml).unwrap();
-        let resolved = resolve_plugins_for_entity(&config, "tool", "get_compensation", None, &no_tags());
+        let resolved =
+            resolve_plugins_for_entity(&config, "tool", "get_compensation", None, &no_tags());
         let names: Vec<&str> = resolved.iter().map(|r| r.name.as_str()).collect();
         assert!(names.contains(&"identity"));
         assert!(names.contains(&"apl_policy"));
@@ -864,7 +874,8 @@ routes:
   - tool: get_compensation
 "#;
         let config = parse_config(yaml).unwrap();
-        let resolved = resolve_plugins_for_entity(&config, "tool", "unknown_tool", None, &no_tags());
+        let resolved =
+            resolve_plugins_for_entity(&config, "tool", "unknown_tool", None, &no_tags());
         let names: Vec<&str> = resolved.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(names, vec!["identity"]);
     }
@@ -890,7 +901,8 @@ routes:
       - specific
 "#;
         let config = parse_config(yaml).unwrap();
-        let resolved = resolve_plugins_for_entity(&config, "tool", "hr-compensation", None, &no_tags());
+        let resolved =
+            resolve_plugins_for_entity(&config, "tool", "hr-compensation", None, &no_tags());
         let names: Vec<&str> = resolved.iter().map(|r| r.name.as_str()).collect();
         assert!(names.contains(&"specific"));
         assert!(!names.contains(&"general"));
@@ -911,7 +923,8 @@ routes:
       - rate_limiter
 "#;
         let config = parse_config(yaml).unwrap();
-        let resolved = resolve_plugins_for_entity(&config, "tool", "get_compensation", None, &no_tags());
+        let resolved =
+            resolve_plugins_for_entity(&config, "tool", "get_compensation", None, &no_tags());
         assert_eq!(resolved[0].name, "rate_limiter");
         assert!(resolved[0].config_overrides.is_none());
     }
@@ -935,7 +948,8 @@ routes:
             max_requests: 10
 "#;
         let config = parse_config(yaml).unwrap();
-        let resolved = resolve_plugins_for_entity(&config, "tool", "get_compensation", None, &no_tags());
+        let resolved =
+            resolve_plugins_for_entity(&config, "tool", "get_compensation", None, &no_tags());
         assert_eq!(resolved[0].name, "rate_limiter");
         assert!(resolved[0].config_overrides.is_some());
         let overrides = resolved[0].config_overrides.as_ref().unwrap();
@@ -963,7 +977,8 @@ routes:
             sensitivity: high
 "#;
         let config = parse_config(yaml).unwrap();
-        let resolved = resolve_plugins_for_entity(&config, "tool", "get_compensation", None, &no_tags());
+        let resolved =
+            resolve_plugins_for_entity(&config, "tool", "get_compensation", None, &no_tags());
         assert_eq!(resolved.len(), 2);
         assert_eq!(resolved[0].name, "rate_limiter");
         assert!(resolved[0].config_overrides.is_none());
@@ -998,7 +1013,8 @@ routes:
       tags: [pii]
 "#;
         let config = parse_config(yaml).unwrap();
-        let resolved = resolve_plugins_for_entity(&config, "tool", "get_compensation", None, &no_tags());
+        let resolved =
+            resolve_plugins_for_entity(&config, "tool", "get_compensation", None, &no_tags());
         let names: Vec<&str> = resolved.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(names, vec!["a", "b", "c"]);
     }
@@ -1060,8 +1076,16 @@ routes:
     fn test_glob_multi_star_is_equivalent_to_single_star() {
         for pattern in &["**", "***", "*****"] {
             let matcher = StringOrList::Single(Pattern::new(*pattern));
-            assert!(matcher.matches("anything"), "pattern {} should match", pattern);
-            assert!(matcher.matches(""), "pattern {} should match empty", pattern);
+            assert!(
+                matcher.matches("anything"),
+                "pattern {} should match",
+                pattern
+            );
+            assert!(
+                matcher.matches(""),
+                "pattern {} should match empty",
+                pattern
+            );
         }
     }
 
@@ -1078,7 +1102,11 @@ routes:
         assert!(parsed.tool.matches("foo-prod"));
         assert!(!parsed.tool.matches("foo-staging"));
         let back = serde_yaml::to_string(&parsed).unwrap();
-        assert!(back.contains("*-prod"), "serialized YAML should preserve pattern: {}", back);
+        assert!(
+            back.contains("*-prod"),
+            "serialized YAML should preserve pattern: {}",
+            back
+        );
     }
 
     #[test]
@@ -1135,23 +1163,30 @@ routes:
 
         // With matching scope — scoped route wins (more specific)
         let resolved = resolve_plugins_for_entity(
-            &config, "tool", "get_compensation", Some("hr-services"), &no_tags(),
+            &config,
+            "tool",
+            "get_compensation",
+            Some("hr-services"),
+            &no_tags(),
         );
         let names: Vec<&str> = resolved.iter().map(|r| r.name.as_str()).collect();
         assert!(names.contains(&"scoped_plugin"));
         assert!(!names.contains(&"global_plugin"));
 
         // Without scope — global route matches
-        let resolved = resolve_plugins_for_entity(
-            &config, "tool", "get_compensation", None, &no_tags(),
-        );
+        let resolved =
+            resolve_plugins_for_entity(&config, "tool", "get_compensation", None, &no_tags());
         let names: Vec<&str> = resolved.iter().map(|r| r.name.as_str()).collect();
         assert!(names.contains(&"global_plugin"));
         assert!(!names.contains(&"scoped_plugin"));
 
         // With different scope — global route matches (scoped doesn't)
         let resolved = resolve_plugins_for_entity(
-            &config, "tool", "get_compensation", Some("billing"), &no_tags(),
+            &config,
+            "tool",
+            "get_compensation",
+            Some("billing"),
+            &no_tags(),
         );
         let names: Vec<&str> = resolved.iter().map(|r| r.name.as_str()).collect();
         assert!(names.contains(&"global_plugin"));
@@ -1189,9 +1224,8 @@ routes:
         let mut host_tags = HashSet::new();
         host_tags.insert("runtime_tag".to_string());
 
-        let resolved = resolve_plugins_for_entity(
-            &config, "tool", "get_compensation", None, &host_tags,
-        );
+        let resolved =
+            resolve_plugins_for_entity(&config, "tool", "get_compensation", None, &host_tags);
         let names: Vec<&str> = resolved.iter().map(|r| r.name.as_str()).collect();
 
         // Both route's static tag (pii) and host's runtime tag activate their groups
@@ -1217,11 +1251,13 @@ routes:
       - conditional_plugin
 "#;
         let config = parse_config(yaml).unwrap();
-        let resolved = resolve_plugins_for_entity(
-            &config, "tool", "get_compensation", None, &no_tags(),
-        );
+        let resolved =
+            resolve_plugins_for_entity(&config, "tool", "get_compensation", None, &no_tags());
         assert_eq!(resolved[0].name, "conditional_plugin");
-        assert_eq!(resolved[0].when.as_deref(), Some("args.include_ssn == true"));
+        assert_eq!(
+            resolved[0].when.as_deref(),
+            Some("args.include_ssn == true")
+        );
     }
 
     #[test]
@@ -1247,9 +1283,8 @@ routes:
       - route_plugin
 "#;
         let config = parse_config(yaml).unwrap();
-        let resolved = resolve_plugins_for_entity(
-            &config, "tool", "get_compensation", None, &no_tags(),
-        );
+        let resolved =
+            resolve_plugins_for_entity(&config, "tool", "get_compensation", None, &no_tags());
 
         // global_plugin has no when clause (from all group)
         let global = resolved.iter().find(|r| r.name == "global_plugin").unwrap();

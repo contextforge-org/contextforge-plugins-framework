@@ -93,18 +93,18 @@ The `ContentPart` tagged union supports all 12 content types:
 
 | Type | Constructor | Content Field |
 |------|-------------|---------------|
-| `text` | `TextContent("hello")` | `Text` |
-| `thinking` | `ThinkingContent("...")` | `Text` |
-| `tool_call` | `ToolCallContent(tc)` | `ToolCallContent` |
-| `tool_result` | `ToolResultContent(tr)` | `ToolResultContent` |
-| `resource` | `ResourceContent(r)` | `ResourceContent` |
-| `resource_ref` | `ResourceRefContent(r)` | `ResourceRefContent` |
-| `prompt_request` | `PromptRequestContent(pr)` | `PromptRequestContent` |
-| `prompt_result` | `PromptResultContent(pr)` | `PromptResultContent` |
-| `image` | `ImageContent(img)` | `ImageContent` |
-| `video` | `VideoContent(vid)` | `VideoContent` |
-| `audio` | `AudioContent(aud)` | `AudioContent` |
-| `document` | `DocumentContent(doc)` | `DocumentContent` |
+| `text` | `NewTextPart("hello")` | `Text` |
+| `thinking` | `NewThinkingPart("...")` | `Text` |
+| `tool_call` | `NewToolCallPart(tc)` | `ToolCallContent` |
+| `tool_result` | `NewToolResultPart(tr)` | `ToolResultContent` |
+| `resource` | `NewResourcePart(r)` | `ResourceContent` |
+| `resource_ref` | `NewResourceRefPart(r)` | `ResourceRefContent` |
+| `prompt_request` | `NewPromptRequestPart(pr)` | `PromptRequestContent` |
+| `prompt_result` | `NewPromptResultPart(pr)` | `PromptResultContent` |
+| `image` | `NewImagePart(img)` | `ImageContent` |
+| `video` | `NewVideoPart(vid)` | `VideoContent` |
+| `audio` | `NewAudioPart(aud)` | `AudioContent` |
+| `document` | `NewDocumentPart(doc)` | `DocumentContent` |
 
 ## Extensions
 

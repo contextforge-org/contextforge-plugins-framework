@@ -116,7 +116,7 @@ impl HookHandler<CmfHook> for ToolPolicyPlugin {
             );
             return PluginResult::deny(PluginViolation::new(
                 "pii_label_required",
-                &format!(
+                format!(
                     "Tool '{}' is PII-tagged but security context lacks PII label",
                     tool_name
                 ),
@@ -204,20 +204,18 @@ impl HookHandler<CmfHook> for HeaderInjectorPlugin {
         _ctx: &mut PluginContext,
     ) -> PluginResult<MessagePayload> {
         // Look for tool results or tool calls
-        let tool_name = payload
-            .message
-            .content
-            .iter()
-            .find_map(|cp| match cp {
-                ContentPart::ToolResult { content } => Some(content.tool_name.as_str()),
-                ContentPart::ToolCall { content } => Some(content.name.as_str()),
-                _ => None,
-            });
+        let tool_name = payload.message.content.iter().find_map(|cp| match cp {
+            ContentPart::ToolResult { content } => Some(content.tool_name.as_str()),
+            ContentPart::ToolCall { content } => Some(content.name.as_str()),
+            _ => None,
+        });
 
-        let is_error = payload.message.content.iter().any(|cp| matches!(
-            cp,
-            ContentPart::ToolResult { content } if content.is_error
-        ));
+        let is_error = payload.message.content.iter().any(|cp| {
+            matches!(
+                cp,
+                ContentPart::ToolResult { content } if content.is_error
+            )
+        });
 
         if let Some(name) = tool_name {
             // COW copy — clones mutable slots, propagates write tokens
@@ -269,5 +267,8 @@ impl PluginFactory for HeaderInjectorFactory {
 /// Register CMF demo plugin factories on a manager.
 pub fn register_cmf_factories(manager: &mut cpex_core::manager::PluginManager) {
     manager.register_factory("builtin/cmf-tool-policy", Box::new(ToolPolicyFactory));
-    manager.register_factory("builtin/cmf-header-injector", Box::new(HeaderInjectorFactory));
+    manager.register_factory(
+        "builtin/cmf-header-injector",
+        Box::new(HeaderInjectorFactory),
+    );
 }

@@ -110,11 +110,7 @@ impl PluginFactoryRegistry {
     }
 
     /// Register a factory for a given `kind` name.
-    pub fn register(
-        &mut self,
-        kind: impl Into<String>,
-        factory: Box<dyn PluginFactory>,
-    ) {
+    pub fn register(&mut self, kind: impl Into<String>, factory: Box<dyn PluginFactory>) {
         self.factories.insert(kind.into(), factory);
     }
 

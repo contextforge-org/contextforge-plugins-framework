@@ -196,7 +196,7 @@ impl Extensions {
             match (a, b) {
                 (Some(a), Some(b)) => Arc::ptr_eq(a, b),
                 (None, None) => true,
-                (_, None) => true,  // plugin never saw it — not tampering
+                (_, None) => true,        // plugin never saw it — not tampering
                 (None, Some(_)) => false, // plugin fabricated a slot
             }
         }
@@ -296,8 +296,14 @@ mod tests {
         let cow = ext.cow_copy();
 
         // Immutable slots share the same Arc — zero copy
-        assert!(Arc::ptr_eq(ext.request.as_ref().unwrap(), cow.request.as_ref().unwrap()));
-        assert!(Arc::ptr_eq(ext.meta.as_ref().unwrap(), cow.meta.as_ref().unwrap()));
+        assert!(Arc::ptr_eq(
+            ext.request.as_ref().unwrap(),
+            cow.request.as_ref().unwrap()
+        ));
+        assert!(Arc::ptr_eq(
+            ext.meta.as_ref().unwrap(),
+            cow.meta.as_ref().unwrap()
+        ));
     }
 
     #[test]
@@ -344,7 +350,11 @@ mod tests {
 
         // Can read without token
         assert_eq!(
-            cow.http.as_ref().unwrap().read().get_header("Authorization"),
+            cow.http
+                .as_ref()
+                .unwrap()
+                .read()
+                .get_header("Authorization"),
             Some("Bearer token")
         );
 
@@ -433,8 +443,8 @@ mod tests {
 
     #[test]
     fn test_cow_copy_modify_multiple_fields() {
-        use crate::extensions::DelegationExtension;
         use crate::extensions::delegation::DelegationHop;
+        use crate::extensions::DelegationExtension;
 
         // Build extensions with security, http, delegation, custom
         let mut security = SecurityExtension::default();
@@ -447,7 +457,9 @@ mod tests {
             security: Some(Arc::new(security)),
             http: Some(Arc::new(http)),
             delegation: Some(Arc::new(DelegationExtension::default())),
-            custom: Some(Arc::new([("existing".to_string(), serde_json::json!("value"))].into())),
+            custom: Some(Arc::new(
+                [("existing".to_string(), serde_json::json!("value"))].into(),
+            )),
             meta: Some(Arc::new(MetaExtension {
                 entity_type: Some("tool".into()),
                 ..Default::default()
@@ -469,8 +481,16 @@ mod tests {
 
         // 2. Inject HTTP headers (guarded)
         let token = cow.http_write_token.as_ref().unwrap();
-        cow.http.as_mut().unwrap().write(token).set_header("X-Checked", "true");
-        cow.http.as_mut().unwrap().write(token).set_header("X-Policy", "v2");
+        cow.http
+            .as_mut()
+            .unwrap()
+            .write(token)
+            .set_header("X-Checked", "true");
+        cow.http
+            .as_mut()
+            .unwrap()
+            .write(token)
+            .set_header("X-Policy", "v2");
 
         // 3. Append delegation hop (monotonic)
         cow.delegation.as_mut().unwrap().append_hop(DelegationHop {
@@ -480,27 +500,36 @@ mod tests {
         });
 
         // 4. Add custom data (mutable, no token needed)
-        cow.custom.as_mut().unwrap().insert(
-            "audit.timestamp".into(),
-            serde_json::json!("2026-04-29"),
-        );
+        cow.custom
+            .as_mut()
+            .unwrap()
+            .insert("audit.timestamp".into(), serde_json::json!("2026-04-29"));
 
         // Verify COW copy has all modifications
         let sec = cow.security.as_ref().unwrap();
-        assert!(sec.has_label("PII"));       // original
-        assert!(sec.has_label("CHECKED"));   // added
+        assert!(sec.has_label("PII")); // original
+        assert!(sec.has_label("CHECKED")); // added
         assert!(sec.has_label("COMPLIANT")); // added
 
         let http = cow.http.as_ref().unwrap().read();
         assert_eq!(http.get_header("Authorization"), Some("Bearer token")); // original
-        assert_eq!(http.get_header("X-Checked"), Some("true"));            // added
-        assert_eq!(http.get_header("X-Policy"), Some("v2"));               // added
+        assert_eq!(http.get_header("X-Checked"), Some("true")); // added
+        assert_eq!(http.get_header("X-Policy"), Some("v2")); // added
 
         assert_eq!(cow.delegation.as_ref().unwrap().chain.len(), 1);
-        assert_eq!(cow.delegation.as_ref().unwrap().chain[0].subject_id, "service-a");
+        assert_eq!(
+            cow.delegation.as_ref().unwrap().chain[0].subject_id,
+            "service-a"
+        );
 
-        assert_eq!(cow.custom.as_ref().unwrap().get("existing").unwrap(), "value");
-        assert_eq!(cow.custom.as_ref().unwrap().get("audit.timestamp").unwrap(), "2026-04-29");
+        assert_eq!(
+            cow.custom.as_ref().unwrap().get("existing").unwrap(),
+            "value"
+        );
+        assert_eq!(
+            cow.custom.as_ref().unwrap().get("audit.timestamp").unwrap(),
+            "2026-04-29"
+        );
 
         // Verify original is unchanged
         assert!(!ext.security.as_ref().unwrap().has_label("CHECKED"));
@@ -587,10 +616,7 @@ mod tests {
             merged_http.get_response_header("X-Tool-Name"),
             Some("get_compensation")
         );
-        assert_eq!(
-            merged_http.get_response_header("X-Status"),
-            Some("success")
-        );
+        assert_eq!(merged_http.get_response_header("X-Status"), Some("success"));
         // Original request headers preserved
         assert_eq!(
             merged_http.get_request_header("Authorization"),
@@ -662,20 +688,22 @@ mod tests {
         let ext = make_extensions();
 
         // Read security labels
-        let has_pii = ext.security.as_ref()
+        let has_pii = ext
+            .security
+            .as_ref()
             .map(|s| s.has_label("PII"))
             .unwrap_or(false);
         assert!(has_pii);
 
         // Read HTTP headers
-        let auth = ext.http.as_ref()
-            .map(|h| h.get_header("Authorization"))
-            .flatten();
+        let auth = ext
+            .http
+            .as_ref()
+            .and_then(|h| h.get_header("Authorization"));
         assert_eq!(auth, Some("Bearer token"));
 
         // Read meta
-        let entity = ext.meta.as_ref()
-            .and_then(|m| m.entity_type.as_deref());
+        let entity = ext.meta.as_ref().and_then(|m| m.entity_type.as_deref());
         assert_eq!(entity, Some("tool"));
 
         // No cow_copy called — zero allocations for read-only access

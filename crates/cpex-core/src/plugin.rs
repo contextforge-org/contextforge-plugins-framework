@@ -270,18 +270,17 @@ impl PluginConfig {
             .and_then(|m| m.resource.as_ref())
             .and_then(|r| r.mime_type.as_deref());
 
-        self.conditions.iter().any(|c| {
-            c.matches(
-                server_id,
-                tenant_id,
-                tool,
-                prompt,
-                resource,
-                agent,
-                user,
-                content_type,
-            )
-        })
+        let ctx = MatchContext {
+            server_id,
+            tenant_id,
+            tool,
+            prompt,
+            resource,
+            agent,
+            user,
+            content_type,
+        };
+        self.conditions.iter().any(|c| c.matches(&ctx))
     }
 }
 
@@ -355,6 +354,27 @@ pub struct PluginCondition {
     pub content_types: Option<Vec<String>>,
 }
 
+/// Bundle of optional context values used to evaluate a `PluginCondition`.
+///
+/// Each field corresponds to one of the condition's gates. `None` means
+/// "no value sourced from the extensions tree"; the condition then
+/// rejects when the corresponding `Some(set)` is set on the condition
+/// (i.e., the gate was specified but couldn't be evaluated).
+///
+/// Replaces an 8-arg `matches(...)` call where every arg was
+/// `Option<&str>` and could be misordered silently.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct MatchContext<'a> {
+    pub server_id: Option<&'a str>,
+    pub tenant_id: Option<&'a str>,
+    pub tool: Option<&'a str>,
+    pub prompt: Option<&'a str>,
+    pub resource: Option<&'a str>,
+    pub agent: Option<&'a str>,
+    pub user: Option<&'a str>,
+    pub content_type: Option<&'a str>,
+}
+
 impl PluginCondition {
     /// Whether this condition matches the given context.
     ///
@@ -363,17 +383,17 @@ impl PluginCondition {
     /// (exact match for ID-shaped fields; glob match via `wildmatch`
     /// for `user_patterns`).
     /// All specified fields must match — AND semantics within one condition.
-    pub fn matches(
-        &self,
-        server_id: Option<&str>,
-        tenant_id: Option<&str>,
-        tool: Option<&str>,
-        prompt: Option<&str>,
-        resource: Option<&str>,
-        agent: Option<&str>,
-        user: Option<&str>,
-        content_type: Option<&str>,
-    ) -> bool {
+    pub fn matches(&self, ctx: &MatchContext<'_>) -> bool {
+        let MatchContext {
+            server_id,
+            tenant_id,
+            tool,
+            prompt,
+            resource,
+            agent,
+            user,
+            content_type,
+        } = *ctx;
         let check_set = |field: &Option<HashSet<String>>, value: Option<&str>| -> bool {
             match field {
                 None => true, // not specified — matches anything

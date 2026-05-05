@@ -58,6 +58,31 @@ help:
 	@echo "  sdist             Build source distribution only"
 	@echo "  verify            Build and verify package with twine"
 	@echo ""
+	@echo "Rust (cpex-core / cpex-ffi / cpex-sdk):"
+	@echo "  rust-build        Build the Rust workspace (debug)"
+	@echo "  rust-build-release  Build the Rust workspace (release)"
+	@echo "  rust-test         Run all Rust workspace tests"
+	@echo "  rust-test-ffi     Run only the cpex-ffi crate tests"
+	@echo "  rust-fmt          Format Rust code with rustfmt"
+	@echo "  rust-clippy       Run clippy on the Rust workspace"
+	@echo "  rust-lint         Auto-fix style + clippy issues (alias for rust-lint-fix)"
+	@echo "  rust-lint-fix     Same as rust-lint — mutating fmt + clippy --fix"
+	@echo "  rust-lint-check   Read-only fmt --check + clippy (CI-safe)"
+	@echo "  rust-clean        Remove the Rust target/ directory"
+	@echo ""
+	@echo "Go (go/cpex):"
+	@echo "  go-build          Build the Go cpex package (requires libcpex_ffi)"
+	@echo "  go-test           Run Go tests"
+	@echo "  go-test-race      Run Go tests with the race detector"
+	@echo "  go-fmt            Format Go code with gofmt"
+	@echo "  go-vet            Run go vet"
+	@echo "  go-lint           Auto-fix style + lint issues (alias for go-lint-fix)"
+	@echo "  go-lint-fix       Same as go-lint — gofmt -w + vet + golangci-lint --fix"
+	@echo "  go-lint-check     Read-only gofmt -l + vet + golangci-lint (CI-safe)"
+	@echo ""
+	@echo "End-to-end:"
+	@echo "  test-all          Run Rust workspace tests + Go tests w/ -race"
+	@echo ""
 	@echo "Utilities:"
 	@echo "  clean             Remove all artifacts and builds"
 	@echo "  clean-all         Remove artifacts, builds, and venv"
@@ -401,6 +426,172 @@ env-example:
 	@test -d "$(VENV_DIR)" || $(MAKE) --no-print-directory venv
 	@pip install settings-doc
 	@settings-doc generate --class cpex.framework.settings.PluginsSettings --output-format dotenv > .env.template
+
+# =============================================================================
+# Rust workspace (cpex-core, cpex-ffi, cpex-sdk)
+# =============================================================================
+
+CARGO ?= cargo
+GO    ?= go
+GO_DIR = go/cpex
+
+.PHONY: rust-build
+rust-build:
+	@echo "🦀 Building Rust workspace (debug)..."
+	@$(CARGO) build --workspace
+	@echo "✅  Rust workspace built"
+
+.PHONY: rust-build-release
+rust-build-release:
+	@echo "🦀 Building Rust workspace (release)..."
+	@$(CARGO) build --release --workspace
+	@echo "✅  Rust workspace built (release)"
+
+.PHONY: rust-test
+rust-test:
+	@echo "🧪 Running Rust workspace tests..."
+	@$(CARGO) test --workspace
+	@echo "✅  Rust tests passed"
+
+.PHONY: rust-test-ffi
+rust-test-ffi:
+	@echo "🧪 Running cpex-ffi tests..."
+	@$(CARGO) test -p cpex-ffi --lib
+	@echo "✅  cpex-ffi tests passed"
+
+.PHONY: rust-fmt
+rust-fmt:
+	@echo "🦀 Formatting Rust code..."
+	@$(CARGO) fmt --all
+	@echo "✅  Rust code formatted"
+
+.PHONY: rust-clippy
+rust-clippy:
+	@echo "🦀 Running clippy..."
+	@$(CARGO) clippy --workspace --all-targets -- -D warnings
+	@echo "✅  Clippy clean"
+
+# rust-lint is a developer convenience: format the code, then apply
+# clippy's auto-fixes. --allow-dirty/--allow-staged let clippy run on
+# in-progress edits rather than refusing on a non-clean tree.
+.PHONY: rust-lint
+rust-lint: rust-lint-fix
+
+.PHONY: rust-lint-fix
+rust-lint-fix:
+	@echo "🦀 Formatting + auto-fixing Rust..."
+	@$(CARGO) fmt --all
+	@$(CARGO) clippy --workspace --all-targets --fix --allow-dirty --allow-staged -- -D warnings
+	@echo "✅  Rust lint-fix complete"
+
+# rust-lint-check is the CI-safe variant: no writes. Fails if formatting
+# drifted (fmt --check) or clippy has any warning.
+.PHONY: rust-lint-check
+rust-lint-check:
+	@echo "🦀 Checking Rust formatting + clippy (read-only)..."
+	@$(CARGO) fmt --all -- --check
+	@$(CARGO) clippy --workspace --all-targets -- -D warnings
+	@echo "✅  Rust lint-check passed"
+
+.PHONY: rust-clean
+rust-clean:
+	@echo "🧹 Removing Rust target directory..."
+	@$(CARGO) clean
+	@echo "✅  target/ removed"
+
+# =============================================================================
+# Go bindings (go/cpex)
+# =============================================================================
+#
+# go/cpex links against the cpex-ffi cdylib at target/release. Targets
+# below that touch Go ensure the release build is current first — Go's
+# linker errors on missing libcpex_ffi.dylib are easy to misread.
+
+.PHONY: go-build
+go-build: rust-build-release
+	@echo "🐹 Building Go cpex package..."
+	@cd $(GO_DIR) && $(GO) build ./...
+	@echo "✅  Go package built"
+
+.PHONY: go-test
+go-test: rust-build-release
+	@echo "🧪 Running Go tests..."
+	@cd $(GO_DIR) && $(GO) test -count=1 ./...
+	@echo "✅  Go tests passed"
+
+.PHONY: go-test-race
+go-test-race: rust-build-release
+	@echo "🧪 Running Go tests with race detector..."
+	@cd $(GO_DIR) && $(GO) test -count=1 -race ./...
+	@echo "✅  Go tests passed (with -race)"
+
+.PHONY: go-vet
+go-vet: rust-build-release
+	@echo "🐹 Running go vet..."
+	@cd $(GO_DIR) && $(GO) vet ./...
+	@echo "✅  go vet clean"
+
+# go-fmt rewrites .go files in place via gofmt. Read-only counterpart
+# is `gofmt -l`, used inside go-lint-check.
+.PHONY: go-fmt
+go-fmt:
+	@echo "🐹 Formatting Go code..."
+	@cd $(GO_DIR) && $(GO) fmt ./...
+	@echo "✅  Go code formatted"
+
+# go-lint is a developer convenience: format, vet, then run
+# golangci-lint with --fix. We require golangci-lint to be installed —
+# print an install hint rather than silently skipping it (skipping
+# would let style drift land unnoticed).
+GOLANGCI_LINT ?= golangci-lint
+
+.PHONY: go-lint
+go-lint: go-lint-fix
+
+.PHONY: go-lint-fix
+go-lint-fix: rust-build-release
+	@command -v $(GOLANGCI_LINT) >/dev/null 2>&1 || { \
+		echo "❌ golangci-lint not found. Install:"; \
+		echo "    brew install golangci-lint"; \
+		echo "    # or: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
+		exit 1; \
+	}
+	@echo "🐹 Formatting + auto-fixing Go..."
+	@cd $(GO_DIR) && $(GO) fmt ./...
+	@cd $(GO_DIR) && $(GO) vet ./...
+	@cd $(GO_DIR) && $(GOLANGCI_LINT) run --fix ./...
+	@echo "✅  Go lint-fix complete"
+
+# go-lint-check is the CI-safe variant: read-only. `gofmt -l` lists
+# files that would be reformatted and we fail if that list is non-empty.
+.PHONY: go-lint-check
+go-lint-check: rust-build-release
+	@command -v $(GOLANGCI_LINT) >/dev/null 2>&1 || { \
+		echo "❌ golangci-lint not found. Install:"; \
+		echo "    brew install golangci-lint"; \
+		echo "    # or: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
+		exit 1; \
+	}
+	@echo "🐹 Checking Go formatting + vet + golangci-lint (read-only)..."
+	@cd $(GO_DIR) && unformatted=$$(gofmt -l .); \
+		if [ -n "$$unformatted" ]; then \
+			echo "❌ Files need formatting:"; echo "$$unformatted"; \
+			exit 1; \
+		fi
+	@cd $(GO_DIR) && $(GO) vet ./...
+	@cd $(GO_DIR) && $(GOLANGCI_LINT) run ./...
+	@echo "✅  Go lint-check passed"
+
+# =============================================================================
+# End-to-end
+# =============================================================================
+
+# test-all bundles the Rust workspace tests and the Go tests under
+# the race detector. Skips the Python pytest suite — use
+# `make test rust-test go-test-race` if you want all three.
+.PHONY: test-all
+test-all: rust-test go-test-race
+	@echo "✅  Rust + Go test suites passed"
 
 # =============================================================================
 # Development shortcuts
