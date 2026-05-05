@@ -80,8 +80,13 @@ help:
 	@echo "  go-lint-fix       Same as go-lint — gofmt -w + vet + golangci-lint --fix"
 	@echo "  go-lint-check     Read-only gofmt -l + vet + golangci-lint (CI-safe)"
 	@echo ""
+	@echo "Examples:"
+	@echo "  examples-build    Build all Rust + Go examples (catches stale APIs)"
+	@echo "  examples-run      Run all examples end-to-end"
+	@echo ""
 	@echo "End-to-end:"
 	@echo "  test-all          Run Rust workspace tests + Go tests w/ -race"
+	@echo "  ci                Lint-check + tests + examples-build (CI gate)"
 	@echo ""
 	@echo "Utilities:"
 	@echo "  clean             Remove all artifacts and builds"
@@ -583,6 +588,52 @@ go-lint-check: rust-build-release
 	@echo "✅  Go lint-check passed"
 
 # =============================================================================
+# Examples
+# =============================================================================
+#
+# Building examples is the cheapest way to catch stale public-API usage:
+# cargo test / go test only build code reachable from tests, so an
+# example file using a renamed function compiles fine in isolation but
+# breaks at example-build time. Wire this into CI.
+
+GO_EXAMPLES_DIR = examples/go-demo
+
+.PHONY: rust-examples-build
+rust-examples-build:
+	@echo "🦀 Building Rust examples..."
+	@$(CARGO) build --examples --workspace
+	@echo "✅  Rust examples built"
+
+.PHONY: go-examples-build
+go-examples-build: rust-build-release
+	@echo "🐹 Building Go examples..."
+	@cd $(GO_EXAMPLES_DIR) && $(GO) build ./...
+	@echo "✅  Go examples built"
+
+.PHONY: examples-build
+examples-build: rust-examples-build go-examples-build
+	@echo "✅  All examples built"
+
+# Running examples — useful for manual smoke-testing. Output goes to
+# stdout and may be noisy. Each example is self-contained: prints
+# scenario output and exits 0 on success.
+.PHONY: examples-run
+examples-run: examples-build
+	@echo "🏃 Running cpex-core plugin_demo..."
+	@$(CARGO) run --example plugin_demo -p cpex-core --quiet >/dev/null
+	@echo "✅  plugin_demo OK"
+	@echo "🏃 Running cpex-core cmf_capabilities_demo..."
+	@$(CARGO) run --example cmf_capabilities_demo -p cpex-core --quiet >/dev/null
+	@echo "✅  cmf_capabilities_demo OK"
+	@echo "🏃 Running go-demo (generic payload)..."
+	@cd $(GO_EXAMPLES_DIR) && $(GO) run . >/dev/null
+	@echo "✅  go-demo OK"
+	@echo "🏃 Running go-demo cmf-demo..."
+	@cd $(GO_EXAMPLES_DIR) && $(GO) run ./cmd/cmf-demo >/dev/null
+	@echo "✅  cmf-demo OK"
+	@echo "✅  All examples ran successfully"
+
+# =============================================================================
 # End-to-end
 # =============================================================================
 
@@ -592,6 +643,13 @@ go-lint-check: rust-build-release
 .PHONY: test-all
 test-all: rust-test go-test-race
 	@echo "✅  Rust + Go test suites passed"
+
+# ci is the canonical CI gate: read-only lint checks, full test
+# suites, and example builds. If this passes locally, the same checks
+# will pass in CI.
+.PHONY: ci
+ci: rust-lint-check test-all examples-build
+	@echo "✅  CI gate passed (lint + tests + examples)"
 
 # =============================================================================
 # Development shortcuts

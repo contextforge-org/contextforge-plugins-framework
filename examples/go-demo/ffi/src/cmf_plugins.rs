@@ -161,7 +161,7 @@ impl HookHandler<CmfHook> for ToolPolicyPlugin {
 pub struct ToolPolicyFactory;
 
 impl PluginFactory for ToolPolicyFactory {
-    fn create(&self, config: &PluginConfig) -> Result<PluginInstance, PluginError> {
+    fn create(&self, config: &PluginConfig) -> Result<PluginInstance, Box<PluginError>> {
         let plugin = Arc::new(ToolPolicyPlugin {
             cfg: config.clone(),
         });
@@ -244,7 +244,7 @@ impl HookHandler<CmfHook> for HeaderInjectorPlugin {
 pub struct HeaderInjectorFactory;
 
 impl PluginFactory for HeaderInjectorFactory {
-    fn create(&self, config: &PluginConfig) -> Result<PluginInstance, PluginError> {
+    fn create(&self, config: &PluginConfig) -> Result<PluginInstance, Box<PluginError>> {
         let plugin = Arc::new(HeaderInjectorPlugin {
             cfg: config.clone(),
         });

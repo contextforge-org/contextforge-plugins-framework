@@ -65,11 +65,11 @@ impl Plugin for IdentityResolver {
     fn config(&self) -> &PluginConfig {
         &self.cfg
     }
-    async fn initialize(&self) -> Result<(), PluginError> {
+    async fn initialize(&self) -> Result<(), Box<PluginError>> {
         println!("  [identity-resolver] initialized");
         Ok(())
     }
-    async fn shutdown(&self) -> Result<(), PluginError> {
+    async fn shutdown(&self) -> Result<(), Box<PluginError>> {
         println!("  [identity-resolver] shutdown");
         Ok(())
     }
@@ -206,7 +206,7 @@ impl HookHandler<ToolPostInvoke> for AuditLogger {
 
 struct IdentityFactory;
 impl PluginFactory for IdentityFactory {
-    fn create(&self, config: &PluginConfig) -> Result<PluginInstance, PluginError> {
+    fn create(&self, config: &PluginConfig) -> Result<PluginInstance, Box<PluginError>> {
         let plugin = Arc::new(IdentityResolver {
             cfg: config.clone(),
         });
@@ -228,7 +228,7 @@ impl PluginFactory for IdentityFactory {
 
 struct PiiGuardFactory;
 impl PluginFactory for PiiGuardFactory {
-    fn create(&self, config: &PluginConfig) -> Result<PluginInstance, PluginError> {
+    fn create(&self, config: &PluginConfig) -> Result<PluginInstance, Box<PluginError>> {
         let plugin = Arc::new(PiiGuard {
             cfg: config.clone(),
         });
@@ -244,7 +244,7 @@ impl PluginFactory for PiiGuardFactory {
 
 struct AuditLoggerFactory;
 impl PluginFactory for AuditLoggerFactory {
-    fn create(&self, config: &PluginConfig) -> Result<PluginInstance, PluginError> {
+    fn create(&self, config: &PluginConfig) -> Result<PluginInstance, Box<PluginError>> {
         let plugin = Arc::new(AuditLogger {
             cfg: config.clone(),
         });

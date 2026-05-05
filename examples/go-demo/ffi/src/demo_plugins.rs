@@ -94,7 +94,7 @@ impl HookHandler<GenericHook> for IdentityChecker {
 pub struct IdentityCheckerFactory;
 
 impl PluginFactory for IdentityCheckerFactory {
-    fn create(&self, config: &PluginConfig) -> Result<PluginInstance, PluginError> {
+    fn create(&self, config: &PluginConfig) -> Result<PluginInstance, Box<PluginError>> {
         let plugin = Arc::new(IdentityChecker {
             cfg: config.clone(),
         });
@@ -182,7 +182,7 @@ impl HookHandler<GenericHook> for PiiGuard {
 pub struct PiiGuardFactory;
 
 impl PluginFactory for PiiGuardFactory {
-    fn create(&self, config: &PluginConfig) -> Result<PluginInstance, PluginError> {
+    fn create(&self, config: &PluginConfig) -> Result<PluginInstance, Box<PluginError>> {
         let plugin = Arc::new(PiiGuard {
             cfg: config.clone(),
         });
@@ -247,7 +247,7 @@ impl HookHandler<GenericHook> for AuditLogger {
 pub struct AuditLoggerFactory;
 
 impl PluginFactory for AuditLoggerFactory {
-    fn create(&self, config: &PluginConfig) -> Result<PluginInstance, PluginError> {
+    fn create(&self, config: &PluginConfig) -> Result<PluginInstance, Box<PluginError>> {
         let plugin = Arc::new(AuditLogger {
             cfg: config.clone(),
         });

@@ -383,7 +383,7 @@ impl StringOrList {
 // ---------------------------------------------------------------------------
 
 /// Load and parse a CPEX config from a YAML file.
-pub fn load_config(path: &Path) -> Result<CpexConfig, PluginError> {
+pub fn load_config(path: &Path) -> Result<CpexConfig, Box<PluginError>> {
     let content = std::fs::read_to_string(path).map_err(|e| PluginError::Config {
         message: format!("failed to read config file '{}': {}", path.display(), e),
     })?;
@@ -391,7 +391,7 @@ pub fn load_config(path: &Path) -> Result<CpexConfig, PluginError> {
 }
 
 /// Parse a CPEX config from a YAML string.
-pub fn parse_config(yaml: &str) -> Result<CpexConfig, PluginError> {
+pub fn parse_config(yaml: &str) -> Result<CpexConfig, Box<PluginError>> {
     let config: CpexConfig = serde_yaml::from_str(yaml).map_err(|e| PluginError::Config {
         message: format!("failed to parse config YAML: {}", e),
     })?;
@@ -404,13 +404,13 @@ pub fn parse_config(yaml: &str) -> Result<CpexConfig, PluginError> {
 // ---------------------------------------------------------------------------
 
 /// Validate a parsed config for structural correctness.
-fn validate_config(config: &CpexConfig) -> Result<(), PluginError> {
+fn validate_config(config: &CpexConfig) -> Result<(), Box<PluginError>> {
     let mut seen_names = HashSet::new();
     for plugin in &config.plugins {
         if !seen_names.insert(&plugin.name) {
-            return Err(PluginError::Config {
+            return Err(Box::new(PluginError::Config {
                 message: format!("duplicate plugin name: '{}'", plugin.name),
-            });
+            }));
         }
     }
 
@@ -429,31 +429,31 @@ fn validate_config(config: &CpexConfig) -> Result<(), PluginError> {
             .count();
 
             if count == 0 {
-                return Err(PluginError::Config {
+                return Err(Box::new(PluginError::Config {
                     message: format!(
                         "route {} has no entity matcher (need tool, resource, prompt, or llm)",
                         i
                     ),
-                });
+                }));
             }
             if count > 1 {
-                return Err(PluginError::Config {
+                return Err(Box::new(PluginError::Config {
                     message: format!(
                         "route {} has multiple entity matchers (need exactly one)",
                         i
                     ),
-                });
+                }));
             }
 
             for plugin_ref in &route.plugins {
                 if !plugin_names.contains(plugin_ref.name()) {
-                    return Err(PluginError::Config {
+                    return Err(Box::new(PluginError::Config {
                         message: format!(
                             "route {} references unknown plugin '{}'",
                             i,
                             plugin_ref.name()
                         ),
-                    });
+                    }));
                 }
             }
         }
@@ -461,13 +461,13 @@ fn validate_config(config: &CpexConfig) -> Result<(), PluginError> {
         for (group_name, group) in &config.global.policies {
             for plugin_ref in &group.plugins {
                 if !plugin_names.contains(plugin_ref.name()) {
-                    return Err(PluginError::Config {
+                    return Err(Box::new(PluginError::Config {
                         message: format!(
                             "policy group '{}' references unknown plugin '{}'",
                             group_name,
                             plugin_ref.name()
                         ),
-                    });
+                    }));
                 }
             }
         }

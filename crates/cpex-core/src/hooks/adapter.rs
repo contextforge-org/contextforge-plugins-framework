@@ -84,7 +84,7 @@ where
         payload: &dyn PluginPayload,
         extensions: &Extensions,
         ctx: &mut PluginContext,
-    ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+    ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
         let typed_ref: &H::Payload =
             payload
                 .as_any()

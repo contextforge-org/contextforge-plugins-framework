@@ -260,7 +260,7 @@ fn instantiate_plugins_into(
     target_registry: &mut PluginRegistry,
     plugin_configs: &[crate::plugin::PluginConfig],
     factories: &PluginFactoryRegistry,
-) -> Result<(), PluginError> {
+) -> Result<(), Box<PluginError>> {
     for plugin_config in plugin_configs {
         let factory = factories
             .get(&plugin_config.kind)
@@ -275,7 +275,7 @@ fn instantiate_plugins_into(
 
         target_registry
             .register_multi_handler(instance.plugin, plugin_config.clone(), instance.handlers)
-            .map_err(|msg| PluginError::Config { message: msg })?;
+            .map_err(|msg| Box::new(PluginError::Config { message: msg }))?;
 
         info!(
             "Registered plugin '{}' (kind: '{}') for hooks: {:?}",
@@ -405,7 +405,7 @@ impl PluginManager {
     /// manager.load_config_file(Path::new("plugins/config.yaml"))?;
     /// manager.initialize().await?;
     /// ```
-    pub fn load_config_file(&self, path: &Path) -> Result<(), PluginError> {
+    pub fn load_config_file(&self, path: &Path) -> Result<(), Box<PluginError>> {
         let cpex_config = config::load_config(path)?;
         self.load_config(cpex_config)
     }
@@ -415,7 +415,7 @@ impl PluginManager {
     /// Looks up each plugin's `kind` in the factory registry,
     /// instantiates the plugins, and registers them with their
     /// hook names from the config.
-    pub fn load_config(&self, cpex_config: CpexConfig) -> Result<(), PluginError> {
+    pub fn load_config(&self, cpex_config: CpexConfig) -> Result<(), Box<PluginError>> {
         warn_on_inactive_settings(&cpex_config);
 
         // Build the new snapshot from the current one — copy-on-write so
@@ -451,7 +451,7 @@ impl PluginManager {
     pub fn from_config(
         cpex_config: CpexConfig,
         factories: &PluginFactoryRegistry,
-    ) -> Result<Self, PluginError> {
+    ) -> Result<Self, Box<PluginError>> {
         warn_on_inactive_settings(&cpex_config);
 
         let manager = Self::new(ManagerConfig {
@@ -498,7 +498,7 @@ impl PluginManager {
         &self,
         plugin: Arc<P>,
         config: PluginConfig,
-    ) -> Result<(), PluginError>
+    ) -> Result<(), Box<PluginError>>
     where
         H: HookTypeDef,
         H::Result: Into<PluginResult<H::Payload>>,
@@ -509,7 +509,7 @@ impl PluginManager {
         self.try_mutate_runtime(|snap| {
             snap.registry
                 .register::<H>(plugin, config, handler)
-                .map_err(|msg| PluginError::Config { message: msg })
+                .map_err(|msg| Box::new(PluginError::Config { message: msg }))
         })?;
         self.clear_routing_cache();
         Ok(())
@@ -533,7 +533,7 @@ impl PluginManager {
         plugin: Arc<P>,
         config: PluginConfig,
         names: &[&str],
-    ) -> Result<(), PluginError>
+    ) -> Result<(), Box<PluginError>>
     where
         H: HookTypeDef,
         H::Result: Into<PluginResult<H::Payload>>,
@@ -544,7 +544,7 @@ impl PluginManager {
         self.try_mutate_runtime(|snap| {
             snap.registry
                 .register_for_names::<H>(plugin, config, handler, names)
-                .map_err(|msg| PluginError::Config { message: msg })
+                .map_err(|msg| Box::new(PluginError::Config { message: msg }))
         })?;
         self.clear_routing_cache();
         Ok(())
@@ -560,11 +560,11 @@ impl PluginManager {
         plugin: Arc<dyn Plugin>,
         config: PluginConfig,
         handler: Arc<dyn AnyHookHandler>,
-    ) -> Result<(), PluginError> {
+    ) -> Result<(), Box<PluginError>> {
         self.try_mutate_runtime(|snap| {
             snap.registry
                 .register::<H>(plugin, config, handler)
-                .map_err(|msg| PluginError::Config { message: msg })
+                .map_err(|msg| Box::new(PluginError::Config { message: msg }))
         })?;
         self.clear_routing_cache();
         Ok(())
@@ -579,7 +579,7 @@ impl PluginManager {
     /// Calls `plugin.initialize()` on each registered plugin. Must be
     /// called before invoking any hooks. Idempotent — calling twice
     /// has no effect.
-    pub async fn initialize(&self) -> Result<(), PluginError> {
+    pub async fn initialize(&self) -> Result<(), Box<PluginError>> {
         if self.initialized.load(Ordering::Acquire) {
             return Ok(());
         }
@@ -615,14 +615,14 @@ impl PluginManager {
                         }
                     }
 
-                    return Err(PluginError::Execution {
+                    return Err(Box::new(PluginError::Execution {
                         plugin_name,
                         message: format!("initialization failed: {}", e),
                         source: Some(Box::new(e)),
                         code: None,
                         details: std::collections::HashMap::new(),
                         proto_error_code: None,
-                    });
+                    }));
                 }
 
                 initialized_plugins.push(plugin_name);
@@ -1271,10 +1271,10 @@ mod tests {
         fn config(&self) -> &PluginConfig {
             &self.cfg
         }
-        async fn initialize(&self) -> Result<(), PluginError> {
+        async fn initialize(&self) -> Result<(), Box<PluginError>> {
             Ok(())
         }
-        async fn shutdown(&self) -> Result<(), PluginError> {
+        async fn shutdown(&self) -> Result<(), Box<PluginError>> {
             Ok(())
         }
     }
@@ -1300,10 +1300,10 @@ mod tests {
         fn config(&self) -> &PluginConfig {
             &self.cfg
         }
-        async fn initialize(&self) -> Result<(), PluginError> {
+        async fn initialize(&self) -> Result<(), Box<PluginError>> {
             Ok(())
         }
-        async fn shutdown(&self) -> Result<(), PluginError> {
+        async fn shutdown(&self) -> Result<(), Box<PluginError>> {
             Ok(())
         }
     }
@@ -1329,15 +1329,15 @@ mod tests {
             _payload: &dyn PluginPayload,
             _extensions: &Extensions,
             _ctx: &mut PluginContext,
-        ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
-            Err(PluginError::Execution {
+        ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
+            Err(Box::new(PluginError::Execution {
                 plugin_name: "error-plugin".into(),
                 message: "simulated failure".into(),
                 source: None,
                 code: None,
                 details: std::collections::HashMap::new(),
                 proto_error_code: None,
-            })
+            }))
         }
 
         fn hook_type_name(&self) -> &'static str {
@@ -1596,7 +1596,7 @@ mod tests {
                 _payload: &dyn PluginPayload,
                 _extensions: &Extensions,
                 _ctx: &mut PluginContext,
-            ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+            ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
                 self.counts[self.idx].fetch_add(1, Ordering::SeqCst);
                 let result: PluginResult<TestPayload> = PluginResult::allow();
                 Ok(crate::executor::erase_result(result))
@@ -1700,7 +1700,7 @@ mod tests {
                 _payload: &dyn PluginPayload,
                 _extensions: &Extensions,
                 _ctx: &mut PluginContext,
-            ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+            ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
                 FIRED.fetch_add(1, Ordering::SeqCst);
                 let result: PluginResult<TestPayload> = PluginResult::allow();
                 Ok(crate::executor::erase_result(result))
@@ -1790,7 +1790,7 @@ mod tests {
                 _payload: &dyn PluginPayload,
                 _extensions: &Extensions,
                 _ctx: &mut PluginContext,
-            ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+            ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
                 INVOKE_COUNT.fetch_add(1, Ordering::SeqCst);
                 let result: PluginResult<TestPayload> = PluginResult::allow();
                 Ok(crate::executor::erase_result(result))
@@ -2059,10 +2059,10 @@ mod tests {
         fn config(&self) -> &PluginConfig {
             &self.cfg
         }
-        async fn initialize(&self) -> Result<(), PluginError> {
+        async fn initialize(&self) -> Result<(), Box<PluginError>> {
             Ok(())
         }
-        async fn shutdown(&self) -> Result<(), PluginError> {
+        async fn shutdown(&self) -> Result<(), Box<PluginError>> {
             Ok(())
         }
     }
@@ -2092,7 +2092,7 @@ mod tests {
             _payload: &dyn PluginPayload,
             _extensions: &Extensions,
             _ctx: &mut PluginContext,
-        ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+        ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
             tokio::time::sleep(std::time::Duration::from_millis(self.delay_ms)).await;
             let result: PluginResult<TestPayload> = PluginResult::allow();
             Ok(crate::executor::erase_result(result))
@@ -2213,7 +2213,7 @@ mod tests {
                 _payload: &dyn PluginPayload,
                 _extensions: &Extensions,
                 _ctx: &mut PluginContext,
-            ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+            ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
                 // Small sleep to ensure both tasks are spawned before either finishes
                 tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                 CALL_COUNT.fetch_add(1, Ordering::SeqCst);
@@ -2280,7 +2280,7 @@ mod tests {
                 _payload: &dyn PluginPayload,
                 _extensions: &Extensions,
                 _ctx: &mut PluginContext,
-            ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+            ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
                 let result: PluginResult<TestPayload> =
                     PluginResult::deny(PluginViolation::new("denied", "fast deny"));
                 Ok(crate::executor::erase_result(result))
@@ -2298,7 +2298,7 @@ mod tests {
                 _payload: &dyn PluginPayload,
                 _extensions: &Extensions,
                 _ctx: &mut PluginContext,
-            ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+            ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
                 tokio::time::sleep(Duration::from_secs(2)).await;
                 // If the task isn't aborted at the sleep's await point,
                 // this fetch_add fires after the pipeline already returned.
@@ -2380,7 +2380,7 @@ mod tests {
                 _payload: &dyn PluginPayload,
                 _extensions: &Extensions,
                 _ctx: &mut PluginContext,
-            ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+            ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
                 let result: PluginResult<TestPayload> =
                     PluginResult::deny(PluginViolation::new("denied", "fast deny"));
                 Ok(crate::executor::erase_result(result))
@@ -2398,7 +2398,7 @@ mod tests {
                 _payload: &dyn PluginPayload,
                 _extensions: &Extensions,
                 _ctx: &mut PluginContext,
-            ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+            ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
                 ALLOW_RAN.fetch_add(1, Ordering::SeqCst);
                 let result: PluginResult<TestPayload> = PluginResult::allow();
                 Ok(crate::executor::erase_result(result))
@@ -2463,7 +2463,7 @@ mod tests {
             _payload: &dyn PluginPayload,
             _extensions: &Extensions,
             _ctx: &mut PluginContext,
-        ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+        ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
             panic!("simulated panic in concurrent plugin task");
         }
         fn hook_type_name(&self) -> &'static str {
@@ -2521,7 +2521,7 @@ mod tests {
                 _payload: &dyn PluginPayload,
                 _extensions: &Extensions,
                 _ctx: &mut PluginContext,
-            ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+            ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
                 SURVIVOR_CALLS.fetch_add(1, Ordering::SeqCst);
                 let result: PluginResult<TestPayload> = PluginResult::allow();
                 Ok(crate::executor::erase_result(result))
@@ -2636,7 +2636,7 @@ mod tests {
                 _payload: &dyn PluginPayload,
                 _extensions: &Extensions,
                 _ctx: &mut PluginContext,
-            ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+            ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
                 tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                 TASK_COMPLETED.store(true, Ordering::SeqCst);
                 let result: PluginResult<TestPayload> = PluginResult::allow();
@@ -2708,7 +2708,7 @@ mod tests {
                 _payload: &dyn PluginPayload,
                 _extensions: &Extensions,
                 _ctx: &mut PluginContext,
-            ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+            ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
                 tokio::time::sleep(std::time::Duration::from_millis(150)).await;
                 FAF_COMPLETED.store(true, Ordering::SeqCst);
                 let result: PluginResult<TestPayload> = PluginResult::allow();
@@ -2762,7 +2762,7 @@ mod tests {
                 _payload: &dyn PluginPayload,
                 _extensions: &Extensions,
                 ctx: &mut PluginContext,
-            ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+            ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
                 ctx.set_global("writer_was_here", serde_json::Value::Bool(true));
                 let result: PluginResult<TestPayload> = PluginResult::allow();
                 Ok(crate::executor::erase_result(result))
@@ -2783,7 +2783,7 @@ mod tests {
                 _payload: &dyn PluginPayload,
                 _extensions: &Extensions,
                 ctx: &mut PluginContext,
-            ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+            ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
                 if ctx.get_global("writer_was_here").is_some() {
                     self.saw_writer
                         .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -2844,7 +2844,7 @@ mod tests {
                 _payload: &dyn PluginPayload,
                 _extensions: &Extensions,
                 ctx: &mut PluginContext,
-            ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+            ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
                 // Increment a counter in local_state
                 let count = ctx
                     .get_local("call_count")
@@ -2934,7 +2934,7 @@ mod tests {
                 _payload: &dyn PluginPayload,
                 _extensions: &Extensions,
                 ctx: &mut PluginContext,
-            ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+            ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
                 let mut chain = ctx
                     .get_global("chain")
                     .and_then(|v| v.as_array())
@@ -3010,7 +3010,7 @@ mod tests {
                 payload: &dyn PluginPayload,
                 _extensions: &Extensions,
                 _ctx: &mut PluginContext,
-            ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+            ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
                 self.log.lock().unwrap().push("seq");
                 let typed = payload.as_any().downcast_ref::<TestPayload>().unwrap();
                 let modified = TestPayload {
@@ -3035,7 +3035,7 @@ mod tests {
                 payload: &dyn PluginPayload,
                 _extensions: &Extensions,
                 _ctx: &mut PluginContext,
-            ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+            ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
                 self.log.lock().unwrap().push("transform");
                 let typed = payload.as_any().downcast_ref::<TestPayload>().unwrap();
                 let modified = TestPayload {
@@ -3063,7 +3063,7 @@ mod tests {
                 payload: &dyn PluginPayload,
                 _extensions: &Extensions,
                 _ctx: &mut PluginContext,
-            ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+            ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
                 let typed = payload.as_any().downcast_ref::<TestPayload>().unwrap();
                 assert_eq!(
                     typed.value, self.expected_payload,
@@ -3207,7 +3207,7 @@ mod tests {
                 _payload: &dyn PluginPayload,
                 _extensions: &Extensions,
                 _ctx: &mut PluginContext,
-            ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+            ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
                 self.counter.fetch_add(1, Ordering::SeqCst);
                 let result: PluginResult<TestPayload> = PluginResult::allow();
                 Ok(crate::executor::erase_result(result))
@@ -3258,7 +3258,7 @@ routes:
                 fn create(
                     &self,
                     config: &PluginConfig,
-                ) -> Result<crate::factory::PluginInstance, PluginError> {
+                ) -> Result<crate::factory::PluginInstance, Box<PluginError>> {
                     Ok(crate::factory::PluginInstance {
                         plugin: Arc::new(AllowPlugin {
                             cfg: config.clone(),
@@ -3332,17 +3332,17 @@ routes:
             fn config(&self) -> &PluginConfig {
                 &self.cfg
             }
-            async fn initialize(&self) -> Result<(), PluginError> {
+            async fn initialize(&self) -> Result<(), Box<PluginError>> {
                 self.init_counter.fetch_add(1, Ordering::SeqCst);
                 if self.fail_init {
-                    Err(PluginError::Config {
+                    Err(Box::new(PluginError::Config {
                         message: "intentional init failure".into(),
-                    })
+                    }))
                 } else {
                     Ok(())
                 }
             }
-            async fn shutdown(&self) -> Result<(), PluginError> {
+            async fn shutdown(&self) -> Result<(), Box<PluginError>> {
                 self.shutdown_counter.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             }
@@ -3447,7 +3447,7 @@ routes:
         fn create(
             &self,
             config: &PluginConfig,
-        ) -> Result<crate::factory::PluginInstance, PluginError> {
+        ) -> Result<crate::factory::PluginInstance, Box<PluginError>> {
             let plugin = Arc::new(AllowPlugin {
                 cfg: config.clone(),
             });
@@ -3469,7 +3469,7 @@ routes:
         fn create(
             &self,
             config: &PluginConfig,
-        ) -> Result<crate::factory::PluginInstance, PluginError> {
+        ) -> Result<crate::factory::PluginInstance, Box<PluginError>> {
             let plugin = Arc::new(DenyPlugin {
                 cfg: config.clone(),
             });
@@ -4079,11 +4079,11 @@ routes:
             fn config(&self) -> &PluginConfig {
                 &self.cfg
             }
-            async fn initialize(&self) -> Result<(), PluginError> {
+            async fn initialize(&self) -> Result<(), Box<PluginError>> {
                 INIT_COUNT.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             }
-            async fn shutdown(&self) -> Result<(), PluginError> {
+            async fn shutdown(&self) -> Result<(), Box<PluginError>> {
                 Ok(())
             }
         }
@@ -4104,7 +4104,7 @@ routes:
             fn create(
                 &self,
                 config: &PluginConfig,
-            ) -> Result<crate::factory::PluginInstance, PluginError> {
+            ) -> Result<crate::factory::PluginInstance, Box<PluginError>> {
                 let plugin = Arc::new(InitTrackingPlugin {
                     cfg: config.clone(),
                 });
@@ -4179,7 +4179,7 @@ routes:
             fn create(
                 &self,
                 config: &PluginConfig,
-            ) -> Result<crate::factory::PluginInstance, PluginError> {
+            ) -> Result<crate::factory::PluginInstance, Box<PluginError>> {
                 let plugin = Arc::new(AllowPlugin {
                     cfg: config.clone(),
                 });
@@ -4659,7 +4659,7 @@ routes:
             _payload: &dyn PluginPayload,
             extensions: &Extensions,
             _ctx: &mut PluginContext,
-        ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+        ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
             let mut ext = extensions.cow_copy();
             if let Some(ref mut sec) = ext.security {
                 sec.add_label("PLUGIN_ADDED");
@@ -4683,7 +4683,7 @@ routes:
             _payload: &dyn PluginPayload,
             extensions: &Extensions,
             _ctx: &mut PluginContext,
-        ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+        ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
             let mut ext = extensions.cow_copy();
             // Tamper: replace the immutable request extension
             ext.request = Some(std::sync::Arc::new(crate::extensions::RequestExtension {
@@ -4787,7 +4787,7 @@ routes:
                 _payload: &dyn PluginPayload,
                 extensions: &Extensions,
                 _ctx: &mut PluginContext,
-            ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+            ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
                 // Check if security is visible
                 if extensions.security.is_some() {
                     self.saw_security

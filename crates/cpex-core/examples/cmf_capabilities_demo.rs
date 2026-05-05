@@ -260,7 +260,7 @@ impl HookHandler<CmfHook> for AuditLogger {
 
 struct IdentityCheckerFactory;
 impl PluginFactory for IdentityCheckerFactory {
-    fn create(&self, config: &PluginConfig) -> Result<PluginInstance, PluginError> {
+    fn create(&self, config: &PluginConfig) -> Result<PluginInstance, Box<PluginError>> {
         let plugin = Arc::new(IdentityChecker {
             cfg: config.clone(),
         });
@@ -282,7 +282,7 @@ impl PluginFactory for IdentityCheckerFactory {
 
 struct HeaderInjectorFactory;
 impl PluginFactory for HeaderInjectorFactory {
-    fn create(&self, config: &PluginConfig) -> Result<PluginInstance, PluginError> {
+    fn create(&self, config: &PluginConfig) -> Result<PluginInstance, Box<PluginError>> {
         let plugin = Arc::new(HeaderInjector {
             cfg: config.clone(),
         });
@@ -298,7 +298,7 @@ impl PluginFactory for HeaderInjectorFactory {
 
 struct AuditLoggerFactory;
 impl PluginFactory for AuditLoggerFactory {
-    fn create(&self, config: &PluginConfig) -> Result<PluginInstance, PluginError> {
+    fn create(&self, config: &PluginConfig) -> Result<PluginInstance, Box<PluginError>> {
         let plugin = Arc::new(AuditLogger {
             cfg: config.clone(),
         });

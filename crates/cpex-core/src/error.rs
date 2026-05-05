@@ -79,7 +79,7 @@ impl PluginError {
     /// Box this error for use in `Result<T, Box<PluginError>>`.
     ///
     /// Public APIs return `Result<T, Box<PluginError>>` rather than
-    /// `Result<T, PluginError>` because the enum is large (~184 bytes
+    /// `Result<T, Box<PluginError>>` because the enum is large (~184 bytes
     /// — `details: HashMap` and the `source: Box<dyn Error>` push it
     /// well past clippy's `result_large_err` threshold). Boxing keeps
     /// `Result<T, _>` pointer-sized on the success path; the
@@ -121,6 +121,20 @@ pub struct PluginErrorRecord {
     pub details: HashMap<String, serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proto_error_code: Option<i64>,
+}
+
+/// Forward `&Box<PluginError>` to the `&PluginError` impl.
+///
+/// Public APIs return `Result<T, Box<PluginError>>` (see
+/// `PluginError::boxed`), which means error-handling code in the
+/// pipeline (e.g., `Ok(Err(e))` inside `executor::run_*_phase`) holds
+/// `e: Box<PluginError>`. This blanket forward keeps existing
+/// `(&e).into()` call sites working without forcing every caller to
+/// write `(&*e).into()` after the boxing migration.
+impl From<&Box<PluginError>> for PluginErrorRecord {
+    fn from(e: &Box<PluginError>) -> Self {
+        PluginErrorRecord::from(e.as_ref())
+    }
 }
 
 impl From<&PluginError> for PluginErrorRecord {

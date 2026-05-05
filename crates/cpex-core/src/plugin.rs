@@ -51,8 +51,8 @@ use crate::error::PluginError;
 /// ```rust,ignore
 /// impl Plugin for MyPlugin {
 ///     fn config(&self) -> &PluginConfig { &self.config }
-///     async fn initialize(&self) -> Result<(), PluginError> { Ok(()) }
-///     async fn shutdown(&self) -> Result<(), PluginError> { Ok(()) }
+///     async fn initialize(&self) -> Result<(), Box<PluginError>> { Ok(()) }
+///     async fn shutdown(&self) -> Result<(), Box<PluginError>> { Ok(()) }
 /// }
 ///
 /// impl CmfHookHandler for MyPlugin {
@@ -90,7 +90,7 @@ pub trait Plugin: Send + Sync {
     /// Called before any hook invocations. Use this to establish
     /// connections, load resources, or validate configuration.
     /// Default implementation does nothing.
-    async fn initialize(&self) -> Result<(), PluginError> {
+    async fn initialize(&self) -> Result<(), Box<PluginError>> {
         Ok(())
     }
 
@@ -99,7 +99,7 @@ pub trait Plugin: Send + Sync {
     /// Called once during teardown. Use this to flush buffers, close
     /// connections, or release resources.
     /// Default implementation does nothing.
-    async fn shutdown(&self) -> Result<(), PluginError> {
+    async fn shutdown(&self) -> Result<(), Box<PluginError>> {
         Ok(())
     }
 }

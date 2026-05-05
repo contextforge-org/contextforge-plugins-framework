@@ -190,7 +190,7 @@ pub trait AnyHookHandler: Send + Sync {
         payload: &dyn PluginPayload,
         extensions: &Extensions,
         ctx: &mut PluginContext,
-    ) -> Result<Box<dyn std::any::Any + Send + Sync>, crate::error::PluginError>;
+    ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<crate::error::PluginError>>;
 
     /// The hook type name this handler was registered for.
     fn hook_type_name(&self) -> &'static str;
@@ -517,6 +517,7 @@ mod tests {
     // -- Test payload and hook type --
 
     #[derive(Debug, Clone)]
+    #[allow(dead_code)] // test fixture — typed shape is the point, not field reads
     struct TestPayload {
         value: String,
     }
@@ -534,7 +535,7 @@ mod tests {
             _payload: &dyn PluginPayload,
             _extensions: &Extensions,
             _ctx: &mut PluginContext,
-        ) -> Result<Box<dyn std::any::Any + Send + Sync>, PluginError> {
+        ) -> Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>> {
             let result: PluginResult<TestPayload> = PluginResult::allow();
             Ok(crate::executor::erase_result(result))
         }
@@ -579,10 +580,10 @@ mod tests {
         fn config(&self) -> &PluginConfig {
             &self.cfg
         }
-        async fn initialize(&self) -> Result<(), PluginError> {
+        async fn initialize(&self) -> Result<(), Box<PluginError>> {
             Ok(())
         }
-        async fn shutdown(&self) -> Result<(), PluginError> {
+        async fn shutdown(&self) -> Result<(), Box<PluginError>> {
             Ok(())
         }
     }

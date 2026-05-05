@@ -400,6 +400,7 @@ impl Executor {
     /// Each plugin's context is looked up in the context table (preserving
     /// `local_state` from previous hooks) or created fresh. After execution,
     /// `global_state` changes are merged back so the next plugin sees them.
+    #[allow(clippy::too_many_arguments)] // internal phase helper — args have distinct types and meaning
     async fn run_serial_phase(
         &self,
         entries: &[HookEntry],
@@ -715,7 +716,7 @@ impl Executor {
         // completed task (or a panicked one — JoinError carries the id)
         // back to its entry without positional zip.
         type ConcurrentTaskOutput = Result<
-            Result<Box<dyn std::any::Any + Send + Sync>, PluginError>,
+            Result<Box<dyn std::any::Any + Send + Sync>, Box<PluginError>>,
             tokio::time::error::Elapsed,
         >;
         let mut set: tokio::task::JoinSet<ConcurrentTaskOutput> = tokio::task::JoinSet::new();
@@ -1038,6 +1039,7 @@ mod tests {
     use crate::hooks::PluginResult;
 
     #[derive(Debug, Clone)]
+    #[allow(dead_code)] // test fixture — typed shape is the point, not field reads
     struct TestPayload {
         value: String,
     }
