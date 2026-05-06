@@ -46,4 +46,9 @@ Register the plugin, and it runs at every hook invocation. No changes to your ap
 
   [Overview &rarr;]({{< relref "/docs/overview" >}})
 
+- ### Project Vision
+  Why hooks, plugins, and policy are the path to agent security.
+
+  [Vision &rarr;]({{< relref "/docs/vision" >}})
+
 {{% /columns %}}
