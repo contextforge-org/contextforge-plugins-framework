@@ -5,7 +5,7 @@ type: docs
 
 # CPEX
 
-**A lightweight plugin framework for building extensible AI systems**
+**A composable enforcement framework for AI agents and toolchains**
 
 CPEX lets you intercept, enforce, and extend application behavior through plugins — without modifying core logic. Define hook points in your application, write plugins that attach to them, and compose enforcement pipelines that run automatically.
 
@@ -45,5 +45,10 @@ Register the plugin, and it runs at every hook invocation. No changes to your ap
   Understand hooks, execution modes, and the plugin pipeline.
 
   [Overview &rarr;]({{< relref "/docs/overview" >}})
+
+- ### Project Vision
+  Why hooks, plugins, and policy are the path to agent security.
+
+  [Vision &rarr;]({{< relref "/docs/vision" >}})
 
 {{% /columns %}}
