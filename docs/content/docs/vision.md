@@ -71,12 +71,20 @@ See the [GitHub milestones](https://github.com/contextforge-org/contextforge-plu
 
 ---
 
+## Projects Using CPEX
+
+| Project | Description |
+|---------|-------------|
+| [ContextForge](https://github.com/IBM/mcp-context-forge) | MCP gateway with CPEX enforcement built in |
+| [Mellea](https://github.com/generative-computing/mellea) | Agentic framework with CPEX plugin integration |
+
+---
+
 ## Get Involved
 
 CPEX is part of the [ContextForge](https://github.com/contextforge-org) ecosystem.
 
 - [CPEX Plugin Framework](https://github.com/contextforge-org/contextforge-plugins-framework) (this project)
-- [ContextForge Gateway](https://github.com/ibm/mcp-context-forge) (MCP gateway with CPEX enforcement built in)
 - [Contributing Guide](https://github.com/contextforge-org/contextforge-plugins-framework/blob/main/CONTRIBUTING.md)
 
 Contributions, feedback, and plugin ideas are welcome. Open an issue or submit a pull request.
