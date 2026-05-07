@@ -33,9 +33,11 @@ import sys
 from cpex.framework.external.unix.server.server import run_server
 from cpex.framework.settings import get_settings
 
-# Configure logging
+# Configure logging - respect PLUGINS_LOG_LEVEL environment variable
+log_level_str = os.getenv("PLUGINS_LOG_LEVEL", "INFO").upper()
+log_level = getattr(logging, log_level_str, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=log_level,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     stream=sys.stderr,  # Log to stderr to keep stdout clean for coordination
 )
