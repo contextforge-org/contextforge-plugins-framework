@@ -108,7 +108,7 @@ jobs:
       - name: Checkout the cpex Python framework
         uses: actions/checkout@v7
         with:
-          ref: "feat/python_plugin_compat_0.1.x"
+          ref: "0.1.x"
           path: cpex-python
           fetch-depth: 1
       - name: Install Python
