@@ -64,7 +64,7 @@ Plain WASM has no built-in way to interact with the outside world. Without WASI,
 
 ### WASI Preview 2
 
-CPEX targets **[WASI Preview 2](https://github.com/WebAssembly/WASI/blob/main/preview2/README.md)** (also called WASI P2 or `wasip2`), the current stable version built on top of the Component Model. Key differences from the older [Preview 1](https://github.com/WebAssembly/WASI/blob/main/legacy/preview1/docs.md):
+CPEX targets **[WASI Preview 2](https://github.com/WebAssembly/WASI/tree/wasi-0.2)** (also called WASI P2 or `wasip2`), the current stable version built on top of the Component Model. Key differences from the older [Preview 1](https://github.com/WebAssembly/WASI/tree/wasi-0.1):
 
 - **Interface-based** — capabilities are defined as WIT interfaces, not raw function imports
 - **Stream-oriented I/O** — input/output uses typed streams rather than file descriptors

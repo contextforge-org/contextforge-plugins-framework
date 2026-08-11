@@ -22,7 +22,7 @@ All layers compose — a plugin can have filesystem access but no network, or ne
 
 ## Filesystem permissions
 
-Six permission levels control what a plugin can do with preopened directories. These map to Wasmtime's [`DirPerms`](https://docs.rs/wasmtime-wasi/latest/wasmtime_wasi/struct.DirPerms.html) and [`FilePerms`](https://docs.rs/wasmtime-wasi/latest/wasmtime_wasi/struct.FilePerms.html) flags.
+Six permission levels control what a plugin can do with preopened directories. These map to Wasmtime's [`DirPerms`](https://docs.rs/wasmtime-wasi/latest/wasmtime_wasi/filesystem/struct.DirPerms.html) and [`FilePerms`](https://docs.rs/wasmtime-wasi/latest/wasmtime_wasi/filesystem/struct.FilePerms.html) flags.
 
 ### 1. `read-only`
 
