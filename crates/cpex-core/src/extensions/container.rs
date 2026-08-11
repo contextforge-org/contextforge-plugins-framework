@@ -122,6 +122,14 @@ pub struct Extensions {
     pub labels_write_token: Option<WriteToken>,
     #[serde(skip)]
     pub delegation_write_token: Option<WriteToken>,
+
+    /// Effect emitter — a capability handle, set by the executor per plugin
+    /// (capability `emit_effect`), NOT serialized. Like the write tokens:
+    /// `filter_extensions` never sets it; the executor does, for capable
+    /// plugins, right before `handle`. Used by `begin_effect` /
+    /// `complete_effect` to emit irreversible-effect records to audit sinks.
+    #[serde(skip)]
+    pub effect_emitter: Option<Arc<dyn crate::effect::EffectEmitter>>,
 }
 
 impl Clone for Extensions {
@@ -145,6 +153,50 @@ impl Clone for Extensions {
             http_write_token: None,
             labels_write_token: None,
             delegation_write_token: None,
+            // Capability handle — set fresh per-invoke by the executor, never
+            // cloned (same policy as the write tokens above).
+            effect_emitter: None,
+        }
+    }
+}
+
+impl Extensions {
+    /// Emit an irreversible effect's `prepared` intent to the audit sinks —
+    /// the write-ahead point (slice 2 emits; durability is a later slice).
+    /// No-op unless the plugin holds the `emit_effect` capability (the
+    /// executor sets `effect_emitter` only for those).
+    pub async fn begin_effect(
+        &self,
+        effect: &crate::effect::EffectRecord,
+    ) -> Result<(), Box<crate::error::PluginError>> {
+        match &self.effect_emitter {
+            Some(emitter) => {
+                let prepared = effect
+                    .clone()
+                    .into_state(crate::effect::EffectState::Prepared);
+                emitter.emit(&prepared, self).await
+            },
+            // No capability → nothing to durably record, nothing to emit.
+            None => Ok(()),
+        }
+    }
+
+    /// Emit an effect's terminal outcome (`Confirmed` / `Rejected` /
+    /// `Unknown`). No-op without the `emit_effect` capability. Unlike
+    /// `begin_effect`, a durable-write failure here is not fail-closed — the
+    /// act already happened; the record stays `prepared`/`unknown` for the
+    /// recovery sweep (slice 3b) to reconcile — so callers may log-and-continue.
+    pub async fn complete_effect(
+        &self,
+        effect: &crate::effect::EffectRecord,
+        state: crate::effect::EffectState,
+    ) -> Result<(), Box<crate::error::PluginError>> {
+        match &self.effect_emitter {
+            Some(emitter) => {
+                let done = effect.clone().into_state(state);
+                emitter.emit(&done, self).await
+            },
+            None => Ok(()),
         }
     }
 }

@@ -2338,6 +2338,113 @@ plugins:
     }
 
     #[tokio::test]
+    async fn test_effect_emit_is_capability_gated() {
+        use crate::audit::AuditHandler;
+        use crate::decision::DecisionLog;
+        use crate::effect::EffectRecord;
+        use std::sync::Mutex;
+
+        // A plugin that emits a prepared token-mint effect during handle().
+        struct EffectPlugin {
+            cfg: PluginConfig,
+        }
+        #[async_trait]
+        impl Plugin for EffectPlugin {
+            fn config(&self) -> &PluginConfig {
+                &self.cfg
+            }
+        }
+        impl HookHandler<TestHook> for EffectPlugin {
+            async fn handle(
+                &self,
+                _payload: &TestPayload,
+                ext: &Extensions,
+                _ctx: &mut PluginContext,
+            ) -> PluginResult<TestPayload> {
+                let effect =
+                    EffectRecord::prepared("token_mint", "exchange for workday-api", "k-1")
+                        .with_detail("audience", "workday-api");
+                // Fail-closed: if the durable prepare fails, don't act.
+                if ext.begin_effect(&effect).await.is_err() {
+                    return PluginResult::deny(PluginViolation::new(
+                        "effect_prepare_failed",
+                        "could not durably record effect intent",
+                    ));
+                }
+                PluginResult::allow()
+            }
+        }
+
+        // A sink that records the effects it observes.
+        struct CapturingEffectAudit {
+            seen: Arc<Mutex<Vec<(String, String)>>>, // (kind, state)
+        }
+        #[async_trait]
+        impl AuditHandler for CapturingEffectAudit {
+            async fn handle(&self, _p: &dyn PluginPayload, _e: &Extensions, _d: &DecisionLog) {}
+            async fn on_effect(&self, effect: &EffectRecord, _ext: &Extensions) {
+                self.seen
+                    .lock()
+                    .unwrap()
+                    .push((effect.kind.clone(), format!("{:?}", effect.state)));
+            }
+        }
+
+        // With the `emit_effect` capability → the sink observes the effect.
+        {
+            let seen = Arc::new(Mutex::new(Vec::new()));
+            let mgr = PluginManager::default();
+            let mut config = make_config("effect-plugin", 10, PluginMode::Sequential);
+            config.capabilities.insert("emit_effect".to_string());
+            mgr.register_handler::<TestHook, _>(
+                Arc::new(EffectPlugin { cfg: config.clone() }),
+                config,
+            )
+            .unwrap();
+            mgr.register_audit_handler(Arc::new(CapturingEffectAudit { seen: seen.clone() }));
+            mgr.initialize().await.unwrap();
+
+            let payload: Box<dyn PluginPayload> = Box::new(TestPayload {
+                value: "x".into(),
+            });
+            let _ = mgr
+                .invoke_by_name("test_hook", payload, Extensions::default(), None)
+                .await;
+
+            let s = seen.lock().unwrap();
+            assert_eq!(s.len(), 1, "capable plugin's effect reaches the sink");
+            assert_eq!(s[0].0, "token_mint");
+            assert_eq!(s[0].1, "Prepared");
+        }
+
+        // WITHOUT the capability → begin_effect is a no-op; the sink sees nothing.
+        {
+            let seen = Arc::new(Mutex::new(Vec::new()));
+            let mgr = PluginManager::default();
+            let config = make_config("effect-plugin", 10, PluginMode::Sequential); // no emit_effect cap
+            mgr.register_handler::<TestHook, _>(
+                Arc::new(EffectPlugin { cfg: config.clone() }),
+                config,
+            )
+            .unwrap();
+            mgr.register_audit_handler(Arc::new(CapturingEffectAudit { seen: seen.clone() }));
+            mgr.initialize().await.unwrap();
+
+            let payload: Box<dyn PluginPayload> = Box::new(TestPayload {
+                value: "x".into(),
+            });
+            let _ = mgr
+                .invoke_by_name("test_hook", payload, Extensions::default(), None)
+                .await;
+
+            assert!(
+                seen.lock().unwrap().is_empty(),
+                "no capability → no effect emitted"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn test_invoke_typed() {
         let mgr = PluginManager::default();
         let config = make_config("allow-plugin", 10, PluginMode::Sequential);

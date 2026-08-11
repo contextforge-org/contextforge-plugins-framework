@@ -34,6 +34,7 @@ pub mod config;
 pub mod context;
 pub mod decision;
 pub mod delegation;
+pub mod effect;
 pub mod elicitation;
 pub mod error;
 pub mod executor;

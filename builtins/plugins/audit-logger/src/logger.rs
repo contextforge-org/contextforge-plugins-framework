@@ -12,6 +12,7 @@ use cpex_core::audit::AuditHandler;
 use cpex_core::cmf::{CmfHook, ContentPart, MessagePayload};
 use cpex_core::context::PluginContext;
 use cpex_core::decision::{DecisionLog, Verdict};
+use cpex_core::effect::EffectRecord;
 use cpex_core::error::PluginError;
 use cpex_core::hooks::payload::{Extensions, PluginPayload};
 use cpex_core::hooks::trait_def::{HookHandler, PluginResult};
@@ -232,6 +233,29 @@ impl AuditLogger {
         }
         record
     }
+
+    /// Build an audit record for an irreversible effect: the ambient identity
+    /// / delegation context from `ext` (reusing `build_record`) plus the
+    /// effect's own facts and lifecycle state.
+    fn build_effect_record(&self, effect: &EffectRecord, ext: &Extensions) -> Value {
+        // No payload — an effect is a side-effect, not a message. The ambient
+        // context (subject, delegation) still comes from `ext`.
+        let mut record = self.build_record(None, ext);
+        if let Value::Object(map) = &mut record {
+            map.insert(
+                "effect".into(),
+                json!({
+                    "kind": effect.kind,
+                    "description": effect.description,
+                    "key": effect.key,
+                    "state": format!("{:?}", effect.state),
+                    "caused_by": effect.plugin_name,
+                    "details": effect.details,
+                }),
+            );
+        }
+        record
+    }
 }
 
 /// Decision-audit consumer: fires at the verdict of every pipeline run —
@@ -245,6 +269,11 @@ impl AuditHandler for AuditLogger {
         // (delegation, identity) records without the message summary.
         let msg = payload.as_any().downcast_ref::<MessagePayload>();
         let record = self.build_decision_record(msg, ext, decisions);
+        self.emit(&record);
+    }
+
+    async fn on_effect(&self, effect: &EffectRecord, ext: &Extensions) {
+        let record = self.build_effect_record(effect, ext);
         self.emit(&record);
     }
 
@@ -342,5 +371,34 @@ mod tests {
         assert_eq!(record["verdict"]["deny"]["code"], "missing_permission");
         assert_eq!(record["decision_steps"][0]["plugin"], "cedar-pdp");
         assert_eq!(record["decision_steps"][0]["action"], "Denied");
+    }
+
+    #[test]
+    fn effect_record_carries_effect_and_ambient_identity() {
+        use cpex_core::effect::EffectRecord;
+
+        let plugin = AuditLogger::new(cfg()).unwrap();
+
+        // Ambient context: a subject in extensions.
+        let mut sec = SecurityExtension::default();
+        sec.subject = Some(SubjectExtension {
+            id: Some("alice@corp.com".into()),
+            ..Default::default()
+        });
+        let ext = Extensions {
+            security: Some(Arc::new(sec)),
+            ..Default::default()
+        };
+
+        let effect = EffectRecord::prepared("token_mint", "exchange for workday-api", "k-1")
+            .with_detail("audience", "workday-api");
+
+        let record = plugin.build_effect_record(&effect, &ext);
+        // The effect's own facts…
+        assert_eq!(record["effect"]["kind"], "token_mint");
+        assert_eq!(record["effect"]["state"], "Prepared");
+        assert_eq!(record["effect"]["details"]["audience"], "workday-api");
+        // …alongside ambient identity from ext (the reason we pass ext):
+        assert_eq!(record["subject"]["id"], "alice@corp.com");
     }
 }

@@ -29,12 +29,14 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use tokio::time::timeout;
 use tracing::{error, warn};
 
 use crate::audit::AuditHandler;
 use crate::context::PluginContextTable;
 use crate::decision::{DecisionLog, PluginAction, Verdict};
+use crate::effect::{DurableEffectLog, EffectEmitter, EffectRecord};
 use crate::error::PluginError;
 use crate::extensions::filter_extensions;
 use crate::hooks::payload::{Extensions, PluginPayload, WriteToken};
@@ -585,6 +587,16 @@ impl Executor {
             }
             if capabilities.contains("append_delegation") {
                 filtered.delegation_write_token = Some(WriteToken::new());
+            }
+            // Grant the effect-emit capability the same way — a per-invoke
+            // handle on the filtered extensions, only for capable plugins.
+            if capabilities.contains("emit_effect") {
+                filtered.effect_emitter = Some(Arc::new(AuditEffectEmitter {
+                    handlers: self.audit_handlers.clone(),
+                    plugin_name: plugin_name.to_string(),
+                    timeout: Duration::from_secs(self.config.timeout_seconds),
+                    durable: None, // slice 3b wires a real WAL here
+                }));
             }
 
             // Execute with timeout — handler borrows payload, gets filtered extensions
@@ -1219,6 +1231,69 @@ impl Default for Executor {
 
 // SerialResult removed — run_serial_phase now returns Option<Violation> directly.
 
+/// Effect emitter the executor grants to `emit_effect`-capable plugins via
+/// `Extensions.effect_emitter`. Fans an effect record out to the audit sinks'
+/// `on_effect`, isolated (timeout + catch_unwind) exactly like the verdict
+/// emit, and stamps the causing plugin (not self-reported).
+struct AuditEffectEmitter {
+    handlers: Vec<Arc<dyn AuditHandler>>,
+    plugin_name: String,
+    timeout: Duration,
+    /// Write-ahead log. When present, `emit` durably records the effect
+    /// before fanning out and fails closed if that write fails. `None` until
+    /// slice 3b wires a real WAL — then emit is ordering-only.
+    durable: Option<Arc<dyn DurableEffectLog>>,
+}
+
+impl std::fmt::Debug for AuditEffectEmitter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuditEffectEmitter")
+            .field("plugin_name", &self.plugin_name)
+            .field("sinks", &self.handlers.len())
+            .finish()
+    }
+}
+
+#[async_trait]
+impl EffectEmitter for AuditEffectEmitter {
+    async fn emit(&self, effect: &EffectRecord, ext: &Extensions) -> Result<(), Box<PluginError>> {
+        use futures::FutureExt;
+        use std::panic::AssertUnwindSafe;
+
+        // Stamp the causing plugin — set by the framework, not self-reported.
+        let mut stamped = effect.clone();
+        stamped.plugin_name = Some(self.plugin_name.clone());
+
+        // Write-ahead: durably record BEFORE any observer sees it. Fail
+        // closed — if the durable write fails, return Err and do NOT fan out;
+        // the caller must not perform the act.
+        if let Some(log) = &self.durable {
+            log.append(&stamped).await?;
+        }
+
+        for handler in &self.handlers {
+            let call = AssertUnwindSafe(handler.on_effect(&stamped, ext)).catch_unwind();
+            match timeout(self.timeout, call).await {
+                Ok(Ok(())) => {},
+                Ok(Err(_panic)) => {
+                    error!(
+                        "audit sink '{}' panicked during on_effect — contained",
+                        handler.name()
+                    );
+                },
+                Err(_elapsed) => {
+                    error!(
+                        "audit sink '{}' exceeded {}s during on_effect — skipped",
+                        handler.name(),
+                        self.timeout.as_secs()
+                    );
+                },
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Common fields extracted from a type-erased PluginResult.
 ///
 /// Handlers return `Box<dyn Any>` which wraps this struct. The
@@ -1369,5 +1444,65 @@ mod tests {
             .await;
         assert!(result.continue_processing);
         assert!(result.modified_payload.is_some());
+    }
+
+    #[tokio::test]
+    async fn effect_emit_fails_closed_when_durable_write_fails() {
+        use std::sync::Mutex;
+
+        struct FailingLog;
+        #[async_trait]
+        impl DurableEffectLog for FailingLog {
+            async fn append(&self, _e: &EffectRecord) -> Result<(), Box<PluginError>> {
+                Err(Box::new(PluginError::Config {
+                    message: "wal down".into(),
+                }))
+            }
+        }
+        struct OkLog;
+        #[async_trait]
+        impl DurableEffectLog for OkLog {
+            async fn append(&self, _e: &EffectRecord) -> Result<(), Box<PluginError>> {
+                Ok(())
+            }
+        }
+        struct CountingSink(Arc<Mutex<usize>>);
+        #[async_trait]
+        impl AuditHandler for CountingSink {
+            async fn handle(&self, _p: &dyn PluginPayload, _e: &Extensions, _d: &DecisionLog) {}
+            async fn on_effect(&self, _e: &EffectRecord, _x: &Extensions) {
+                *self.0.lock().unwrap() += 1;
+            }
+        }
+
+        let effect = EffectRecord::prepared("token_mint", "mint", "k");
+
+        // Durable write fails → emit fails closed, NO fan-out to sinks.
+        let calls = Arc::new(Mutex::new(0usize));
+        let emitter = AuditEffectEmitter {
+            handlers: vec![Arc::new(CountingSink(calls.clone()))],
+            plugin_name: "delegator".into(),
+            timeout: Duration::from_secs(5),
+            durable: Some(Arc::new(FailingLog)),
+        };
+        let res = emitter.emit(&effect, &Extensions::default()).await;
+        assert!(res.is_err(), "durable write failed → emit fails closed");
+        assert_eq!(
+            *calls.lock().unwrap(),
+            0,
+            "no fan-out when the durable write fails"
+        );
+
+        // Durable write succeeds → fan-out proceeds (durable-before-fanout).
+        let calls2 = Arc::new(Mutex::new(0usize));
+        let emitter2 = AuditEffectEmitter {
+            handlers: vec![Arc::new(CountingSink(calls2.clone()))],
+            plugin_name: "delegator".into(),
+            timeout: Duration::from_secs(5),
+            durable: Some(Arc::new(OkLog)),
+        };
+        let res2 = emitter2.emit(&effect, &Extensions::default()).await;
+        assert!(res2.is_ok());
+        assert_eq!(*calls2.lock().unwrap(), 1, "durable OK → fan-out proceeds");
     }
 }
