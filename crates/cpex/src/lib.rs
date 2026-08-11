@@ -26,7 +26,8 @@
 //!
 //! By default it is the **engine only**: no builtin plugins are compiled in.
 //! The bundled extension set lives in [`cpex-builtins`](cpex_builtins) and is
-//! pulled in only when a builtins feature is enabled.
+//! pulled in only when a builtins feature is enabled. The out-of-process
+//! Python plugin host is separate again, behind `python-host`.
 //!
 //! # Usage
 //!
@@ -61,6 +62,27 @@
 //! `audit`, `cedar`, `cel`, `valkey`). When any builtins feature is on, the
 //! registration helpers and the concrete factory types are re-exported here
 //! from [`cpex-builtins`](cpex_builtins).
+//!
+//! `python-host` is orthogonal to all of those, and is in neither `builtins`
+//! nor `full`. It pulls
+//! [`cpex-hosts-python`](cpex_hosts_python), which runs existing Python CPEX
+//! plugins out-of-process — one cached virtualenv and one `worker.py`
+//! subprocess per plugin — and re-exports [`IsolatedVenvFactory`] and
+//! [`ISOLATED_VENV_KIND`] here. Unlike the builtins there is no
+//! `install_*` helper: register the factory yourself, because the `kind` is
+//! one host serving arbitrarily many Python plugins.
+//!
+//! ```ignore
+//! use cpex::{IsolatedVenvFactory, PluginManager, ISOLATED_VENV_KIND};
+//! use cpex::cpex_core::factory::PluginFactoryRegistry;
+//!
+//! let mut factories = PluginFactoryRegistry::new();
+//! factories.register(ISOLATED_VENV_KIND, Box::new(IsolatedVenvFactory));
+//! let mgr = PluginManager::from_config(config, &factories)?;
+//! // `initialize()` builds each venv and launches its worker — a cold pip
+//! // install is measured in minutes, so do it at startup, not on demand.
+//! mgr.initialize().await?;
+//! ```
 
 // Whole-crate re-exports for advanced use (types not surfaced below).
 pub use {apl_cmf, apl_core, apl_cpex, cpex_core};
@@ -74,6 +96,9 @@ pub use cpex_core::manager::PluginManager;
 // The whole aggregator, for advanced use.
 #[cfg(feature = "cpex-builtins")]
 pub use cpex_builtins;
+// The whole Python host crate, for advanced use (venv and worker internals).
+#[cfg(feature = "python-host")]
+pub use cpex_hosts_python;
 
 // Registration helpers — delegated to cpex-builtins, keeping the facade's
 // historical names (`register_builtin_plugins`, `builtin_pdp_factories`).
@@ -99,6 +124,11 @@ pub use cpex_builtins::{OAuthDelegatorFactory, OAUTH_KIND};
 pub use cpex_builtins::{PiiScannerFactory, PII_KIND};
 #[cfg(feature = "valkey")]
 pub use cpex_builtins::{ValkeyConfig, ValkeySessionStoreFactory, VALKEY_KIND};
+// The Python host's `KIND` is renamed on re-export: bare `KIND` at the facade
+// root says nothing about which plugin kind it is, and the builtins above all
+// use a prefixed const.
+#[cfg(feature = "python-host")]
+pub use cpex_hosts_python::{IsolatedVenvFactory, KIND as ISOLATED_VENV_KIND};
 
 #[cfg(all(test, feature = "cpex-builtins"))]
 mod tests {
@@ -109,5 +139,44 @@ mod tests {
     fn install_builtins_runs_without_panic() {
         let mgr = Arc::new(PluginManager::default());
         install_builtins(&mgr);
+    }
+}
+#[cfg(all(test, feature = "python-host"))]
+mod python_host_tests {
+    use super::*;
+    use cpex_core::config::parse_config;
+    use cpex_core::factory::PluginFactoryRegistry;
+
+    /// A config with one `isolated_venv` plugin, mirroring the YAML shape an
+    /// operator writes. No `plugin_dirs`: the host always resolves
+    /// `<project root>/plugins` — see `plugin::DEFAULT_PLUGIN_DIR`.
+    fn minimal_config_yaml() -> &'static str {
+        r#"
+plugins:
+  - name: pii-filter
+    kind: isolated_venv
+    hooks: [tool_pre_invoke]
+    config:
+      class_name: my_pkg.filters.PiiFilter
+"#
+    }
+
+    /// The facade's re-exported `IsolatedVenvFactory` and kind const are
+    /// wired up well enough to instantiate a plugin from config. This stops
+    /// at `from_config` deliberately — `initialize()` is what builds the venv
+    /// and spawns `worker.py`, which needs a real interpreter and a real
+    /// package, so it belongs in cpex-hosts-python's integration tests.
+    #[test]
+    fn from_config_instantiates_the_python_host() {
+        let config = parse_config(minimal_config_yaml()).expect("valid YAML");
+
+        let mut factories = PluginFactoryRegistry::new();
+        factories.register(ISOLATED_VENV_KIND, Box::new(IsolatedVenvFactory));
+
+        let mgr = PluginManager::from_config(config, &factories)
+            .expect("isolated_venv factory is registered, so instantiation succeeds");
+
+        assert_eq!(mgr.plugin_count(), 1);
+        assert!(mgr.has_hooks_for("tool_pre_invoke"));
     }
 }
