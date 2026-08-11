@@ -1,5 +1,5 @@
 .PHONY: all build-examples build-all-plugins build-test-plugins build-bench-plugins \
-        run-all-demos run-plugin-demo run-capabilities-demo run-sandbox-demo run-env-demo \
+        run-all-demos run-plugin-demo run-capabilities-demo run-fs-demo run-env-demo \
         run-token-attenuator-demo run-network-policy-demo run-resource-limits-demo setup-sandbox-demo-data \
         bench-all test unit-tests integration-tests plugin-tests clippy \
         clean clean-all sync-wit check-wit help
@@ -83,7 +83,7 @@ setup-sandbox-demo-data: ## Create examples/data subdirs and seed files for the 
 	@rm -rf examples/data/audit/events examples/data/scratch/work examples/data/counters/new
 	@echo "Sandbox demo data ready under examples/data/"
 
-run-sandbox-demo: build-test-plugins setup-sandbox-demo-data build-examples ## Run the filesystem sandbox permissions demo
+run-fs-demo: build-test-plugins setup-sandbox-demo-data build-examples ## Run the filesystem sandbox permissions demo
 	cargo run --example wasm_fs_sandbox_demo
 
 run-env-demo: build-test-plugins build-examples ## Run the env variable sandbox permissions demo

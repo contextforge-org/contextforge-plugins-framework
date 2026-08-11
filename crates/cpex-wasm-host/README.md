@@ -281,7 +281,7 @@ routes:
 |------|---------------|---------|
 | **Plugin Demo** | 4 WASM plugins, custom payload, 7 scenarios, policy routing | `make run-plugin-demo` |
 | **Capabilities Demo** | 3 WASM plugins, capability-gated extension visibility | `make run-capabilities-demo` |
-| **Filesystem Sandbox Demo** | All 6 WASI permission levels — ALLOW and DENY per scenario | `make run-sandbox-demo` |
+| **Filesystem Sandbox Demo** | All 6 WASI permission levels — ALLOW and DENY per scenario | `make run-fs-demo` |
 | **Env Sandbox Demo** | Allowed vs denied env variables — ALLOW and DENY per variable | `make run-env-demo` |
 | **Token Attenuator Demo** | Token delegation hook — minting, pass-through, multi-permission | `make run-token-attenuator-demo` |
 | **Network Policy Demo** | 7 network enforcement scenarios (host/port/scheme/method/wildcard/multi-rule) | `make run-network-policy-demo` |
@@ -302,10 +302,10 @@ This demo shows all six WASI filesystem permission levels enforced live by the s
 
 ```bash
 cd crates/cpex-wasm-host
-make run-sandbox-demo
+make run-fs-demo
 ```
 
-`make run-sandbox-demo` does three things in order:
+`make run-fs-demo` does three things in order:
 1. Builds `fs-sandbox-demo.wasm` (and all other test plugins)
 2. Creates `examples/data/` subdirectories and seeds them with files
 3. Runs `wasm_fs_sandbox_demo` — prints ALLOW/DENY for each scenario
@@ -702,7 +702,7 @@ All targets are run from `crates/cpex-wasm-host`.
 | `run-all-demos` | Build all plugins + run every demo end-to-end |
 | `run-plugin-demo` | Build demo plugins + run custom-payload plugin demo |
 | `run-capabilities-demo` | Build demo plugins + run capability isolation demo |
-| `run-sandbox-demo` | Build test plugins + seed data + run filesystem permissions demo |
+| `run-fs-demo` | Build test plugins + seed data + run filesystem permissions demo |
 | `run-env-demo` | Build test plugins + run env variable sandbox demo |
 | `run-token-attenuator-demo` | Build demo plugins + run token delegation demo |
 | `run-network-policy-demo` | Build test plugins + run network policy sandbox demo |

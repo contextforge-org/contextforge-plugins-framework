@@ -123,11 +123,13 @@ fn print_result(_label: &str, result: &PipelineResult) {
 
 #[tokio::main]
 async fn main() {
-    // Initialize tracing so plugin cpex_log! calls are visible
+    // Initialize tracing so plugin cpex_log! calls are visible.
+    // Silence wasmtime/cranelift JIT compilation noise while keeping host logs.
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("info".parse().unwrap()),
+                .add_directive("warn".parse().unwrap())
+                .add_directive("cpex_wasm_host=info".parse().unwrap()),
         )
         .init();
 

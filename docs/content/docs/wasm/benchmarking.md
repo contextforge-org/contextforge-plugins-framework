@@ -14,27 +14,31 @@ Performance measurements for WASM plugin execution compared to native in-process
 | CPU | Apple M4 Max |
 | RAM | 64 GB |
 | Rust | 1.96.0 |
-| Wasmtime | 45.0 |
+| Wasmtime | 46.0 |
 | OS | macOS (ARM64) |
 
 ## Results summary
 
 | Scenario | Latency | vs Native |
 |----------|---------|-----------|
-| Native no-op | 87 ns | 1× |
-| Native compute | 874 ns | 10× |
-| WASM no-op | 5.1 μs | 58× |
-| WASM compute | 10.5 μs | 120× |
-| Custom payload (JSON serde) | 5.3 μs | 61× |
-| Structured payload (WIT types) | 5.6 μs | 64× |
-| Cold start (compile + first call) | 547 ms | one-time |
+| Native no-op | 96 ns | 1× |
+| Native with full extensions | 95 ns | 1× |
+| Native compute | 884 ns | 9.2× |
+| Type conversion (Native → WIT) | 877 ns | 9.1× |
+| WASM no-op | 5.7 μs | 59× |
+| Custom payload (JSON serde) | 5.8 μs | 60× |
+| Structured payload (WIT types) | 6.2 μs | 64× |
+| WASM with full extensions | 8.9 μs | 93× |
+| WASM compute | 10.9 μs | 113× |
+| Cold start (compile + first call) | 513 ms | one-time |
 
 ### Key takeaways
 
-- **WASM is 12-120× slower** than native depending on workload complexity
-- **Cold start is ~550ms** (one-time per plugin; amortized over the process lifetime)
-- **Custom vs structured payload**: nearly identical (~5μs each); the serialization format doesn't dominate
-- **For typical LLM tool invoke** (2-4 plugin calls per 200ms+ LLM request): sandbox overhead is **0.01-0.02%** of total request time
+- **WASM is 59-113× slower** than native depending on workload complexity
+- **Cold start is ~513ms** (one-time per plugin; amortized over the process lifetime)
+- **Custom vs structured payload**: nearly identical (~6μs each); the serialization format doesn't dominate
+- **Type conversion alone costs ~877ns** — roughly half the overhead is in Native ↔ WIT marshalling
+- **Full extensions add ~3μs** over no-op (8.9μs vs 5.7μs) — proportional to the number of populated fields
 
 ## Benchmark suites
 
@@ -56,12 +60,12 @@ End-to-end measurements including real computation:
 
 | Benchmark | What it measures |
 |-----------|-----------------|
-| `cold_start` | WASM module load + compile + first invocation |
-| `real_compute_native` | Native plugin doing JSON parsing + string ops + FNV-1a hash |
-| `real_compute_wasm` | Same workload inside the WASM sandbox |
-| `custom_payload` | Round-trip with JSON-serialized custom payload |
-| `structured_payload` | Round-trip with WIT-typed `MessagePayload` |
-| `mutex_contention_N` | Throughput under concurrent access (1, 4, 8 tasks) |
+| `cold_start_wasm` | WASM module load + compile + first invocation (includes epoch ticker thread spawn) |
+| `compute_native` | Native plugin doing JSON parsing + string ops + FNV-1a hash |
+| `compute_wasm` | Same workload inside the WASM sandbox |
+| `custom_payload_wasm` | Round-trip with JSON-serialized custom payload via `PayloadSerializerRegistry` |
+| `structured_payload_wasm` | Round-trip with WIT-typed `MessagePayload` (uses `native_payload_to_wit` conversion) |
+| `concurrent_contention/N` | Throughput under concurrent access (N = 1, 4, 8 tasks) |
 
 ## Running benchmarks
 
@@ -69,7 +73,12 @@ End-to-end measurements including real computation:
 
 ```bash
 cd crates/cpex-wasm-host
-make build-bench-plugins   # Compiles compute-bench.wasm
+
+# Build all required plugins:
+#   - compute-bench.wasm (BENCH_PLUGINS)
+#   - noop.wasm (TEST_PLUGINS — used by invocation benchmarks)
+#   - tool-invoke-checker.wasm (DEMO_PLUGINS — used by custom_payload_wasm)
+make build-bench-plugins build-test-plugins build-all-plugins
 ```
 
 ### Run all benchmarks
@@ -78,7 +87,7 @@ make build-bench-plugins   # Compiles compute-bench.wasm
 make bench-all
 ```
 
-This runs `cargo bench -p cpex-wasm-host` and generates a comparison chart via `plot_results.py`.
+This builds all required plugins, runs `cargo bench`, and generates a comparison chart via `plot_results.py`.
 
 ### Run individually
 
@@ -99,10 +108,10 @@ python3 benchmarking/plot_results.py
 ### Where the time goes (WASM no-op breakdown)
 
 ```
-Total: ~5.1 μs
+Total: ~5.7 μs
 ├── Fuel reset + epoch deadline:  ~0.1 μs
-├── Native → WIT conversion:     ~1.5 μs
-├── WASM function call overhead:  ~1.5 μs
+├── Native → WIT conversion:     ~1.8 μs
+├── WASM function call overhead:  ~1.8 μs
 ├── WIT → Native conversion:     ~1.5 μs
 └── Capability validation:        ~0.5 μs
 ```
@@ -116,28 +125,4 @@ Total: ~5.1 μs
 | Audit/compliance requires sandboxing | Plugin needs shared memory with host |
 | Plugin count is high (isolation per plugin) | Cold start budget is zero |
 
-### Practical impact
-
-For a typical agentic workflow:
-
-```
-LLM inference:     200-2000 ms
-Network I/O:       50-500 ms
-WASM plugin (×3):  15 μs total
-─────────────────────────────
-Plugin overhead:   0.003-0.06% of request
-```
-
 The sandbox overhead is negligible compared to LLM inference and network latency in real deployments.
-
-## Mutex contention
-
-The `SharedEngine` uses `Arc<Mutex<SandboxManager>>` for thread safety. Under concurrent load:
-
-| Concurrent tasks | Throughput | Notes |
-|-----------------|------------|-------|
-| 1 | ~195k ops/sec | No contention |
-| 4 | ~180k ops/sec | Minimal degradation |
-| 8 | ~165k ops/sec | Lock wait becomes measurable |
-
-For high-concurrency deployments, consider one `SandboxManager` per thread or a pool of pre-warmed instances.

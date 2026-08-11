@@ -311,6 +311,8 @@ cpex-wasm-plugin/
 | `make validate` | Validate your .wasm with wasm-tools |
 | `make validate-demos` | Validate all demo .wasm files |
 | `make inspect` | Print the WIT interface in your binary |
+| `make inspect-demo DEMO=<name>` | Print the WIT interface of a specific demo |
+| `make inspect-demos` | Print the WIT interface of all demo .wasm files |
 | `make fmt` | Format source code |
 | `make fmt-check` | Check formatting without modifying |
 | `make clippy` | Run lints on your plugin |

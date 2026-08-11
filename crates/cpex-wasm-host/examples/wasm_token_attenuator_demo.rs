@@ -86,10 +86,12 @@ fn print_delegation_result(result: &cpex_core::executor::PipelineResult) {
 
 #[tokio::main]
 async fn main() {
+    // Silence wasmtime/cranelift JIT compilation noise while keeping host logs.
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("info".parse().unwrap()),
+                .add_directive("warn".parse().unwrap())
+                .add_directive("cpex_wasm_host=info".parse().unwrap()),
         )
         .init();
 

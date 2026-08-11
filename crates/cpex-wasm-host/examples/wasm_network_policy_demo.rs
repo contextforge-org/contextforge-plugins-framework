@@ -129,10 +129,12 @@ fn print_case(label: &str, method: &str, url: &str, result: &str) {
 
 #[tokio::main]
 async fn main() {
+    // Silence wasmtime/cranelift JIT compilation noise while keeping host logs.
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("warn".parse().unwrap()),
+                .add_directive("warn".parse().unwrap())
+                .add_directive("cpex_wasm_host=info".parse().unwrap()),
         )
         .init();
 
@@ -184,6 +186,8 @@ async fn main() {
     print_case("DENY expected", "GET", "https://example.com/", &r);
     println!();
 
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
     // =========================================================================
     // Scenario 2: Host allowlist
     // =========================================================================
@@ -196,6 +200,8 @@ async fn main() {
     let r = invoke(&mgr, "net_host_allow", "https://other.com/", "GET").await;
     print_case("DENY expected", "GET", "https://other.com/", &r);
     println!();
+
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     // =========================================================================
     // Scenario 3: Wildcard host
@@ -211,6 +217,8 @@ async fn main() {
     let r = invoke(&mgr, "net_wildcard", "https://example.com/", "GET").await;
     print_case("DENY expected", "GET", "https://example.com/", &r);
     println!();
+
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     // =========================================================================
     // Scenario 4: Port enforcement
@@ -235,6 +243,8 @@ async fn main() {
     );
     println!();
 
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
     // =========================================================================
     // Scenario 5: Scheme enforcement
     // =========================================================================
@@ -248,6 +258,8 @@ async fn main() {
     print_case("DENY expected", "GET", "http://example.com/ (http)", &r);
     println!();
 
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
     // =========================================================================
     // Scenario 6: Method enforcement
     // =========================================================================
@@ -260,6 +272,8 @@ async fn main() {
     let r = invoke(&mgr, "net_method", "https://example.com/", "POST").await;
     print_case("DENY expected", "POST", "https://example.com/", &r);
     println!();
+
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     // =========================================================================
     // Scenario 7: Multi-rule

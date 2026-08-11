@@ -5,7 +5,7 @@
 # 3 times under different plugin names, each with a deliberately tiny limit.
 #
 # Scenarios:
-#   1. resource-fuel    — 10,000 fuel; tight loop exhausts it immediately
+#   1. resource-fuel    — 100,000 fuel; tight loop exhausts it immediately
 #   2. resource-timeout — 200ms epoch deadline; infinite loop is interrupted
 #   3. resource-memory  — 5 MB cap; 1 MB chunk allocations trigger OOM trap
 

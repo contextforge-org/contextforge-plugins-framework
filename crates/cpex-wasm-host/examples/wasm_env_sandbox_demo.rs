@@ -105,10 +105,12 @@ fn print_case(label: &str, env_var: &str, result: &PipelineResult) {
 
 #[tokio::main]
 async fn main() {
+    // Silence wasmtime/cranelift JIT compilation noise while keeping host logs.
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("warn".parse().unwrap()),
+                .add_directive("warn".parse().unwrap())
+                .add_directive("cpex_wasm_host=info".parse().unwrap()),
         )
         .init();
 
@@ -169,6 +171,8 @@ async fn main() {
     print_case("ALLOW expected", "CPEX_APP_TOKEN", &r);
     let r = invoke(&mgr, "CPEX_LOG_LEVEL").await;
     print_case("ALLOW expected", "CPEX_LOG_LEVEL", &r);
+
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     // =========================================================================
     // Denied variables — not in allowed_env; hidden from sandbox

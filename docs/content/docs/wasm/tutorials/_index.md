@@ -11,9 +11,14 @@ Hands-on walkthroughs using the built-in demos. Each tutorial runs real WASM plu
 ## Prerequisites
 
 ```bash
+# Install the WASI target (one-time setup)
 rustup target add wasm32-wasip2
+
+# All commands below run from the cpex-wasm-host crate
 cd crates/cpex-wasm-host
 ```
+
+Each `make run-*` target automatically builds the required WASM plugins before running the demo — no separate build step needed.
 
 ## What's in this section
 

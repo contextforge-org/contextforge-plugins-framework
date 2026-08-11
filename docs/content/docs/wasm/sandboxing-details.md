@@ -5,7 +5,7 @@ weight: 50
 
 # Sandboxing Details
 
-Every WASM plugin runs inside a Wasmtime sandbox with **deny-by-default** policies. This page documents all sandboxing dimensions, permission levels, and agentic scenarios where each applies.
+Every WASM plugin runs inside a [Wasmtime](https://wasmtime.dev/) sandbox with **deny-by-default** policies. This page documents all sandboxing dimensions, permission levels, and agentic scenarios where each applies.
 
 ## Overview of sandbox layers
 
@@ -22,9 +22,11 @@ All layers compose — a plugin can have filesystem access but no network, or ne
 
 ## Filesystem permissions
 
-Six permission levels control what a plugin can do with preopened directories:
+Six permission levels control what a plugin can do with preopened directories. These map to Wasmtime's [`DirPerms`](https://docs.rs/wasmtime-wasi/latest/wasmtime_wasi/struct.DirPerms.html) and [`FilePerms`](https://docs.rs/wasmtime-wasi/latest/wasmtime_wasi/struct.FilePerms.html) flags.
 
 ### 1. `read-only`
+
+**DirPerms:** `READ` | **FilePerms:** `READ`
 
 **Grants:** list directory, read file contents  
 **Denies:** write, create, delete
@@ -39,6 +41,8 @@ filesystem:
 
 ### 2. `full-access`
 
+**DirPerms:** `READ | MUTATE` | **FilePerms:** `READ | WRITE`
+
 **Grants:** list, read, write, create, delete — all operations  
 **Denies:** nothing within the preopened path
 
@@ -52,8 +56,10 @@ filesystem:
 
 ### 3. `drop-box`
 
-**Grants:** write (create new files, append)  
-**Denies:** list directory, read file contents
+**DirPerms:** `MUTATE` | **FilePerms:** `WRITE`
+
+**Grants:** create directories, delete directories  
+**Denies:** list directory, read files, write files (Wasmtime's [`open_at`](https://docs.rs/wasmtime-wasi/latest/wasmtime_wasi/) requires `DirPerms::READ` to open any file, so file-level I/O is denied even though `FilePerms::WRITE` is set)
 
 ```yaml
 filesystem:
@@ -61,12 +67,16 @@ filesystem:
     permission: drop-box
 ```
 
-**Agentic scenario:** An audit-logging plugin that writes compliance records. The plugin can emit audit entries but cannot read back previous logs, preventing data exfiltration through the audit channel. Even if compromised, it cannot enumerate what other plugins have logged.
+**Agentic scenario:** An audit-logging plugin that needs to create directory structures for organizing audit entries. The plugin can create subdirectories but cannot read back any file contents, preventing data exfiltration. This is primarily useful for directory-level operations rather than file writes.
+
+> **Note:** Despite the name, `drop-box` cannot write to *files* in practice due to wasmtime's permission model where `open_at` requires `DirPerms::READ`. For file-write-only access, use `private-scratch` instead.
 
 ### 4. `fixed-mutable`
 
-**Grants:** read existing files, overwrite existing files  
-**Denies:** create new files, create directories, delete
+**DirPerms:** `READ` | **FilePerms:** `READ | WRITE`
+
+**Grants:** list directory, read file contents  
+**Denies:** write files, create files, create directories, delete (Wasmtime's [`open_at`](https://docs.rs/wasmtime-wasi/latest/wasmtime_wasi/) checks `DirPerms::MUTATE` before `FilePerms::WRITE`, so file writes require `MUTATE` on the directory regardless)
 
 ```yaml
 filesystem:
@@ -74,9 +84,13 @@ filesystem:
     permission: fixed-mutable
 ```
 
-**Agentic scenario:** A rate-limiting plugin that maintains counters in pre-created files. The plugin can read and update counter values but cannot create arbitrary new files, bounding its filesystem footprint to a known set.
+**Agentic scenario:** In practice, this behaves like `read-only` at the file level. The `FilePerms::WRITE` flag has no effect without `DirPerms::MUTATE`. This permission exists for forward-compatibility with runtimes that may decouple directory and file mutation permissions in the future.
+
+> **Note:** In the current Wasmtime implementation, `fixed-mutable` is effectively identical to `read-only` for file operations. Use `full-access` if you need actual write capability.
 
 ### 5. `list-only`
+
+**DirPerms:** `READ` | **FilePerms:** empty
 
 **Grants:** enumerate filenames in the directory  
 **Denies:** read file contents, write, create, delete
@@ -91,8 +105,10 @@ filesystem:
 
 ### 6. `private-scratch`
 
-**Grants:** write new files, read own files  
-**Denies:** list directory (cannot enumerate other files)
+**DirPerms:** `MUTATE` | **FilePerms:** `READ | WRITE`
+
+**Grants:** create new files, write to files, read own files  
+**Denies:** list directory (cannot enumerate other files, since `DirPerms::READ` is absent)
 
 ```yaml
 filesystem:
@@ -100,18 +116,21 @@ filesystem:
     permission: private-scratch
 ```
 
-**Agentic scenario:** A multi-tenant plugin where each invocation writes temporary working files. The plugin can create and read back its own files but cannot discover files left by other invocations or plugins sharing the same scratch space.
+**Agentic scenario:** A multi-tenant plugin where each invocation writes temporary working files. The plugin can create and read back its own files (if it knows the path) but cannot discover files left by other invocations or plugins sharing the same scratch space.
 
 ### Permission summary table
 
-| Permission | list | read | write | create | delete |
-|-----------|------|------|-------|--------|--------|
-| read-only | yes | yes | no | no | no |
-| full-access | yes | yes | yes | yes | yes |
-| drop-box | no | no | yes | yes | no |
-| fixed-mutable | yes | yes | yes | no | no |
-| list-only | yes | no | no | no | no |
-| private-scratch | no | yes | yes | yes | no |
+| Permission | DirPerms | FilePerms | list | read files | write files | create dir | delete |
+|-----------|----------|-----------|------|-----------|-------------|------------|--------|
+| `read-only` | READ | READ | yes | yes | no | no | no |
+| `full-access` | READ+MUTATE | READ+WRITE | yes | yes | yes | yes | yes |
+| `drop-box` | MUTATE | WRITE | no | no | no* | yes | yes |
+| `fixed-mutable` | READ | READ+WRITE | yes | yes | no* | no | no |
+| `list-only` | READ | (empty) | yes | no | no | no | no |
+| `private-scratch` | MUTATE | READ+WRITE | no | yes** | yes | yes | no |
+
+\* Wasmtime's `open_at` requires `DirPerms::READ` to open files and `DirPerms::MUTATE` for write operations, so these are effectively denied despite `FilePerms` flags.  
+\** Can read files if the path is known (cannot list/discover paths).
 
 ---
 
@@ -149,7 +168,7 @@ An agent orchestrator runs multiple third-party plugins. Each plugin needs only 
 
 ## Network permissions
 
-Network access is controlled via WASI HTTP (`wasi:http/outgoing-handler`). Raw TCP/UDP sockets are not available in WASI P2.
+Network access is controlled via [WASI HTTP](https://github.com/WebAssembly/wasi-http) (`wasi:http/outgoing-handler`). Raw TCP/UDP sockets are not available in WASI P2.
 
 ### Default: deny-all
 
@@ -181,13 +200,33 @@ sandbox:
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `host` | yes | — | Exact match or wildcard (`*.example.com`) |
-| `ports` | no | any | Allowed port numbers |
+| `ports` | no | any | Allowed port numbers. Omitted or empty = any port. When a port list is specified and the request URI has no explicit port, it is inferred from scheme (443 for HTTPS, 80 for HTTP). |
 | `schemes` | no | `["https"]` | Allowed URL schemes |
-| `methods` | no | any | Allowed HTTP methods |
+| `methods` | no | any | Allowed HTTP methods (case-insensitive) |
+
+### How empty lists work (two-level model)
+
+The sandbox policy uses a two-level allowlist model:
+
+- **Top-level lists** (`filesystem`, `network`, `env_vars`) are **grants** — each entry opts a resource in. An empty top-level list means nothing is granted (deny-all).
+- **Fields within a rule** (`ports`, `methods`) are **filters on an already-granted host** — they narrow the grant. An empty filter means "don't restrict this dimension" (allow any value).
+
+```yaml
+# Top-level empty = deny-all (no hosts allowed)
+network: []
+
+# Rule present = host granted; empty sub-fields = unrestricted on those dimensions
+network:
+  - host: "api.example.com"
+    ports: []       # any port (not "no ports")
+    methods: []     # any method (not "no methods")
+```
+
+This means: you opt-in at the rule level (adding the rule is the grant), then optionally restrict port/scheme/method within that grant.
 
 ### Enforcement behavior
 
-The `NetworkPolicy` checks each outbound request against all rules. A request is allowed if **any** rule matches on all four dimensions (host AND port AND scheme AND method). If no rule matches, the request is denied and the plugin receives an error.
+The `NetworkPolicy` checks each outbound request against all rules. A request is allowed if **any** rule matches on all four dimensions (host AND port AND scheme AND method). If no rule matches, the request is denied with `ErrorCode::HttpRequestDenied`.
 
 ### Wildcard matching
 
@@ -212,8 +251,8 @@ Resource limits prevent plugins from consuming unbounded CPU, memory, or wall-cl
 ```yaml
 sandbox:
   resources:
-    max_fuel: 500_000_000        # Instruction budget
-    max_execution_time_ms: 5000  # Wall-clock timeout
+    max_fuel: 500_000_000        # Instruction budget per invocation
+    max_execution_time_ms: 5000  # Wall-clock timeout per invocation
     max_memory_bytes: 10_485_760 # 10 MB memory ceiling
     max_instances: 10            # Component instances
     max_tables: 10               # Table elements
@@ -221,7 +260,7 @@ sandbox:
 
 ### Fuel (CPU budget)
 
-Fuel is Wasmtime's instruction counter. Each WASM instruction consumes one unit of fuel. When fuel runs out, execution traps immediately.
+[Fuel](https://docs.wasmtime.dev/api/wasmtime/struct.Store.html#method.set_fuel) is Wasmtime's instruction counter. Each WASM instruction consumes one unit of fuel. When fuel runs out, execution traps immediately. Fuel is **reset per invocation** — each call gets a fresh budget.
 
 | Fuel budget | Approximate workload |
 |-------------|---------------------|
@@ -233,24 +272,84 @@ Fuel is Wasmtime's instruction counter. Each WASM instruction consumes one unit 
 
 ### Epoch timeout (wall-clock)
 
-The shared engine's epoch ticker increments every 1ms. Each `Store` has a deadline set before invocation. If the epoch exceeds the deadline, execution traps.
+The shared engine's [epoch ticker](https://docs.wasmtime.dev/api/wasmtime/struct.Engine.html#method.increment_epoch) increments every 1ms. Each invocation sets a [deadline](https://docs.wasmtime.dev/api/wasmtime/struct.Store.html#method.set_epoch_deadline) before calling the guest. If the epoch exceeds the deadline, execution traps.
 
 This catches scenarios fuel alone cannot: blocking I/O, sleep-like patterns, and WASI calls that don't consume fuel.
 
-**Agentic scenario:** A plugin making an outbound HTTP call might hang if the remote server is unresponsive. The epoch timeout (e.g., 5000ms) ensures the plugin is killed regardless of whether it's burning fuel or waiting on I/O.
+**Agentic scenario:** A plugin making an outbound HTTP call might hang if the remote server is unresponsive. The epoch timeout (e.g., 5000ms) ensures the plugin is interrupted regardless of whether it's burning fuel or waiting on I/O.
 
 ### Memory ceiling
 
-`max_memory_bytes` sets the upper bound on the plugin's linear memory growth. Attempting to grow past this limit traps the plugin.
+`max_memory_bytes` sets the upper bound on the plugin's [linear memory](https://docs.wasmtime.dev/api/wasmtime/struct.Memory.html) growth. Attempting to grow past this limit traps the plugin.
 
 **Agentic scenario:** A plugin processing user input could be tricked into allocating unbounded memory (zip bomb, recursive JSON). The memory ceiling prevents a single plugin from exhausting host memory.
 
 ### What happens on limit violation
 
-| Limit | Error variant | Behavior |
-|-------|--------------|----------|
-| Fuel exhausted | `PluginError::FuelExhausted` | Immediate trap, store dropped |
-| Epoch timeout | `PluginError::Timeout` | Immediate trap, store dropped |
-| Memory exceeded | `PluginError::MemoryLimit` | Trap on `memory.grow`, store dropped |
+| Limit | Error produced | Store state |
+|-------|---------------|-------------|
+| Fuel exhausted | `PluginError::Execution { code: "fuel_exhausted" }` | Store persists — next invocation resets fuel and retries |
+| Epoch timeout | `PluginError::Timeout { timeout_ms }` | Store persists — next invocation resets deadline and retries |
+| Memory exceeded | `PluginError::Execution { code: "memory_limit" }` | Store persists — but memory may be at ceiling, affecting future calls |
 
-In all cases, the `Store` (and all plugin memory) is dropped after the trap. The next invocation starts fresh.
+The [Store](https://docs.wasmtime.dev/api/wasmtime/struct.Store.html) is **not dropped** after a trap. The `SandboxManager` returns an error, and the executor applies the plugin's `on_error` policy (`Fail` / `Ignore` / `Disable`). On the next invocation, fuel and epoch are reset fresh — but linear memory and heap state from before the trap remain.
+
+> **Note on memory traps:** After a memory-limit trap, the Store's linear memory remains at its high-water mark. If the plugin consistently needs more memory than the ceiling allows, it will trap on every invocation. Consider increasing `max_memory_bytes` or investigating the plugin's allocation patterns.
+
+---
+
+## Complete YAML example
+
+A full sandbox policy combining all layers:
+
+```yaml
+plugins:
+  - name: remote-authz
+    kind: "wasm://remote-authz.wasm"
+    hooks:
+      - cmf.tool_pre_invoke
+    capabilities:
+      - read_subject
+      - read_roles
+      - read_labels
+      - append_labels
+    config:
+      sandbox:
+        # Filesystem: read rules, write audit logs
+        filesystem:
+          - dir: "./data/authz-rules"
+            permission: read-only
+          - dir: "./data/audit-logs"
+            permission: private-scratch
+
+        # Network: call the PDP, nothing else
+        network:
+          - host: "pdp.internal.corp"
+            ports: [443]
+            schemes: ["https"]
+            methods: ["POST"]
+
+        # Environment: only the PDP token
+        env_vars:
+          - PDP_API_TOKEN
+
+        # Resources: moderate budget for network I/O
+        resources:
+          max_fuel: 500_000_000
+          max_execution_time_ms: 10000    # 10s (allows network latency)
+          max_memory_bytes: 5_242_880     # 5 MB
+```
+
+This plugin can:
+- Read authorization rules from `./data/authz-rules`
+- Write audit entries to `./data/audit-logs` (cannot list or read back)
+- Make HTTPS POST requests to `pdp.internal.corp:443` only
+- Read the `PDP_API_TOKEN` environment variable
+- Use up to 500M instructions and 5 MB of memory per invocation
+- Run for up to 10 seconds (to accommodate network round-trips)
+
+This plugin cannot:
+- Access any other filesystem path
+- Make requests to any other host, port, scheme, or method
+- Read any other environment variable
+- Use more than 5 MB of memory or exceed 10s wall-clock time

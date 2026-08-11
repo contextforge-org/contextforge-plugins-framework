@@ -18,7 +18,7 @@
 //   private-scratch DirPerms::MUTATE          FilePerms::READ|WRITE
 //
 // Run:
-//   cd crates/cpex-wasm-host && make run-sandbox-demo
+//   cd crates/cpex-wasm-host && make run-fs-demo
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -119,10 +119,12 @@ fn print_case(label: &str, operation: &str, path: &str, result: &PipelineResult)
 
 #[tokio::main]
 async fn main() {
+    // Silence wasmtime/cranelift JIT compilation noise while keeping host logs.
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("warn".parse().unwrap()),
+                .add_directive("warn".parse().unwrap())
+                .add_directive("cpex_wasm_host=info".parse().unwrap()),
         )
         .init();
 
@@ -173,6 +175,8 @@ async fn main() {
     let r = invoke(&mgr, "write", &p("rules", "policy.yaml")).await;
     print_case("DENY expected", "write", &p("rules", "policy.yaml"), &r);
 
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
     // =========================================================================
     // full-access  —  DirPerms::READ|MUTATE  FilePerms::READ|WRITE
     // =========================================================================
@@ -184,6 +188,8 @@ async fn main() {
     print_case("ALLOW expected", "write", &p("cache", "output.txt"), &r);
     let r = invoke(&mgr, "read", &p("cache", "output.txt")).await;
     print_case("ALLOW expected", "read", &p("cache", "output.txt"), &r);
+
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     // =========================================================================
     // drop-box  —  DirPerms::MUTATE  FilePerms::WRITE
@@ -198,6 +204,8 @@ async fn main() {
     print_case("ALLOW expected", "create_dir", &p("audit", "events"), &r);
     let r = invoke(&mgr, "read", &p("audit", "events")).await;
     print_case("DENY expected", "read", &p("audit", "events"), &r);
+
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     // =========================================================================
     // fixed-mutable  —  DirPerms::READ  FilePerms::READ|WRITE
@@ -214,6 +222,8 @@ async fn main() {
     print_case("ALLOW expected", "read", &p("counters", "rate.txt"), &r);
     let r = invoke(&mgr, "create_dir", &p("counters", "new")).await;
     print_case("DENY expected", "create_dir", &p("counters", "new"), &r);
+
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     // =========================================================================
     // list-only  —  DirPerms::READ  FilePerms::empty()
@@ -232,6 +242,8 @@ async fn main() {
         &p("plugins", "fs-sandbox-demo.wasm"),
         &r,
     );
+
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     // =========================================================================
     // private-scratch  —  DirPerms::MUTATE  FilePerms::READ|WRITE

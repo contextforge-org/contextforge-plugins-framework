@@ -122,10 +122,12 @@ fn print_result(
 
 #[tokio::main]
 async fn main() {
+    // Silence wasmtime/cranelift JIT compilation noise while keeping host logs.
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("warn".parse().unwrap()),
+                .add_directive("warn".parse().unwrap())
+                .add_directive("cpex_wasm_host=info".parse().unwrap()),
         )
         .init();
 
@@ -184,6 +186,8 @@ async fn main() {
     print_result("burn_fuel", "max_fuel=100,000", &r, elapsed);
     println!();
 
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
     // =========================================================================
     // Scenario 2: Epoch timeout
     // 200ms deadline — the infinite loop is interrupted by the epoch ticker.
@@ -198,6 +202,8 @@ async fn main() {
     let elapsed = start.elapsed();
     print_result("burn_fuel", "max_execution_time_ms=200", &r, elapsed);
     println!();
+
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     // =========================================================================
     // Scenario 3: Memory limit
