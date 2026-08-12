@@ -62,12 +62,21 @@ cedar = ["cpex-builtins/cedar-direct"]
 cel = ["cpex-builtins/cel"]
 valkey = ["cpex-builtins/valkey"]
 
+# Out-of-process host for existing Python CPEX plugins. Not part of
+# `builtins` / `full`: those are the in-process bundled extension set, while
+# this pulls a host that spawns a `worker.py` subprocess per plugin.
+python-host = ["dep:cpex-hosts-python"]
+
 [dependencies]
 # Host runtime — always present, this is the point of the facade.
 cpex-core = { workspace = true }
 apl-core = { workspace = true }
 apl-cmf = { workspace = true }
 apl-cpex = { workspace = true }
+
+# Python plugin host — runs each Python plugin out-of-process, in its own
+# virtualenv, from the Rust PluginManager. Present only with `python-host`.
+cpex-hosts-python = { workspace = true, optional = true, default-features = false }
 
 # Bundled extension set — present only when a builtins feature is enabled.
 # `default-features = false` so the granular plugin features compose; an

@@ -925,6 +925,7 @@ dependencies = [
  "cpex-builtins",
  "cpex-core",
  "cpex-wasm-host",
+ "cpex-hosts-python",
 ]
 
 [[package]]
