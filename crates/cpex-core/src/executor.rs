@@ -446,6 +446,14 @@ impl Executor {
         // pipeline ruled. Threaded through the phases, finalized at each
         // return point, and attached to the result for audit sinks.
         let mut decisions = DecisionLog::new();
+        // This interception's node identity in the decision graph: a fresh
+        // span whose parent is the request's span (the upstream call that
+        // triggered us), within the request's trace (child-span model).
+        let request = current_extensions.request.as_ref();
+        decisions.set_span(crate::decision::Span::for_request(
+            request.and_then(|r| r.trace_id.as_deref()),
+            request.and_then(|r| r.span_id.as_deref()),
+        ));
 
         if let Some(v) = self
             .run_serial_phase(

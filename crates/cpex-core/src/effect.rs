@@ -23,6 +23,7 @@
 // primitives (v2) are a later slice.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -159,6 +160,11 @@ pub trait DurableEffectLog: Send + Sync {
 /// land atomically at the end of the file. v1 opens the file per append;
 /// effects are rare (token mints, approval grants), so the open cost is not a
 /// hot path, and a pooled handle can be a later optimization.
+/// Default number of appends between automatic compactions. Effects are rare,
+/// so this bounds the file to roughly this many records between compactions
+/// without paying a rewrite on every write.
+const DEFAULT_COMPACTION_THRESHOLD: usize = 1024;
+
 #[derive(Debug, Clone)]
 pub struct FileEffectLog {
     path: Arc<std::path::PathBuf>,
@@ -169,6 +175,13 @@ pub struct FileEffectLog {
     /// recovery sweep reads back). Effects are rare, so contention is
     /// negligible. Cloned handles share the lock, since they share the file.
     write_lock: Arc<tokio::sync::Mutex<()>>,
+    /// Appends since the last compaction. Shared across cloned handles (they
+    /// share the file). When it crosses `compaction_threshold`, `append`
+    /// triggers a compact-only `recover()` to bound the file.
+    appends_since_compaction: Arc<AtomicUsize>,
+    /// Auto-compaction fires after this many appends. `0` disables it —
+    /// compaction then happens only on an explicit `recover()`.
+    compaction_threshold: usize,
 }
 
 impl FileEffectLog {
@@ -177,7 +190,17 @@ impl FileEffectLog {
         Self {
             path: Arc::new(path.into()),
             write_lock: Arc::new(tokio::sync::Mutex::new(())),
+            appends_since_compaction: Arc::new(AtomicUsize::new(0)),
+            compaction_threshold: DEFAULT_COMPACTION_THRESHOLD,
         }
+    }
+
+    /// Override the append count that triggers automatic compaction. `0`
+    /// disables auto-compaction (compaction then happens only on an explicit
+    /// `recover()`).
+    pub fn with_compaction_threshold(mut self, threshold: usize) -> Self {
+        self.compaction_threshold = threshold;
+        self
     }
 }
 
@@ -191,26 +214,46 @@ impl DurableEffectLog for FileEffectLog {
         line.push(b'\n');
 
         let path = Arc::clone(&self.path);
-        // Serialize appends: one writer at a time, so records never interleave
-        // and the on-disk order is deterministic. Held across the blocking
-        // write + fsync below.
-        let _guard = self.write_lock.lock().await;
-        tokio::task::spawn_blocking(move || -> Result<(), Box<PluginError>> {
-            use std::io::Write as _;
-            let mut file = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(path.as_ref())
-                .map_err(|e| wal_error("open WAL", Some(Box::new(e))))?;
-            file.write_all(&line)
-                .map_err(|e| wal_error("write WAL record", Some(Box::new(e))))?;
-            // The durability barrier: the record is on stable storage before
-            // this returns Ok — and therefore before the caller acts.
-            file.sync_all().map_err(|e| wal_error("fsync WAL", Some(Box::new(e))))?;
-            Ok(())
-        })
-        .await
-        .map_err(|e| wal_error("WAL append task failed", Some(Box::new(e))))?
+        // Write under the lock, then release it *before* any compaction:
+        // `recover()` re-acquires this same lock, so holding it here would
+        // deadlock. Serialized so records never interleave.
+        {
+            let _guard = self.write_lock.lock().await;
+            tokio::task::spawn_blocking(move || -> Result<(), Box<PluginError>> {
+                use std::io::Write as _;
+                let mut file = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path.as_ref())
+                    .map_err(|e| wal_error("open WAL", Some(Box::new(e))))?;
+                file.write_all(&line)
+                    .map_err(|e| wal_error("write WAL record", Some(Box::new(e))))?;
+                // The durability barrier: the record is on stable storage
+                // before this returns Ok — and therefore before the caller acts.
+                file.sync_all().map_err(|e| wal_error("fsync WAL", Some(Box::new(e))))?;
+                Ok(())
+            })
+            .await
+            .map_err(|e| wal_error("WAL append task failed", Some(Box::new(e))))??;
+        }
+
+        // Auto-compaction: once appends since the last compaction cross the
+        // threshold, run compact-only `recover()` — safe at runtime, since it
+        // keeps in-flight `prepared` records and only drops matched pairs — to
+        // bound the file. Threshold 0 disables it. A compaction failure is
+        // logged, never fatal: the record above is already durable, so the
+        // append itself succeeded and must not report fail-closed.
+        if self.compaction_threshold != 0 {
+            let n = self.appends_since_compaction.fetch_add(1, Ordering::Relaxed) + 1;
+            if n >= self.compaction_threshold {
+                self.appends_since_compaction.store(0, Ordering::Relaxed);
+                if let Err(e) = self.recover().await {
+                    tracing::warn!("effect WAL auto-compaction failed: {e}");
+                }
+            }
+        }
+
+        Ok(())
     }
 
     async fn recover_and_reconcile(
@@ -552,6 +595,47 @@ mod tests {
         assert_eq!(lines.len(), 1);
         let rec: EffectRecord = serde_json::from_str(lines[0]).unwrap();
         assert_eq!(rec.key, "k-unknown");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn auto_compaction_bounds_the_wal() {
+        let path = unique_temp_path("autocompact");
+        // Low threshold so completed effects trigger compaction quickly.
+        let log = FileEffectLog::new(&path).with_compaction_threshold(4);
+
+        // 20 completed effects = 40 appends. Without compaction the file would
+        // grow to 40 lines; auto-compaction drops each matched pair, so it
+        // stays bounded near the number of in-flight (here: zero) records.
+        for i in 0..20 {
+            let e = EffectRecord::prepared("token_mint", "x", format!("k-{i}"));
+            log.append(&e).await.unwrap();
+            log.append(&e.clone().into_state(EffectState::Confirmed)).await.unwrap();
+        }
+
+        let contents = std::fs::read_to_string(&path).unwrap_or_default();
+        let lines = contents.lines().count();
+        assert!(lines < 8, "auto-compaction bounded the WAL (got {lines} lines, not 40)");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn compaction_threshold_zero_disables_auto_compaction() {
+        let path = unique_temp_path("nocompact");
+        let log = FileEffectLog::new(&path).with_compaction_threshold(0);
+
+        // Two completed effects (4 appends). With auto-compaction off, every
+        // line stays — nothing is compacted until an explicit recover().
+        for i in 0..2 {
+            let e = EffectRecord::prepared("token_mint", "x", format!("k-{i}"));
+            log.append(&e).await.unwrap();
+            log.append(&e.clone().into_state(EffectState::Confirmed)).await.unwrap();
+        }
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(contents.lines().count(), 4, "no auto-compaction when threshold is 0");
 
         let _ = std::fs::remove_file(&path);
     }

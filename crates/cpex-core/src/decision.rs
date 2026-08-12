@@ -68,8 +68,49 @@ impl Verdict {
     }
 }
 
+/// The W3C trace context for one pipeline invocation — the node identity in
+/// the decision graph. `span_id` is this interception's own span,
+/// `parent_span_id` is the upstream call that triggered it (the causal edge),
+/// and `trace_id` correlates the whole run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Span {
+    /// The trace this invocation belongs to (W3C trace-id: 32 hex chars).
+    pub trace_id: String,
+    /// This interception's own span (W3C span-id: 16 hex chars).
+    pub span_id: String,
+    /// The span of the upstream call that caused this one — the causal edge.
+    /// `None` when the request carried no trace context (a trace root).
+    pub parent_span_id: Option<String>,
+}
+
+impl Span {
+    /// Derive the span for an interception from the request's trace context,
+    /// child-span model: a fresh `span_id` for this interception, the request's
+    /// `span_id` as the causal parent, and the request's `trace_id` carried
+    /// through — or a freshly originated trace root when the request carries
+    /// none. Adopts W3C ids; it does not invent a bespoke scheme.
+    pub fn for_request(trace_id: Option<&str>, parent_span_id: Option<&str>) -> Self {
+        Self {
+            trace_id: trace_id.map(str::to_owned).unwrap_or_else(new_trace_id),
+            span_id: new_span_id(),
+            parent_span_id: parent_span_id.map(str::to_owned),
+        }
+    }
+}
+
+/// A freshly originated W3C trace-id: 16 bytes / 32 lowercase hex chars.
+fn new_trace_id() -> String {
+    uuid::Uuid::new_v4().simple().to_string()
+}
+
+/// A freshly originated W3C span-id: 8 bytes / 16 lowercase hex chars (the
+/// first half of a UUID's hex).
+fn new_span_id() -> String {
+    uuid::Uuid::new_v4().simple().to_string()[..16].to_string()
+}
+
 /// The executor's record of one pipeline invocation: the ordered steps
-/// each plugin took, and the terminal verdict.
+/// each plugin took, the terminal verdict, and this invocation's span.
 ///
 /// `verdict` is `None` while the pipeline is still running and is set once
 /// at a return point (allow or deny). An audit sink always receives a
@@ -78,6 +119,7 @@ impl Verdict {
 pub struct DecisionLog {
     steps: Vec<DecisionStep>,
     verdict: Option<Verdict>,
+    span: Option<Span>,
 }
 
 impl DecisionLog {
@@ -105,6 +147,18 @@ impl DecisionLog {
     /// point, before the log is handed to audit handlers.
     pub fn finalize(&mut self, verdict: Verdict) {
         self.verdict = Some(verdict);
+    }
+
+    /// Attach this invocation's span (trace context). Called by the executor
+    /// at pipeline entry, derived from the request via [`Span::for_request`].
+    pub fn set_span(&mut self, span: Span) {
+        self.span = Some(span);
+    }
+
+    /// This invocation's span (trace context) — the node identity and causal
+    /// parent for the decision graph — if the executor set one.
+    pub fn span(&self) -> Option<&Span> {
+        self.span.as_ref()
     }
 
     /// The ordered steps taken this invocation.
@@ -164,5 +218,41 @@ mod tests {
         let mut log = DecisionLog::new();
         log.finalize(Verdict::Allow);
         assert!(!log.is_denied());
+    }
+
+    #[test]
+    fn span_child_model_carries_causal_edge() {
+        let span = Span::for_request(Some("trace-abc"), Some("upstream-span"));
+        assert_eq!(span.trace_id, "trace-abc", "trace carried through");
+        assert_eq!(
+            span.parent_span_id.as_deref(),
+            Some("upstream-span"),
+            "the request's span becomes the causal parent"
+        );
+        assert_eq!(span.span_id.len(), 16, "own fresh W3C span-id");
+        assert_ne!(span.span_id, "upstream-span", "our span, not the parent's");
+    }
+
+    #[test]
+    fn span_originates_trace_root_when_request_has_none() {
+        let span = Span::for_request(None, None);
+        assert_eq!(span.trace_id.len(), 32, "originated W3C trace-id");
+        assert_eq!(span.span_id.len(), 16, "originated W3C span-id");
+        assert!(span.parent_span_id.is_none(), "no parent = trace root");
+    }
+
+    #[test]
+    fn each_invocation_gets_a_distinct_span() {
+        let a = Span::for_request(Some("t"), Some("p"));
+        let b = Span::for_request(Some("t"), Some("p"));
+        assert_ne!(a.span_id, b.span_id, "each interception mints its own span");
+    }
+
+    #[test]
+    fn span_is_none_until_set() {
+        let mut log = DecisionLog::new();
+        assert!(log.span().is_none());
+        log.set_span(Span::for_request(Some("t"), None));
+        assert_eq!(log.span().unwrap().trace_id, "t");
     }
 }

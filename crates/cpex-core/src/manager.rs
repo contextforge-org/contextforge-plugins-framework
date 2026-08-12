@@ -2570,6 +2570,39 @@ plugins:
         let _ = std::fs::remove_file(&path);
     }
 
+    /// The decision log attached to a pipeline result carries a child span:
+    /// same trace, the request's span as the causal parent, a fresh own span.
+    #[tokio::test]
+    async fn decision_log_carries_child_span_from_request() {
+        use crate::extensions::RequestExtension;
+
+        let mgr = PluginManager::default();
+        let config = make_config("allow-plugin", 10, PluginMode::Sequential);
+        mgr.register_handler::<TestHook, _>(Arc::new(AllowPlugin { cfg: config.clone() }), config)
+            .unwrap();
+        mgr.initialize().await.unwrap();
+
+        let mut ext = Extensions::default();
+        ext.request = Some(Arc::new(RequestExtension {
+            trace_id: Some("trace-xyz".into()),
+            span_id: Some("upstream-span".into()),
+            ..Default::default()
+        }));
+
+        let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "x".into() });
+        let (result, _) = mgr.invoke_by_name("test_hook", payload, ext, None).await;
+
+        let span = result.decision_log.span().expect("span set at pipeline entry");
+        assert_eq!(span.trace_id, "trace-xyz", "same trace as the request");
+        assert_eq!(
+            span.parent_span_id.as_deref(),
+            Some("upstream-span"),
+            "request span becomes the causal parent"
+        );
+        assert!(!span.span_id.is_empty());
+        assert_ne!(span.span_id, "upstream-span", "own fresh span, not the parent's");
+    }
+
     #[tokio::test]
     async fn test_invoke_typed() {
         let mgr = PluginManager::default();
