@@ -17,11 +17,13 @@
 // against the participant — e.g. the IdP — via the record's `key`). This is
 // the write-ahead model in docs/step5-effect-audit-options.md (Option C).
 //
-// This slice is the type + lifecycle only. The emit path
-// (`begin_effect`/`complete_effect`), the durable sink, and framework-
-// mediated effect primitives are later slices.
+// This module holds the effect types and lifecycle (`EffectRecord`,
+// `EffectState`), the `EffectEmitter` / `DurableEffectLog` traits, and the
+// file-backed write-ahead log (`FileEffectLog`). Framework-mediated effect
+// primitives (v2) are a later slice.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 
@@ -113,14 +115,246 @@ pub trait EffectEmitter: Send + Sync + std::fmt::Debug {
     async fn emit(&self, effect: &EffectRecord, ext: &Extensions) -> Result<(), Box<PluginError>>;
 }
 
+/// Resolves the outcome of an effect left unresolved after a crash by asking
+/// the participant (e.g. the IdP) whether the act identified by `effect.key`
+/// actually happened. Implemented by the effect-causing subsystem — a delegator
+/// queries its IdP's issuance log. Returns a terminal state, or `Unknown` when
+/// the participant can't say, so the record is retried on a later sweep.
+#[async_trait]
+pub trait EffectReconciler: Send + Sync {
+    async fn reconcile(&self, effect: &EffectRecord) -> EffectState;
+}
+
 /// A durable, append-only sink for effect records — the write-ahead log.
 /// `append` must not return `Ok` until the record is durably persisted; an
 /// `Err` means the caller must **not** perform the irreversible act
-/// (fail-closed). Slice 3a defines the contract; a file-backed impl and the
-/// crash-recovery sweep are slice 3b.
+/// (fail-closed). `FileEffectLog` is the file-backed implementation.
 #[async_trait]
 pub trait DurableEffectLog: Send + Sync {
     async fn append(&self, effect: &EffectRecord) -> Result<(), Box<PluginError>>;
+
+    /// Recover after a restart: compact completed effects and reconcile the
+    /// unresolved ones against `reconciler`, recording each confirmed/rejected
+    /// outcome durably. Returns the effects still `unknown` (the participant
+    /// couldn't say) for a later sweep. Default: a no-op — for logs with no
+    /// recoverable on-disk state.
+    async fn recover_and_reconcile(
+        &self,
+        _reconciler: &dyn EffectReconciler,
+    ) -> Result<Vec<EffectRecord>, Box<PluginError>> {
+        Ok(Vec::new())
+    }
+}
+
+/// A file-backed, append-only write-ahead log for effect records — the
+/// durable sink behind `ext.begin_effect`. Each record is appended as one
+/// JSON line and `fsync`'d before `append` returns, so a `prepared` intent is
+/// on stable storage *before* the irreversible act. `append` returns `Err`
+/// (fail-closed) whenever the record cannot be durably persisted, which is
+/// what stops the act from proceeding.
+///
+/// The append + `fsync` run on a blocking thread (`spawn_blocking`): tokio's
+/// `fs` feature is not enabled, and a synchronous `fsync` must never stall an
+/// async worker. Concurrent appends are safe — `O_APPEND` makes each write
+/// land atomically at the end of the file. v1 opens the file per append;
+/// effects are rare (token mints, approval grants), so the open cost is not a
+/// hot path, and a pooled handle can be a later optimization.
+#[derive(Debug, Clone)]
+pub struct FileEffectLog {
+    path: Arc<std::path::PathBuf>,
+    /// Serializes appends. `O_APPEND` already makes each write's *positioning*
+    /// atomic, but `write_all`'s partial-write loop leaves a narrow window
+    /// where two concurrent writers could interleave a record. One writer at a
+    /// time closes it and gives a deterministic on-disk order (what the
+    /// recovery sweep reads back). Effects are rare, so contention is
+    /// negligible. Cloned handles share the lock, since they share the file.
+    write_lock: Arc<tokio::sync::Mutex<()>>,
+}
+
+impl FileEffectLog {
+    /// A WAL that appends to `path`, creating the file if it does not exist.
+    pub fn new(path: impl Into<std::path::PathBuf>) -> Self {
+        Self {
+            path: Arc::new(path.into()),
+            write_lock: Arc::new(tokio::sync::Mutex::new(())),
+        }
+    }
+}
+
+#[async_trait]
+impl DurableEffectLog for FileEffectLog {
+    async fn append(&self, effect: &EffectRecord) -> Result<(), Box<PluginError>> {
+        // Serialize on the async thread (cheap, no I/O); do the blocking
+        // append + fsync off the async worker pool.
+        let mut line =
+            serde_json::to_vec(effect).map_err(|e| wal_error("serialize effect record", Some(Box::new(e))))?;
+        line.push(b'\n');
+
+        let path = Arc::clone(&self.path);
+        // Serialize appends: one writer at a time, so records never interleave
+        // and the on-disk order is deterministic. Held across the blocking
+        // write + fsync below.
+        let _guard = self.write_lock.lock().await;
+        tokio::task::spawn_blocking(move || -> Result<(), Box<PluginError>> {
+            use std::io::Write as _;
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path.as_ref())
+                .map_err(|e| wal_error("open WAL", Some(Box::new(e))))?;
+            file.write_all(&line)
+                .map_err(|e| wal_error("write WAL record", Some(Box::new(e))))?;
+            // The durability barrier: the record is on stable storage before
+            // this returns Ok — and therefore before the caller acts.
+            file.sync_all().map_err(|e| wal_error("fsync WAL", Some(Box::new(e))))?;
+            Ok(())
+        })
+        .await
+        .map_err(|e| wal_error("WAL append task failed", Some(Box::new(e))))?
+    }
+
+    async fn recover_and_reconcile(
+        &self,
+        reconciler: &dyn EffectReconciler,
+    ) -> Result<Vec<EffectRecord>, Box<PluginError>> {
+        // Compact completed effects, then ask the participant about each
+        // survivor. A confirmed/rejected answer is recorded so the following
+        // compaction drops the pair; an `unknown` answer is left for later.
+        let summary = self.recover().await?;
+        let mut resolved_any = false;
+        let mut still_unknown = Vec::new();
+        for rec in summary.unresolved {
+            match reconciler.reconcile(&rec).await {
+                state @ (EffectState::Confirmed | EffectState::Rejected) => {
+                    self.append(&rec.clone().into_state(state)).await?;
+                    resolved_any = true;
+                },
+                // Still `unknown` (or `prepared`) — keep it for the next sweep.
+                _ => still_unknown.push(rec),
+            }
+        }
+        if resolved_any {
+            // A second pass compacts the just-resolved matched pairs out.
+            self.recover().await?;
+        }
+        Ok(still_unknown)
+    }
+}
+
+/// Build the `PluginError` a durable-write failure surfaces. `begin_effect`
+/// treats any `Err` from the WAL as fail-closed, so this is the error that
+/// prevents an irreversible act from proceeding.
+fn wal_error(what: &str, source: Option<Box<dyn std::error::Error + Send + Sync>>) -> Box<PluginError> {
+    PluginError::Execution {
+        plugin_name: "effect-wal".into(),
+        message: format!("effect WAL: {what}"),
+        source,
+        code: Some("effect_wal_failed".into()),
+        details: HashMap::new(),
+        proto_error_code: None,
+    }
+    .boxed()
+}
+
+/// The result of a recovery sweep over a [`FileEffectLog`].
+#[derive(Debug, Default)]
+pub struct RecoverySummary {
+    /// Number of effects that completed — a `prepared` matched by a terminal
+    /// (`confirmed`/`rejected`) record — and were compacted out of the log.
+    pub compacted: usize,
+    /// Effects with no terminal record: `prepared`-without-outcome (an act that
+    /// may or may not have happened before a crash) or an explicit `unknown`.
+    /// Each needs reconciliation against the participant (the IdP) via its
+    /// `key`. They are retained in the rewritten log.
+    pub unresolved: Vec<EffectRecord>,
+}
+
+impl FileEffectLog {
+    /// Recover after a restart: read the WAL, drop completed effects (a
+    /// `prepared` matched by a terminal record), and atomically rewrite the
+    /// file with only the unresolved records — `prepared`-without-terminal or
+    /// `unknown`. Returns those unresolved records so the caller can reconcile
+    /// them against the participant (the IdP) via each record's `key`. This is
+    /// the compaction that bounds WAL growth (design §6.1) and the entry point
+    /// for crash recovery. Idempotent; a missing file is a no-op.
+    pub async fn recover(&self) -> Result<RecoverySummary, Box<PluginError>> {
+        let path = Arc::clone(&self.path);
+        // Serialize against appends while we read + rewrite the log.
+        let _guard = self.write_lock.lock().await;
+        tokio::task::spawn_blocking(move || -> Result<RecoverySummary, Box<PluginError>> {
+            // A missing log means nothing to recover.
+            let data = match std::fs::read_to_string(path.as_ref()) {
+                Ok(d) => d,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    return Ok(RecoverySummary::default())
+                },
+                Err(e) => return Err(wal_error("read WAL for recovery", Some(Box::new(e)))),
+            };
+
+            // Parse every record in append order.
+            let mut records: Vec<EffectRecord> = Vec::new();
+            for (i, line) in data.lines().enumerate() {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                let rec = serde_json::from_str(line)
+                    .map_err(|e| wal_error(&format!("parse WAL line {}", i + 1), Some(Box::new(e))))?;
+                records.push(rec);
+            }
+
+            // A key is resolved iff some record for it reached a terminal
+            // state. Everything else (prepared-only, unknown) is unresolved.
+            let resolved: std::collections::HashSet<&str> = records
+                .iter()
+                .filter(|r| matches!(r.state, EffectState::Confirmed | EffectState::Rejected))
+                .map(|r| r.key.as_str())
+                .collect();
+
+            // Keep the latest record per unresolved key, in first-seen order.
+            let mut unresolved: Vec<EffectRecord> = Vec::new();
+            let mut pos: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+            for r in &records {
+                if resolved.contains(r.key.as_str()) {
+                    continue;
+                }
+                match pos.get(&r.key) {
+                    Some(&i) => unresolved[i] = r.clone(),
+                    None => {
+                        pos.insert(r.key.clone(), unresolved.len());
+                        unresolved.push(r.clone());
+                    },
+                }
+            }
+            let compacted = resolved.len();
+
+            // Atomic rewrite: write the survivors to a temp file, fsync, then
+            // rename over the original. rename is atomic on POSIX, so a crash
+            // mid-compaction leaves either the old log or the new one — never
+            // a truncated one.
+            let tmp = path.with_extension("recover.tmp");
+            {
+                use std::io::Write as _;
+                let mut f = std::fs::OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(&tmp)
+                    .map_err(|e| wal_error("open WAL temp", Some(Box::new(e))))?;
+                for r in &unresolved {
+                    let mut line = serde_json::to_vec(r)
+                        .map_err(|e| wal_error("serialize during compaction", Some(Box::new(e))))?;
+                    line.push(b'\n');
+                    f.write_all(&line).map_err(|e| wal_error("write WAL temp", Some(Box::new(e))))?;
+                }
+                f.sync_all().map_err(|e| wal_error("fsync WAL temp", Some(Box::new(e))))?;
+            }
+            std::fs::rename(&tmp, path.as_ref()).map_err(|e| wal_error("rename WAL temp", Some(Box::new(e))))?;
+
+            Ok(RecoverySummary { compacted, unresolved })
+        })
+        .await
+        .map_err(|e| wal_error("WAL recovery task failed", Some(Box::new(e))))?
+    }
 }
 
 #[cfg(test)]
@@ -146,5 +380,179 @@ mod tests {
     fn into_state_transitions_to_terminal() {
         let e = EffectRecord::prepared("token_mint", "…", "k-2").into_state(EffectState::Confirmed);
         assert_eq!(e.state, EffectState::Confirmed);
+    }
+
+    /// A temp path unique per (process, call) so parallel tests don't collide,
+    /// without pulling in a `tempfile` dev-dependency.
+    fn unique_temp_path(tag: &str) -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("cpex_{tag}_{}_{n}.ndjson", std::process::id()))
+    }
+
+    #[tokio::test]
+    async fn file_log_appends_one_json_line_per_record() {
+        let path = unique_temp_path("append");
+        let log = FileEffectLog::new(&path);
+
+        let e1 = EffectRecord::prepared("token_mint", "mint A", "k-1").with_detail("audience", "workday-api");
+        let e2 = EffectRecord::prepared("approval_grant", "grant B", "k-2");
+        log.append(&e1).await.expect("append e1");
+        log.append(&e2).await.expect("append e2");
+
+        let contents = std::fs::read_to_string(&path).expect("read WAL");
+        let lines: Vec<&str> = contents.lines().collect();
+        assert_eq!(lines.len(), 2, "one line per appended record");
+
+        // Each line round-trips back into an EffectRecord (this is what the
+        // 3b-iii recovery sweep will rely on).
+        let r1: EffectRecord = serde_json::from_str(lines[0]).expect("parse line 1");
+        assert_eq!(r1.kind, "token_mint");
+        assert_eq!(r1.key, "k-1");
+        assert_eq!(r1.state, EffectState::Prepared);
+        assert_eq!(r1.details["audience"], "workday-api");
+
+        let r2: EffectRecord = serde_json::from_str(lines[1]).expect("parse line 2");
+        assert_eq!(r2.kind, "approval_grant");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn file_log_persists_across_reopen() {
+        // A fresh log over the same path sees prior records — the WAL is real
+        // on-disk state, not per-instance memory. Recovery depends on this.
+        let path = unique_temp_path("reopen");
+        FileEffectLog::new(&path)
+            .append(&EffectRecord::prepared("token_mint", "x", "k-a"))
+            .await
+            .unwrap();
+        FileEffectLog::new(&path)
+            .append(&EffectRecord::prepared("token_mint", "y", "k-b"))
+            .await
+            .unwrap();
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(contents.lines().count(), 2, "second instance appends, does not truncate");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn file_log_concurrent_appends_stay_intact() {
+        // N tasks append to one shared log across multiple worker threads. The
+        // serialization lock must yield exactly N whole, parseable records —
+        // no split or interleaved lines.
+        let path = unique_temp_path("concurrent");
+        let log = FileEffectLog::new(&path);
+        const N: usize = 64;
+
+        let mut handles = Vec::with_capacity(N);
+        for i in 0..N {
+            let log = log.clone();
+            handles.push(tokio::spawn(async move {
+                let e = EffectRecord::prepared("token_mint", format!("mint {i}"), format!("k-{i}"));
+                log.append(&e).await.unwrap();
+            }));
+        }
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        let contents = std::fs::read_to_string(&path).expect("read WAL");
+        let lines: Vec<&str> = contents.lines().collect();
+        assert_eq!(lines.len(), N, "one line per concurrent append");
+
+        // Every line is a complete record, and all N distinct keys are present
+        // (nothing was corrupted or lost).
+        let mut keys = std::collections::HashSet::new();
+        for line in lines {
+            let rec: EffectRecord = serde_json::from_str(line).expect("each line is one intact record");
+            keys.insert(rec.key);
+        }
+        assert_eq!(keys.len(), N, "all N records present and distinct");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn recover_compacts_completed_and_keeps_orphans() {
+        let path = unique_temp_path("recover");
+        let log = FileEffectLog::new(&path);
+
+        // Completed: prepared + confirmed (same key).
+        let done = EffectRecord::prepared("token_mint", "done", "k-done");
+        log.append(&done).await.unwrap();
+        log.append(&done.clone().into_state(EffectState::Confirmed)).await.unwrap();
+        // Orphan: prepared with no terminal (the crash case).
+        log.append(&EffectRecord::prepared("token_mint", "orphan", "k-orphan")).await.unwrap();
+        // Completed: prepared + rejected.
+        let rej = EffectRecord::prepared("approval_grant", "rej", "k-rej");
+        log.append(&rej).await.unwrap();
+        log.append(&rej.clone().into_state(EffectState::Rejected)).await.unwrap();
+
+        let summary = log.recover().await.unwrap();
+        assert_eq!(summary.compacted, 2, "confirmed + rejected effects compacted out");
+        assert_eq!(summary.unresolved.len(), 1, "only the orphan is unresolved");
+        assert_eq!(summary.unresolved[0].key, "k-orphan");
+
+        // The rewritten log holds only the orphan.
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(contents.lines().count(), 1);
+        let rec: EffectRecord = serde_json::from_str(contents.lines().next().unwrap()).unwrap();
+        assert_eq!(rec.key, "k-orphan");
+
+        // Idempotent: a second sweep with no new terminals keeps the orphan.
+        let again = log.recover().await.unwrap();
+        assert_eq!(again.compacted, 0);
+        assert_eq!(again.unresolved.len(), 1);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn recover_on_missing_file_is_noop() {
+        let path = unique_temp_path("recover_missing");
+        let _ = std::fs::remove_file(&path);
+        let summary = FileEffectLog::new(&path).recover().await.unwrap();
+        assert_eq!(summary.compacted, 0);
+        assert!(summary.unresolved.is_empty());
+    }
+
+    #[tokio::test]
+    async fn recover_and_reconcile_resolves_via_participant() {
+        // A stand-in IdP: confirms one key, rejects another, can't resolve a third.
+        struct MockIdp;
+        #[async_trait]
+        impl EffectReconciler for MockIdp {
+            async fn reconcile(&self, effect: &EffectRecord) -> EffectState {
+                match effect.key.as_str() {
+                    "k-confirm" => EffectState::Confirmed,
+                    "k-reject" => EffectState::Rejected,
+                    _ => EffectState::Unknown,
+                }
+            }
+        }
+
+        let path = unique_temp_path("reconcile");
+        let log = FileEffectLog::new(&path);
+        for key in ["k-confirm", "k-reject", "k-unknown"] {
+            log.append(&EffectRecord::prepared("token_mint", "orphan", key)).await.unwrap();
+        }
+
+        let still = log.recover_and_reconcile(&MockIdp).await.unwrap();
+        assert_eq!(still.len(), 1, "only the un-resolvable effect remains");
+        assert_eq!(still[0].key, "k-unknown");
+
+        // The WAL now holds only the still-unknown record; the resolved pair
+        // for k-confirm and k-reject was compacted out.
+        let contents = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = contents.lines().collect();
+        assert_eq!(lines.len(), 1);
+        let rec: EffectRecord = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(rec.key, "k-unknown");
+
+        let _ = std::fs::remove_file(&path);
     }
 }

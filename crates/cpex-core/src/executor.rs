@@ -297,6 +297,12 @@ pub struct Executor {
     /// Set when the manager builds the runtime snapshot; empty otherwise.
     /// They receive the decision log but cannot influence the outcome.
     audit_handlers: Vec<Arc<dyn AuditHandler>>,
+
+    /// Durable write-ahead log for irreversible effects. `None` (default) =
+    /// ordering-only: effects still emit to the audit sinks, but
+    /// `begin_effect` is not crash-safe or fail-closed. Installed from
+    /// `plugin_settings.effect_log_path` or programmatically. Opt-in.
+    effect_log: Option<Arc<dyn DurableEffectLog>>,
 }
 
 impl Executor {
@@ -305,7 +311,28 @@ impl Executor {
         Self {
             config,
             audit_handlers: Vec::new(),
+            effect_log: None,
         }
+    }
+
+    /// Install a durable effect log (WAL). When present, `begin_effect` is
+    /// crash-safe and fail-closed; when absent, effect auditing is
+    /// ordering-only. Builder form, used when constructing from config.
+    pub fn with_effect_log(mut self, effect_log: Arc<dyn DurableEffectLog>) -> Self {
+        self.effect_log = Some(effect_log);
+        self
+    }
+
+    /// Install a durable effect log via copy-on-write snapshot mutation — the
+    /// manager's programmatic path, mirroring [`Self::push_audit_handler`].
+    pub fn set_effect_log(&mut self, effect_log: Arc<dyn DurableEffectLog>) {
+        self.effect_log = Some(effect_log);
+    }
+
+    /// The installed durable effect log, if any — for the host to run
+    /// crash recovery at startup (see `PluginManager::recover_effects`).
+    pub fn effect_log(&self) -> Option<Arc<dyn DurableEffectLog>> {
+        self.effect_log.clone()
     }
 
     /// Attach observation-only audit sinks, invoked at the verdict of every
@@ -595,7 +622,9 @@ impl Executor {
                     handlers: self.audit_handlers.clone(),
                     plugin_name: plugin_name.to_string(),
                     timeout: Duration::from_secs(self.config.timeout_seconds),
-                    durable: None, // slice 3b wires a real WAL here
+                    // The configured WAL (opt-in). `None` → ordering-only, not
+                    // fail-closed; `Some` → durable-before-fanout, fail-closed.
+                    durable: self.effect_log.clone(),
                 }));
             }
 

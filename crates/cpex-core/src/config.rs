@@ -115,6 +115,15 @@ pub struct PluginSettings {
     /// investigate the entity-name growth.
     #[serde(default = "default_route_cache_max_entries")]
     pub route_cache_max_entries: usize,
+
+    /// Optional path to a durable write-ahead log for irreversible-effect
+    /// audit records (token mints, approval grants). When set, `begin_effect`
+    /// becomes crash-safe and fail-closed — the intent is fsync'd before the
+    /// act. When unset (default), effect auditing is ordering-only: records
+    /// still reach the audit sinks, but without durability. Opt-in — basic
+    /// logging leaves this empty.
+    #[serde(default)]
+    pub effect_log_path: Option<String>,
 }
 
 impl Default for PluginSettings {
@@ -126,6 +135,7 @@ impl Default for PluginSettings {
             parallel_execution_within_band: false,
             fail_on_plugin_error: false,
             route_cache_max_entries: default_route_cache_max_entries(),
+            effect_log_path: None,
         }
     }
 }

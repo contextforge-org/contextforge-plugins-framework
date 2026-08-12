@@ -339,11 +339,16 @@ fn instantiate_plugins_into(
 /// the route-cache cap from `plugin_settings` so both registration paths
 /// agree on field-by-field translation.
 fn snapshot_from_config(registry: PluginRegistry, cpex_config: CpexConfig) -> RuntimeSnapshot {
-    let executor = Executor::new(ExecutorConfig {
+    let mut executor = Executor::new(ExecutorConfig {
         timeout_seconds: cpex_config.plugin_settings.plugin_timeout,
         short_circuit_on_deny: cpex_config.plugin_settings.short_circuit_on_deny,
     })
     .with_audit_handlers(registry.audit_handlers());
+    // Opt-in durable effect WAL — installed only when a path is configured.
+    // Absent → effect auditing stays ordering-only (basic logging).
+    if let Some(path) = &cpex_config.plugin_settings.effect_log_path {
+        executor = executor.with_effect_log(Arc::new(crate::effect::FileEffectLog::new(path)));
+    }
     let route_cache_max_entries = cpex_config.plugin_settings.route_cache_max_entries;
     RuntimeSnapshot {
         registry,
@@ -384,6 +389,30 @@ impl PluginManager {
     /// copy-on-write; audit sinks cannot influence pipeline outcomes.
     pub fn register_audit_handler(&self, handler: Arc<dyn AuditHandler>) {
         self.mutate_runtime(|snap| snap.executor.push_audit_handler(handler));
+    }
+
+    /// Install a durable effect-audit WAL programmatically (copy-on-write).
+    /// When present, `begin_effect` is crash-safe and fail-closed. Like
+    /// [`Self::register_audit_handler`], this does not survive `load_config`,
+    /// which rebuilds the executor from `plugin_settings.effect_log_path` —
+    /// declare the path in config for the WAL to persist across reloads.
+    pub fn install_effect_log(&self, effect_log: Arc<dyn crate::effect::DurableEffectLog>) {
+        self.mutate_runtime(|snap| snap.executor.set_effect_log(effect_log));
+    }
+
+    /// Run effect-WAL crash recovery against `reconciler`: compact completed
+    /// effects and reconcile the unresolved (`prepared`-orphan / `unknown`)
+    /// ones, returning the set the participant still can't resolve. A no-op
+    /// when no durable effect log is installed. Call once at startup, after
+    /// config load, when a reconciler (from a delegator) is available.
+    pub async fn recover_effects(
+        &self,
+        reconciler: &dyn crate::effect::EffectReconciler,
+    ) -> Result<Vec<crate::effect::EffectRecord>, Box<PluginError>> {
+        match self.load_runtime().executor.effect_log() {
+            Some(log) => log.recover_and_reconcile(reconciler).await,
+            None => Ok(Vec::new()),
+        }
     }
 
     /// Load the current runtime snapshot (lock-free, single atomic op).
@@ -2442,6 +2471,103 @@ plugins:
                 "no capability → no effect emitted"
             );
         }
+    }
+
+    /// End-to-end (slice 3b wiring): an `emit_effect` plugin's `begin_effect`
+    /// intent is durably written to the configured WAL file and round-trips
+    /// as a `prepared` token_mint.
+    #[tokio::test]
+    async fn effect_wal_persists_prepared_intent_end_to_end() {
+        use crate::effect::{EffectRecord, EffectState, FileEffectLog};
+
+        struct WalEffectPlugin {
+            cfg: PluginConfig,
+        }
+        #[async_trait]
+        impl Plugin for WalEffectPlugin {
+            fn config(&self) -> &PluginConfig {
+                &self.cfg
+            }
+        }
+        impl HookHandler<TestHook> for WalEffectPlugin {
+            async fn handle(
+                &self,
+                _payload: &TestPayload,
+                ext: &Extensions,
+                _ctx: &mut PluginContext,
+            ) -> PluginResult<TestPayload> {
+                let effect = EffectRecord::prepared("token_mint", "exchange for workday-api", "k-1")
+                    .with_detail("audience", "workday-api");
+                // Fail-closed: don't act unless the intent is durable.
+                if ext.begin_effect(&effect).await.is_err() {
+                    return PluginResult::deny(PluginViolation::new(
+                        "effect_prepare_failed",
+                        "could not durably record effect intent",
+                    ));
+                }
+                PluginResult::allow()
+            }
+        }
+
+        let path = std::env::temp_dir().join(format!("cpex_wal_e2e_{}.ndjson", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+
+        let mgr = PluginManager::default();
+        let mut config = make_config("wal-effect-plugin", 10, PluginMode::Sequential);
+        config.capabilities.insert("emit_effect".to_string());
+        mgr.register_handler::<TestHook, _>(Arc::new(WalEffectPlugin { cfg: config.clone() }), config)
+            .unwrap();
+        mgr.install_effect_log(Arc::new(FileEffectLog::new(&path)));
+        mgr.initialize().await.unwrap();
+
+        let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "x".into() });
+        let _ = mgr
+            .invoke_by_name("test_hook", payload, Extensions::default(), None)
+            .await;
+
+        // The WAL file holds one durable `prepared` record, written before the
+        // (would-be) act by `begin_effect`.
+        let contents = std::fs::read_to_string(&path).expect("WAL written by begin_effect");
+        let line = contents.lines().next().expect("one prepared record");
+        let rec: EffectRecord = serde_json::from_str(line).expect("record round-trips");
+        assert_eq!(rec.kind, "token_mint");
+        assert_eq!(rec.state, EffectState::Prepared);
+        assert_eq!(rec.key, "k-1");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Startup recovery: the manager reconciles an orphaned intent in the
+    /// installed WAL and compacts it out.
+    #[tokio::test]
+    async fn manager_recover_effects_reconciles_installed_wal() {
+        use crate::effect::{DurableEffectLog, EffectReconciler, EffectRecord, EffectState, FileEffectLog};
+
+        struct AlwaysConfirm;
+        #[async_trait]
+        impl EffectReconciler for AlwaysConfirm {
+            async fn reconcile(&self, _e: &EffectRecord) -> EffectState {
+                EffectState::Confirmed
+            }
+        }
+
+        let path = std::env::temp_dir().join(format!("cpex_recover_mgr_{}.ndjson", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+
+        // Seed an orphaned `prepared` intent (a crash before the outcome).
+        let log = Arc::new(FileEffectLog::new(&path));
+        log.append(&EffectRecord::prepared("token_mint", "orphan", "k-1")).await.unwrap();
+
+        let mgr = PluginManager::default();
+        mgr.install_effect_log(log.clone());
+
+        let still = mgr.recover_effects(&AlwaysConfirm).await.unwrap();
+        assert!(still.is_empty(), "the orphan was confirmed and compacted");
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert!(contents.trim().is_empty(), "WAL compacted to empty after recovery");
+
+        let _ = std::fs::remove_file(&path);
     }
 
     #[tokio::test]
