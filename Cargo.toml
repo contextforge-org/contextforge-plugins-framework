@@ -51,6 +51,15 @@ exclude = [
 # Everything else, including `crates/cpex-hosts-python` (pure Rust; it only
 # *spawns* a Python subprocess, never links one), builds by default.
 #
+#
+#   * `bindings/python` — links libpython, so including it would make a plain
+#     `cargo build` require a Python dev install (KD3).
+#   * `builtins/session/valkey` — pulls a redis client + a rustls TLS stack,
+#     which slows every default build.
+#
+# Everything else, including `crates/cpex-hosts-python` (pure Rust; it only
+# *spawns* a Python subprocess, never links one), builds by default.
+#
 # To exercise a held-out member:
 #   cargo build --workspace                  # all members
 #   cargo build -p cpex-session-valkey       # just the Valkey session store

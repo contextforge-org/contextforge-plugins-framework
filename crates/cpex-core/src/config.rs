@@ -608,9 +608,17 @@ impl StringOrList {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Config Loading
-// ---------------------------------------------------------------------------
+    /// The literal values as written — the pattern string for `Single`, each
+    /// element for `List`. Use where the values are exact names rather than
+    /// globs to match against (e.g. group membership, which joins a bundle by
+    /// its exact name).
+    pub fn as_names(&self) -> Vec<&str> {
+        match self {
+            Self::Single(pattern) => vec![pattern.as_str()],
+            Self::List(names) => names.iter().map(String::as_str).collect(),
+        }
+    }
+}
 
 #[cfg(feature = "runtime")]
 /// Load and parse a CPEX config from a YAML file.
@@ -628,6 +636,12 @@ pub fn parse_config(yaml: &str) -> Result<CpexConfig, Box<PluginError>> {
     // fields, so a stale `identity:` would otherwise be dropped and its
     // authentication steps never run — a fail-open.
     let raw: serde_yaml::Value = serde_yaml::from_str(yaml).map_err(|e| PluginError::Config {
+        message: format!("failed to parse config YAML: {}", e),
+    })?;
+    reject_renamed_identity_key(&raw)?;
+    let mut config: CpexConfig = serde_yaml::from_value(raw).map_err(|e| PluginError::Config {
+        message: format!("failed to parse config YAML: {}", e),
+    })?;
         message: format!("failed to parse config YAML: {}", e),
     })?;
     reject_renamed_identity_key(&raw)?;

@@ -587,6 +587,13 @@ impl DelegationPayload {
     ///   populated only when [`involves_workload`] — i.e. when a
     ///   workload credential was the subject or the RFC 8693 actor.
     ///
+    ///
+    /// - `subject_id` from `security.subject.id`, empty when no user
+    ///   took part (a workload acting autonomously).
+    /// - `workload_id` from `security.caller_workload.spiffe_id`,
+    ///   populated only when [`involves_workload`] — i.e. when a
+    ///   workload credential was the subject or the RFC 8693 actor.
+    ///
     /// Both are needed. An empty `subject_id` is not a unique
     /// principal: every workload-subject exchange has one, so without
     /// `workload_id` two different calling agents requesting the same
