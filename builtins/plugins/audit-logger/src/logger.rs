@@ -230,6 +230,54 @@ impl AuditLogger {
                 })
                 .collect();
             map.insert("decision_steps".into(), json!(steps));
+
+            // The invocation's node identity in the decision graph: its own
+            // span, the upstream call that triggered it (causal parent), and
+            // the trace they share. Downstream joins these into a causal DAG.
+            if let Some(span) = decisions.span() {
+                map.insert(
+                    "span".into(),
+                    json!({
+                        "trace_id": span.trace_id,
+                        "span_id": span.span_id,
+                        "parent_span_id": span.parent_span_id,
+                    }),
+                );
+            }
+
+            // Taint provenance: the labels the request arrived with vs. the
+            // labels after the pipeline. Their difference is the taint this
+            // node added — a taint edge in the decision graph.
+            let input_labels: Vec<&String> = decisions.input_labels().iter().collect();
+            let final_labels: Vec<String> = ext
+                .security
+                .as_ref()
+                .map(|s| {
+                    let mut l: Vec<String> = s.labels.iter().cloned().collect();
+                    l.sort_unstable();
+                    l
+                })
+                .unwrap_or_default();
+            if !input_labels.is_empty() || !final_labels.is_empty() {
+                map.insert(
+                    "taint".into(),
+                    json!({ "input": input_labels, "final": final_labels }),
+                );
+            }
+
+            // Content-addressed provenance: the input hash (captured at entry
+            // when enabled) plus this node's output hash. Gated on input_hash
+            // presence — when provenance is off it is `None` and we emit
+            // neither. Only digests, never content.
+            if let Some(input_hash) = decisions.input_hash() {
+                let output_hash = payload
+                    .and_then(|p| p.audit_bytes())
+                    .map(|b| cpex_core::hooks::payload::content_hash(&b));
+                map.insert(
+                    "content".into(),
+                    json!({ "input_hash": input_hash, "output_hash": output_hash }),
+                );
+            }
         }
         record
     }
@@ -348,7 +396,8 @@ mod tests {
         assert_eq!(record["tool_call"]["args"]["employee_id"], "EMP-001234");
         // Always-allow contract: handler returns continue_processing.
         let mut ctx = PluginContext::default();
-        let r = <AuditLogger as HookHandler<CmfHook>>::handle(&plugin, &payload, &ext, &mut ctx).await;
+        let r =
+            <AuditLogger as HookHandler<CmfHook>>::handle(&plugin, &payload, &ext, &mut ctx).await;
         assert!(r.continue_processing);
         assert!(r.violation.is_none());
     }
@@ -371,6 +420,72 @@ mod tests {
         assert_eq!(record["verdict"]["deny"]["code"], "missing_permission");
         assert_eq!(record["decision_steps"][0]["plugin"], "cedar-pdp");
         assert_eq!(record["decision_steps"][0]["action"], "Denied");
+        // No span was set on this log → no span field emitted.
+        assert!(record.get("span").is_none());
+    }
+
+    #[test]
+    fn decision_record_includes_span_when_set() {
+        use cpex_core::decision::Span;
+
+        let plugin = AuditLogger::new(cfg()).unwrap();
+        let mut log = DecisionLog::new();
+        log.set_span(Span::for_request(Some("trace-abc"), Some("upstream-span")));
+        log.finalize(Verdict::Allow);
+
+        let record = plugin.build_decision_record(None, &Extensions::default(), &log);
+        assert_eq!(record["span"]["trace_id"], "trace-abc");
+        assert_eq!(record["span"]["parent_span_id"], "upstream-span");
+        assert!(record["span"]["span_id"]
+            .as_str()
+            .is_some_and(|s| !s.is_empty()));
+    }
+
+    #[test]
+    fn decision_record_includes_taint_delta() {
+        let plugin = AuditLogger::new(cfg()).unwrap();
+        let mut log = DecisionLog::new();
+        log.set_input_labels(vec!["PII".into()]); // the request arrived carrying PII
+        log.finalize(Verdict::Allow);
+
+        // Final state: the pipeline added `secret`.
+        let mut sec = SecurityExtension::default();
+        sec.labels.insert("PII".into());
+        sec.labels.insert("secret".into());
+        let ext = Extensions {
+            security: Some(Arc::new(sec)),
+            ..Default::default()
+        };
+
+        let record = plugin.build_decision_record(None, &ext, &log);
+        assert_eq!(record["taint"]["input"], serde_json::json!(["PII"]));
+        assert_eq!(
+            record["taint"]["final"],
+            serde_json::json!(["PII", "secret"])
+        );
+    }
+
+    #[test]
+    fn decision_record_includes_content_hashes_when_captured() {
+        let plugin = AuditLogger::new(cfg()).unwrap();
+        let mut log = DecisionLog::new();
+        log.set_input_hash(Some("sha256:deadbeef".into()));
+        log.finalize(Verdict::Allow);
+
+        // No payload on this dispatch → output_hash is null, input present.
+        let record = plugin.build_decision_record(None, &Extensions::default(), &log);
+        assert_eq!(record["content"]["input_hash"], "sha256:deadbeef");
+        assert!(record["content"]["output_hash"].is_null());
+    }
+
+    #[test]
+    fn no_content_field_without_input_hash() {
+        // Provenance off (input_hash None) → no content field at all.
+        let plugin = AuditLogger::new(cfg()).unwrap();
+        let mut log = DecisionLog::new();
+        log.finalize(Verdict::Allow);
+        let record = plugin.build_decision_record(None, &Extensions::default(), &log);
+        assert!(record.get("content").is_none());
     }
 
     #[test]

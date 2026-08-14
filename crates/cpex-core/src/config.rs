@@ -124,6 +124,21 @@ pub struct PluginSettings {
     /// logging leaves this empty.
     #[serde(default)]
     pub effect_log_path: Option<String>,
+
+    /// Override the effect WAL's auto-compaction threshold — the number of
+    /// appends between automatic compactions. Only meaningful with
+    /// `effect_log_path` set; `0` disables auto-compaction (compaction then
+    /// happens only on an explicit recovery). Unset uses the built-in default.
+    #[serde(default)]
+    pub effect_log_compaction_threshold: Option<usize>,
+
+    /// Capture content-addressed provenance for audit: the executor hashes the
+    /// payload at pipeline entry (`sha256:<hex>`) so audit sinks can record an
+    /// input content ref without the raw content. Off by default — hashing is
+    /// on the request path, so it is opt-in. Only the digest is kept, never the
+    /// bytes.
+    #[serde(default)]
+    pub capture_content_provenance: bool,
 }
 
 impl Default for PluginSettings {
@@ -136,6 +151,8 @@ impl Default for PluginSettings {
             fail_on_plugin_error: false,
             route_cache_max_entries: default_route_cache_max_entries(),
             effect_log_path: None,
+            effect_log_compaction_threshold: None,
+            capture_content_provenance: false,
         }
     }
 }
@@ -1170,6 +1187,35 @@ plugins:
             .unwrap_err()
             .to_string()
             .contains("duplicate plugin name"));
+    }
+
+    #[test]
+    fn parses_effect_log_settings() {
+        let yaml = r#"
+plugin_settings:
+  effect_log_path: /var/lib/cpex/effects.wal
+  effect_log_compaction_threshold: 256
+plugins: []
+"#;
+        let cfg = parse_config(yaml).unwrap();
+        assert_eq!(
+            cfg.plugin_settings.effect_log_path.as_deref(),
+            Some("/var/lib/cpex/effects.wal")
+        );
+        assert_eq!(
+            cfg.plugin_settings.effect_log_compaction_threshold,
+            Some(256)
+        );
+    }
+
+    #[test]
+    fn effect_log_settings_default_to_none() {
+        let cfg = parse_config("plugins: []\n").unwrap();
+        assert!(cfg.plugin_settings.effect_log_path.is_none());
+        assert!(cfg
+            .plugin_settings
+            .effect_log_compaction_threshold
+            .is_none());
     }
 
     #[test]

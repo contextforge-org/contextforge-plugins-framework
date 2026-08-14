@@ -699,7 +699,10 @@ mod tests {
                 })
                 .await;
             assert!(out.is_err(), "begin failure is fail-closed");
-            assert!(!ran.load(Ordering::SeqCst), "act must not run without durable intent");
+            assert!(
+                !ran.load(Ordering::SeqCst),
+                "act must not run without durable intent"
+            );
             assert!(states.lock().unwrap().is_empty());
         }
     }

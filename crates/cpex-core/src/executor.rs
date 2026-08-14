@@ -51,6 +51,11 @@ pub struct ExecutorConfig {
 
     /// Whether to halt on the first deny in concurrent mode.
     pub short_circuit_on_deny: bool,
+
+    /// Hash the payload at pipeline entry for audit content provenance
+    /// (`DecisionLog::input_hash`). Off by default — hashing is on the request
+    /// path, so it is opt-in.
+    pub capture_content_provenance: bool,
 }
 
 impl Default for ExecutorConfig {
@@ -58,6 +63,7 @@ impl Default for ExecutorConfig {
         Self {
             timeout_seconds: 30,
             short_circuit_on_deny: true,
+            capture_content_provenance: false,
         }
     }
 }
@@ -454,6 +460,23 @@ impl Executor {
             request.and_then(|r| r.trace_id.as_deref()),
             request.and_then(|r| r.span_id.as_deref()),
         ));
+        // Capture the taint the request arrived with — the input side of this
+        // node's provenance. A sink diffs it against the final labels to see
+        // what the pipeline added. Sorted so the record is deterministic.
+        if let Some(sec) = current_extensions.security.as_ref() {
+            let mut labels: Vec<String> = sec.labels.iter().cloned().collect();
+            labels.sort_unstable();
+            decisions.set_input_labels(labels);
+        }
+        // Content-addressed input provenance — the payload's hash at entry,
+        // before any plugin mutates it. Opt-in (hashing is on the request
+        // path); only the digest is kept, never the bytes.
+        if self.config.capture_content_provenance {
+            let hash = current_payload
+                .audit_bytes()
+                .map(|b| crate::hooks::payload::content_hash(&b));
+            decisions.set_input_hash(hash);
+        }
 
         if let Some(v) = self
             .run_serial_phase(
@@ -1067,7 +1090,9 @@ impl Executor {
             let action = match &outcome {
                 BranchOutcome::Completed(BranchData::Allow) => PluginAction::Allowed,
                 BranchOutcome::Completed(BranchData::Deny(_)) => PluginAction::Denied,
-                BranchOutcome::Completed(BranchData::Error(e)) => PluginAction::Error(e.to_string()),
+                BranchOutcome::Completed(BranchData::Error(e)) => {
+                    PluginAction::Error(e.to_string())
+                },
                 BranchOutcome::TimedOut => PluginAction::Error("timed out".to_string()),
                 BranchOutcome::Panicked(s) => PluginAction::Error(format!("panicked: {s}")),
                 // Cancelled because another branch short-circuited the phase.

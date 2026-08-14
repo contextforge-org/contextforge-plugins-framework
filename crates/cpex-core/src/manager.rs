@@ -32,10 +32,10 @@ use std::sync::{Arc, RwLock};
 use hashbrown::HashMap;
 use tracing::{error, info, warn};
 
+use crate::audit::AuditHandler;
 use crate::config::{self, CpexConfig};
 use crate::context::PluginContextTable;
 use crate::error::PluginError;
-use crate::audit::AuditHandler;
 use crate::executor::{BackgroundTasks, Executor, ExecutorConfig, PipelineResult};
 use crate::factory::PluginFactoryRegistry;
 use crate::hooks::adapter::TypedHandlerAdapter;
@@ -342,12 +342,17 @@ fn snapshot_from_config(registry: PluginRegistry, cpex_config: CpexConfig) -> Ru
     let mut executor = Executor::new(ExecutorConfig {
         timeout_seconds: cpex_config.plugin_settings.plugin_timeout,
         short_circuit_on_deny: cpex_config.plugin_settings.short_circuit_on_deny,
+        capture_content_provenance: cpex_config.plugin_settings.capture_content_provenance,
     })
     .with_audit_handlers(registry.audit_handlers());
     // Opt-in durable effect WAL — installed only when a path is configured.
     // Absent → effect auditing stays ordering-only (basic logging).
     if let Some(path) = &cpex_config.plugin_settings.effect_log_path {
-        executor = executor.with_effect_log(Arc::new(crate::effect::FileEffectLog::new(path)));
+        let mut log = crate::effect::FileEffectLog::new(path);
+        if let Some(threshold) = cpex_config.plugin_settings.effect_log_compaction_threshold {
+            log = log.with_compaction_threshold(threshold);
+        }
+        executor = executor.with_effect_log(Arc::new(log));
     }
     let route_cache_max_entries = cpex_config.plugin_settings.route_cache_max_entries;
     RuntimeSnapshot {
@@ -400,12 +405,24 @@ impl PluginManager {
         self.mutate_runtime(|snap| snap.executor.set_effect_log(effect_log));
     }
 
-    /// Run effect-WAL crash recovery against `reconciler`: compact completed
-    /// effects and reconcile the unresolved (`prepared`-orphan / `unknown`)
-    /// ones, returning the set the participant still can't resolve. A no-op
-    /// when no durable effect log is installed. Call once at startup, after
-    /// config load, when a reconciler (from a delegator) is available.
+    /// Run effect-WAL crash recovery with the default reconciler
+    /// ([`crate::effect::LogUnknownsReconciler`]): compact completed effects
+    /// and log any unresolved (`prepared`-orphan / `unknown`) ones, returning
+    /// them. A no-op when no durable effect log is installed. Call once at
+    /// startup, after config load. Use [`Self::recover_effects_with`] to supply
+    /// a reconciler that can query an authoritative issuance ledger by key.
     pub async fn recover_effects(
+        &self,
+    ) -> Result<Vec<crate::effect::EffectRecord>, Box<PluginError>> {
+        self.recover_effects_with(&crate::effect::LogUnknownsReconciler)
+            .await
+    }
+
+    /// Like [`Self::recover_effects`], but with a caller-supplied reconciler
+    /// that resolves `unknown` effects by looking up `EffectRecord::key` in an
+    /// authoritative issuance ledger. The reconciler reads the self-describing
+    /// record; it is not plugin-specific.
+    pub async fn recover_effects_with(
         &self,
         reconciler: &dyn crate::effect::EffectReconciler,
     ) -> Result<Vec<crate::effect::EffectRecord>, Box<PluginError>> {
@@ -1891,11 +1908,11 @@ mod tests {
 
     // -- Test payload --
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, serde::Serialize)]
     struct TestPayload {
         value: String,
     }
-    crate::impl_plugin_payload!(TestPayload);
+    crate::impl_plugin_payload!(TestPayload, audit_serialize);
 
     // -- Test hook type --
 
@@ -2123,9 +2140,7 @@ mod tests {
             mgr.register_handler::<TestHook, _>(plugin, config).unwrap();
             mgr.initialize().await.unwrap();
 
-            let payload: Box<dyn PluginPayload> = Box::new(TestPayload {
-                value: "x".into(),
-            });
+            let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "x".into() });
             let (result, _) = mgr
                 .invoke_by_name("test_hook", payload, Extensions::default(), None)
                 .await;
@@ -2148,9 +2163,7 @@ mod tests {
             mgr.register_handler::<TestHook, _>(plugin, config).unwrap();
             mgr.initialize().await.unwrap();
 
-            let payload: Box<dyn PluginPayload> = Box::new(TestPayload {
-                value: "x".into(),
-            });
+            let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "x".into() });
             let (result, _) = mgr
                 .invoke_by_name("test_hook", payload, Extensions::default(), None)
                 .await;
@@ -2195,16 +2208,19 @@ mod tests {
         {
             let mgr = PluginManager::default();
             let config = make_config("allow-plugin", 10, PluginMode::Sequential);
-            mgr.register_handler::<TestHook, _>(Arc::new(AllowPlugin { cfg: config.clone() }), config)
-                .unwrap();
+            mgr.register_handler::<TestHook, _>(
+                Arc::new(AllowPlugin {
+                    cfg: config.clone(),
+                }),
+                config,
+            )
+            .unwrap();
             mgr.register_audit_handler(Arc::new(CapturingAudit {
                 denied: denied.clone(),
             }));
             mgr.initialize().await.unwrap();
 
-            let payload: Box<dyn PluginPayload> = Box::new(TestPayload {
-                value: "x".into(),
-            });
+            let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "x".into() });
             let (result, _) = mgr
                 .invoke_by_name("test_hook", payload, Extensions::default(), None)
                 .await;
@@ -2216,16 +2232,19 @@ mod tests {
         {
             let mgr = PluginManager::default();
             let config = make_config("deny-plugin", 10, PluginMode::Sequential);
-            mgr.register_handler::<TestHook, _>(Arc::new(DenyPlugin { cfg: config.clone() }), config)
-                .unwrap();
+            mgr.register_handler::<TestHook, _>(
+                Arc::new(DenyPlugin {
+                    cfg: config.clone(),
+                }),
+                config,
+            )
+            .unwrap();
             mgr.register_audit_handler(Arc::new(CapturingAudit {
                 denied: denied.clone(),
             }));
             mgr.initialize().await.unwrap();
 
-            let payload: Box<dyn PluginPayload> = Box::new(TestPayload {
-                value: "x".into(),
-            });
+            let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "x".into() });
             let (result, _) = mgr
                 .invoke_by_name("test_hook", payload, Extensions::default(), None)
                 .await;
@@ -2262,14 +2281,17 @@ mod tests {
 
         let mgr = PluginManager::default();
         let config = make_config("allow-plugin", 10, PluginMode::Sequential);
-        mgr.register_handler::<TestHook, _>(Arc::new(AllowPlugin { cfg: config.clone() }), config)
-            .unwrap();
+        mgr.register_handler::<TestHook, _>(
+            Arc::new(AllowPlugin {
+                cfg: config.clone(),
+            }),
+            config,
+        )
+        .unwrap();
         mgr.register_audit_handler(Arc::new(PanicAudit));
         mgr.initialize().await.unwrap();
 
-        let payload: Box<dyn PluginPayload> = Box::new(TestPayload {
-            value: "x".into(),
-        });
+        let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "x".into() });
         let (result, _) = mgr
             .invoke_by_name("test_hook", payload, Extensions::default(), None)
             .await;
@@ -2353,9 +2375,7 @@ plugins:
         mgr.load_config(cpex_config).unwrap();
         mgr.initialize().await.unwrap();
 
-        let payload: Box<dyn PluginPayload> = Box::new(TestPayload {
-            value: "x".into(),
-        });
+        let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "x".into() });
         let (result, _) = mgr
             .invoke_by_name("test_hook", payload, Extensions::default(), None)
             .await;
@@ -2426,16 +2446,16 @@ plugins:
             let mut config = make_config("effect-plugin", 10, PluginMode::Sequential);
             config.capabilities.insert("emit_effect".to_string());
             mgr.register_handler::<TestHook, _>(
-                Arc::new(EffectPlugin { cfg: config.clone() }),
+                Arc::new(EffectPlugin {
+                    cfg: config.clone(),
+                }),
                 config,
             )
             .unwrap();
             mgr.register_audit_handler(Arc::new(CapturingEffectAudit { seen: seen.clone() }));
             mgr.initialize().await.unwrap();
 
-            let payload: Box<dyn PluginPayload> = Box::new(TestPayload {
-                value: "x".into(),
-            });
+            let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "x".into() });
             let _ = mgr
                 .invoke_by_name("test_hook", payload, Extensions::default(), None)
                 .await;
@@ -2452,16 +2472,16 @@ plugins:
             let mgr = PluginManager::default();
             let config = make_config("effect-plugin", 10, PluginMode::Sequential); // no emit_effect cap
             mgr.register_handler::<TestHook, _>(
-                Arc::new(EffectPlugin { cfg: config.clone() }),
+                Arc::new(EffectPlugin {
+                    cfg: config.clone(),
+                }),
                 config,
             )
             .unwrap();
             mgr.register_audit_handler(Arc::new(CapturingEffectAudit { seen: seen.clone() }));
             mgr.initialize().await.unwrap();
 
-            let payload: Box<dyn PluginPayload> = Box::new(TestPayload {
-                value: "x".into(),
-            });
+            let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "x".into() });
             let _ = mgr
                 .invoke_by_name("test_hook", payload, Extensions::default(), None)
                 .await;
@@ -2496,8 +2516,9 @@ plugins:
                 ext: &Extensions,
                 _ctx: &mut PluginContext,
             ) -> PluginResult<TestPayload> {
-                let effect = EffectRecord::prepared("token_mint", "exchange for workday-api", "k-1")
-                    .with_detail("audience", "workday-api");
+                let effect =
+                    EffectRecord::prepared("token_mint", "exchange for workday-api", "k-1")
+                        .with_detail("audience", "workday-api");
                 // Fail-closed: don't act unless the intent is durable.
                 if ext.begin_effect(&effect).await.is_err() {
                     return PluginResult::deny(PluginViolation::new(
@@ -2515,8 +2536,13 @@ plugins:
         let mgr = PluginManager::default();
         let mut config = make_config("wal-effect-plugin", 10, PluginMode::Sequential);
         config.capabilities.insert("emit_effect".to_string());
-        mgr.register_handler::<TestHook, _>(Arc::new(WalEffectPlugin { cfg: config.clone() }), config)
-            .unwrap();
+        mgr.register_handler::<TestHook, _>(
+            Arc::new(WalEffectPlugin {
+                cfg: config.clone(),
+            }),
+            config,
+        )
+        .unwrap();
         mgr.install_effect_log(Arc::new(FileEffectLog::new(&path)));
         mgr.initialize().await.unwrap();
 
@@ -2541,7 +2567,9 @@ plugins:
     /// installed WAL and compacts it out.
     #[tokio::test]
     async fn manager_recover_effects_reconciles_installed_wal() {
-        use crate::effect::{DurableEffectLog, EffectReconciler, EffectRecord, EffectState, FileEffectLog};
+        use crate::effect::{
+            DurableEffectLog, EffectReconciler, EffectRecord, EffectState, FileEffectLog,
+        };
 
         struct AlwaysConfirm;
         #[async_trait]
@@ -2551,21 +2579,58 @@ plugins:
             }
         }
 
-        let path = std::env::temp_dir().join(format!("cpex_recover_mgr_{}.ndjson", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("cpex_recover_mgr_{}.ndjson", std::process::id()));
         let _ = std::fs::remove_file(&path);
 
         // Seed an orphaned `prepared` intent (a crash before the outcome).
         let log = Arc::new(FileEffectLog::new(&path));
-        log.append(&EffectRecord::prepared("token_mint", "orphan", "k-1")).await.unwrap();
+        log.append(&EffectRecord::prepared("token_mint", "orphan", "k-1"))
+            .await
+            .unwrap();
 
         let mgr = PluginManager::default();
         mgr.install_effect_log(log.clone());
 
-        let still = mgr.recover_effects(&AlwaysConfirm).await.unwrap();
+        let still = mgr.recover_effects_with(&AlwaysConfirm).await.unwrap();
         assert!(still.is_empty(), "the orphan was confirmed and compacted");
 
         let contents = std::fs::read_to_string(&path).unwrap();
-        assert!(contents.trim().is_empty(), "WAL compacted to empty after recovery");
+        assert!(
+            contents.trim().is_empty(),
+            "WAL compacted to empty after recovery"
+        );
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// The no-arg default reconciler leaves an unresolvable orphan `unknown`
+    /// (it has no ledger to query), returning it for the operator.
+    #[tokio::test]
+    async fn manager_recover_effects_default_leaves_unknowns() {
+        use crate::effect::{DurableEffectLog, EffectRecord, FileEffectLog};
+
+        let path = std::env::temp_dir().join(format!(
+            "cpex_recover_default_{}.ndjson",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+
+        let log = Arc::new(FileEffectLog::new(&path));
+        log.append(&EffectRecord::prepared("token_mint", "orphan", "k-1"))
+            .await
+            .unwrap();
+
+        let mgr = PluginManager::default();
+        mgr.install_effect_log(log.clone());
+
+        let still = mgr.recover_effects().await.unwrap();
+        assert_eq!(
+            still.len(),
+            1,
+            "default reconciler leaves the orphan unknown"
+        );
+        assert_eq!(still[0].key, "k-1");
 
         let _ = std::fs::remove_file(&path);
     }
@@ -2578,8 +2643,13 @@ plugins:
 
         let mgr = PluginManager::default();
         let config = make_config("allow-plugin", 10, PluginMode::Sequential);
-        mgr.register_handler::<TestHook, _>(Arc::new(AllowPlugin { cfg: config.clone() }), config)
-            .unwrap();
+        mgr.register_handler::<TestHook, _>(
+            Arc::new(AllowPlugin {
+                cfg: config.clone(),
+            }),
+            config,
+        )
+        .unwrap();
         mgr.initialize().await.unwrap();
 
         let mut ext = Extensions::default();
@@ -2592,7 +2662,10 @@ plugins:
         let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "x".into() });
         let (result, _) = mgr.invoke_by_name("test_hook", payload, ext, None).await;
 
-        let span = result.decision_log.span().expect("span set at pipeline entry");
+        let span = result
+            .decision_log
+            .span()
+            .expect("span set at pipeline entry");
         assert_eq!(span.trace_id, "trace-xyz", "same trace as the request");
         assert_eq!(
             span.parent_span_id.as_deref(),
@@ -2600,7 +2673,66 @@ plugins:
             "request span becomes the causal parent"
         );
         assert!(!span.span_id.is_empty());
-        assert_ne!(span.span_id, "upstream-span", "own fresh span, not the parent's");
+        assert_ne!(
+            span.span_id, "upstream-span",
+            "own fresh span, not the parent's"
+        );
+    }
+
+    /// Content provenance is opt-in: the executor captures the input hash only
+    /// when `capture_content_provenance` is set.
+    #[tokio::test]
+    async fn input_hash_captured_only_when_provenance_enabled() {
+        // Flag ON → the decision log carries the input content hash.
+        let mgr = PluginManager::new(ManagerConfig {
+            executor: ExecutorConfig {
+                capture_content_provenance: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+        let config = make_config("allow-plugin", 10, PluginMode::Sequential);
+        mgr.register_handler::<TestHook, _>(
+            Arc::new(AllowPlugin {
+                cfg: config.clone(),
+            }),
+            config,
+        )
+        .unwrap();
+        mgr.initialize().await.unwrap();
+        let payload: Box<dyn PluginPayload> = Box::new(TestPayload {
+            value: "hello".into(),
+        });
+        let (result, _) = mgr
+            .invoke_by_name("test_hook", payload, Extensions::default(), None)
+            .await;
+        let hash = result
+            .decision_log
+            .input_hash()
+            .expect("provenance on → input hash captured");
+        assert!(hash.starts_with("sha256:"), "content-addressed ref: {hash}");
+
+        // Flag OFF (default) → no hash on the hot path.
+        let mgr2 = PluginManager::default();
+        let config2 = make_config("allow-plugin", 10, PluginMode::Sequential);
+        mgr2.register_handler::<TestHook, _>(
+            Arc::new(AllowPlugin {
+                cfg: config2.clone(),
+            }),
+            config2,
+        )
+        .unwrap();
+        mgr2.initialize().await.unwrap();
+        let payload2: Box<dyn PluginPayload> = Box::new(TestPayload {
+            value: "hello".into(),
+        });
+        let (result2, _) = mgr2
+            .invoke_by_name("test_hook", payload2, Extensions::default(), None)
+            .await;
+        assert!(
+            result2.decision_log.input_hash().is_none(),
+            "provenance off → no hash"
+        );
     }
 
     #[tokio::test]
@@ -3585,6 +3717,7 @@ plugins:
             executor: crate::executor::ExecutorConfig {
                 timeout_seconds: 30,
                 short_circuit_on_deny: false,
+                capture_content_provenance: false,
             },
             route_cache_max_entries: DEFAULT_ROUTE_CACHE_MAX_ENTRIES,
         };
@@ -3756,6 +3889,7 @@ plugins:
             executor: crate::executor::ExecutorConfig {
                 timeout_seconds: 1,
                 short_circuit_on_deny: true,
+                capture_content_provenance: false,
             },
             route_cache_max_entries: DEFAULT_ROUTE_CACHE_MAX_ENTRIES,
         };

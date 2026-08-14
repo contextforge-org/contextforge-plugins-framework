@@ -120,6 +120,8 @@ pub struct DecisionLog {
     steps: Vec<DecisionStep>,
     verdict: Option<Verdict>,
     span: Option<Span>,
+    input_labels: Vec<String>,
+    input_hash: Option<String>,
 }
 
 impl DecisionLog {
@@ -161,6 +163,30 @@ impl DecisionLog {
         self.span.as_ref()
     }
 
+    /// Record the taint labels the request carried at pipeline entry — the
+    /// input side of this node's provenance. Diffed against the final labels
+    /// (on `Extensions.security`), it yields the taint the pipeline added.
+    pub fn set_input_labels(&mut self, labels: Vec<String>) {
+        self.input_labels = labels;
+    }
+
+    /// The taint labels present at pipeline entry.
+    pub fn input_labels(&self) -> &[String] {
+        &self.input_labels
+    }
+
+    /// Record the content hash of the payload at pipeline entry — the input
+    /// side of this node's content provenance. Set by the executor only when
+    /// content provenance is enabled; otherwise `None`.
+    pub fn set_input_hash(&mut self, hash: Option<String>) {
+        self.input_hash = hash;
+    }
+
+    /// The content hash of the payload at pipeline entry, if captured.
+    pub fn input_hash(&self) -> Option<&str> {
+        self.input_hash.as_deref()
+    }
+
     /// The ordered steps taken this invocation.
     pub fn steps(&self) -> &[DecisionStep] {
         &self.steps
@@ -188,7 +214,11 @@ mod tests {
     #[test]
     fn records_steps_in_order() {
         let mut log = DecisionLog::new();
-        log.record("pii-scanner", PluginMode::Transform, PluginAction::ModifiedPayload);
+        log.record(
+            "pii-scanner",
+            PluginMode::Transform,
+            PluginAction::ModifiedPayload,
+        );
         log.record("cedar-pdp", PluginMode::Sequential, PluginAction::Denied);
 
         let steps = log.steps();
@@ -254,5 +284,24 @@ mod tests {
         assert!(log.span().is_none());
         log.set_span(Span::for_request(Some("t"), None));
         assert_eq!(log.span().unwrap().trace_id, "t");
+    }
+
+    #[test]
+    fn input_labels_default_empty_and_settable() {
+        let mut log = DecisionLog::new();
+        assert!(log.input_labels().is_empty());
+        log.set_input_labels(vec!["PII".into(), "secret".into()]);
+        assert_eq!(
+            log.input_labels(),
+            &["PII".to_string(), "secret".to_string()]
+        );
+    }
+
+    #[test]
+    fn input_hash_default_none_and_settable() {
+        let mut log = DecisionLog::new();
+        assert!(log.input_hash().is_none());
+        log.set_input_hash(Some("sha256:abc".into()));
+        assert_eq!(log.input_hash(), Some("sha256:abc"));
     }
 }

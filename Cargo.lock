@@ -803,6 +803,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2 0.10.9",
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
@@ -955,6 +956,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+ "uuid",
  "zeroize",
 ]
 

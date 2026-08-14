@@ -84,7 +84,11 @@ impl EffectRecord {
     }
 
     /// Attach a structured detail (builder-style).
-    pub fn with_detail(mut self, key: impl Into<String>, value: impl Into<serde_json::Value>) -> Self {
+    pub fn with_detail(
+        mut self,
+        key: impl Into<String>,
+        value: impl Into<serde_json::Value>,
+    ) -> Self {
         self.details.insert(key.into(), value.into());
         self
     }
@@ -116,14 +120,42 @@ pub trait EffectEmitter: Send + Sync + std::fmt::Debug {
     async fn emit(&self, effect: &EffectRecord, ext: &Extensions) -> Result<(), Box<PluginError>>;
 }
 
-/// Resolves the outcome of an effect left unresolved after a crash by asking
-/// the participant (e.g. the IdP) whether the act identified by `effect.key`
-/// actually happened. Implemented by the effect-causing subsystem — a delegator
-/// queries its IdP's issuance log. Returns a terminal state, or `Unknown` when
-/// the participant can't say, so the record is retried on a later sweep.
+/// Resolves an effect left `unknown` after a crash by asking an authoritative
+/// issuance ledger whether the act identified by `EffectRecord::key` actually
+/// happened. The `EffectRecord` is self-describing (kind, key, details), so a
+/// reconciler just reads those fields and performs a keyed lookup — it needs no
+/// knowledge of which plugin caused the effect. Returns a terminal state, or
+/// `Unknown` when the ledger can't say, so the record is retried on a later
+/// sweep.
+///
+/// Most effects have no queryable ledger (an OAuth IdP, for instance, exposes
+/// no lookup by mint key), so [`LogUnknownsReconciler`] is the default.
 #[async_trait]
 pub trait EffectReconciler: Send + Sync {
     async fn reconcile(&self, effect: &EffectRecord) -> EffectState;
+}
+
+/// The default [`EffectReconciler`]: there is no ledger to query, so it logs
+/// each unresolved effect and leaves it `unknown` for an operator to
+/// investigate. This is the honest, correct behavior for every effect whose
+/// participant exposes no keyed lookup — which today is all of them. A real
+/// reconciler (e.g. against a mandate server that owns issuance) queries the
+/// ledger by `EffectRecord::key`; nothing about it is plugin-specific.
+#[derive(Debug, Default)]
+pub struct LogUnknownsReconciler;
+
+#[async_trait]
+impl EffectReconciler for LogUnknownsReconciler {
+    async fn reconcile(&self, effect: &EffectRecord) -> EffectState {
+        tracing::warn!(
+            effect_key = %effect.key,
+            kind = %effect.kind,
+            plugin = effect.plugin_name.as_deref().unwrap_or("?"),
+            "effect left unresolved after a crash; no ledger to reconcile it — \
+             leaving `unknown` for investigation"
+        );
+        EffectState::Unknown
+    }
 }
 
 /// A durable, append-only sink for effect records — the write-ahead log.
@@ -209,8 +241,8 @@ impl DurableEffectLog for FileEffectLog {
     async fn append(&self, effect: &EffectRecord) -> Result<(), Box<PluginError>> {
         // Serialize on the async thread (cheap, no I/O); do the blocking
         // append + fsync off the async worker pool.
-        let mut line =
-            serde_json::to_vec(effect).map_err(|e| wal_error("serialize effect record", Some(Box::new(e))))?;
+        let mut line = serde_json::to_vec(effect)
+            .map_err(|e| wal_error("serialize effect record", Some(Box::new(e))))?;
         line.push(b'\n');
 
         let path = Arc::clone(&self.path);
@@ -230,7 +262,8 @@ impl DurableEffectLog for FileEffectLog {
                     .map_err(|e| wal_error("write WAL record", Some(Box::new(e))))?;
                 // The durability barrier: the record is on stable storage
                 // before this returns Ok — and therefore before the caller acts.
-                file.sync_all().map_err(|e| wal_error("fsync WAL", Some(Box::new(e))))?;
+                file.sync_all()
+                    .map_err(|e| wal_error("fsync WAL", Some(Box::new(e))))?;
                 Ok(())
             })
             .await
@@ -244,7 +277,10 @@ impl DurableEffectLog for FileEffectLog {
         // logged, never fatal: the record above is already durable, so the
         // append itself succeeded and must not report fail-closed.
         if self.compaction_threshold != 0 {
-            let n = self.appends_since_compaction.fetch_add(1, Ordering::Relaxed) + 1;
+            let n = self
+                .appends_since_compaction
+                .fetch_add(1, Ordering::Relaxed)
+                + 1;
             if n >= self.compaction_threshold {
                 self.appends_since_compaction.store(0, Ordering::Relaxed);
                 if let Err(e) = self.recover().await {
@@ -287,7 +323,10 @@ impl DurableEffectLog for FileEffectLog {
 /// Build the `PluginError` a durable-write failure surfaces. `begin_effect`
 /// treats any `Err` from the WAL as fail-closed, so this is the error that
 /// prevents an irreversible act from proceeding.
-fn wal_error(what: &str, source: Option<Box<dyn std::error::Error + Send + Sync>>) -> Box<PluginError> {
+fn wal_error(
+    what: &str,
+    source: Option<Box<dyn std::error::Error + Send + Sync>>,
+) -> Box<PluginError> {
     PluginError::Execution {
         plugin_name: "effect-wal".into(),
         message: format!("effect WAL: {what}"),
@@ -340,8 +379,9 @@ impl FileEffectLog {
                 if line.trim().is_empty() {
                     continue;
                 }
-                let rec = serde_json::from_str(line)
-                    .map_err(|e| wal_error(&format!("parse WAL line {}", i + 1), Some(Box::new(e))))?;
+                let rec = serde_json::from_str(line).map_err(|e| {
+                    wal_error(&format!("parse WAL line {}", i + 1), Some(Box::new(e)))
+                })?;
                 records.push(rec);
             }
 
@@ -355,7 +395,8 @@ impl FileEffectLog {
 
             // Keep the latest record per unresolved key, in first-seen order.
             let mut unresolved: Vec<EffectRecord> = Vec::new();
-            let mut pos: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+            let mut pos: std::collections::HashMap<String, usize> =
+                std::collections::HashMap::new();
             for r in &records {
                 if resolved.contains(r.key.as_str()) {
                     continue;
@@ -387,13 +428,19 @@ impl FileEffectLog {
                     let mut line = serde_json::to_vec(r)
                         .map_err(|e| wal_error("serialize during compaction", Some(Box::new(e))))?;
                     line.push(b'\n');
-                    f.write_all(&line).map_err(|e| wal_error("write WAL temp", Some(Box::new(e))))?;
+                    f.write_all(&line)
+                        .map_err(|e| wal_error("write WAL temp", Some(Box::new(e))))?;
                 }
-                f.sync_all().map_err(|e| wal_error("fsync WAL temp", Some(Box::new(e))))?;
+                f.sync_all()
+                    .map_err(|e| wal_error("fsync WAL temp", Some(Box::new(e))))?;
             }
-            std::fs::rename(&tmp, path.as_ref()).map_err(|e| wal_error("rename WAL temp", Some(Box::new(e))))?;
+            std::fs::rename(&tmp, path.as_ref())
+                .map_err(|e| wal_error("rename WAL temp", Some(Box::new(e))))?;
 
-            Ok(RecoverySummary { compacted, unresolved })
+            Ok(RecoverySummary {
+                compacted,
+                unresolved,
+            })
         })
         .await
         .map_err(|e| wal_error("WAL recovery task failed", Some(Box::new(e))))?
@@ -439,7 +486,8 @@ mod tests {
         let path = unique_temp_path("append");
         let log = FileEffectLog::new(&path);
 
-        let e1 = EffectRecord::prepared("token_mint", "mint A", "k-1").with_detail("audience", "workday-api");
+        let e1 = EffectRecord::prepared("token_mint", "mint A", "k-1")
+            .with_detail("audience", "workday-api");
         let e2 = EffectRecord::prepared("approval_grant", "grant B", "k-2");
         log.append(&e1).await.expect("append e1");
         log.append(&e2).await.expect("append e2");
@@ -477,7 +525,11 @@ mod tests {
             .unwrap();
 
         let contents = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(contents.lines().count(), 2, "second instance appends, does not truncate");
+        assert_eq!(
+            contents.lines().count(),
+            2,
+            "second instance appends, does not truncate"
+        );
 
         let _ = std::fs::remove_file(&path);
     }
@@ -511,7 +563,8 @@ mod tests {
         // (nothing was corrupted or lost).
         let mut keys = std::collections::HashSet::new();
         for line in lines {
-            let rec: EffectRecord = serde_json::from_str(line).expect("each line is one intact record");
+            let rec: EffectRecord =
+                serde_json::from_str(line).expect("each line is one intact record");
             keys.insert(rec.key);
         }
         assert_eq!(keys.len(), N, "all N records present and distinct");
@@ -527,16 +580,25 @@ mod tests {
         // Completed: prepared + confirmed (same key).
         let done = EffectRecord::prepared("token_mint", "done", "k-done");
         log.append(&done).await.unwrap();
-        log.append(&done.clone().into_state(EffectState::Confirmed)).await.unwrap();
+        log.append(&done.clone().into_state(EffectState::Confirmed))
+            .await
+            .unwrap();
         // Orphan: prepared with no terminal (the crash case).
-        log.append(&EffectRecord::prepared("token_mint", "orphan", "k-orphan")).await.unwrap();
+        log.append(&EffectRecord::prepared("token_mint", "orphan", "k-orphan"))
+            .await
+            .unwrap();
         // Completed: prepared + rejected.
         let rej = EffectRecord::prepared("approval_grant", "rej", "k-rej");
         log.append(&rej).await.unwrap();
-        log.append(&rej.clone().into_state(EffectState::Rejected)).await.unwrap();
+        log.append(&rej.clone().into_state(EffectState::Rejected))
+            .await
+            .unwrap();
 
         let summary = log.recover().await.unwrap();
-        assert_eq!(summary.compacted, 2, "confirmed + rejected effects compacted out");
+        assert_eq!(
+            summary.compacted, 2,
+            "confirmed + rejected effects compacted out"
+        );
         assert_eq!(summary.unresolved.len(), 1, "only the orphan is unresolved");
         assert_eq!(summary.unresolved[0].key, "k-orphan");
 
@@ -581,7 +643,9 @@ mod tests {
         let path = unique_temp_path("reconcile");
         let log = FileEffectLog::new(&path);
         for key in ["k-confirm", "k-reject", "k-unknown"] {
-            log.append(&EffectRecord::prepared("token_mint", "orphan", key)).await.unwrap();
+            log.append(&EffectRecord::prepared("token_mint", "orphan", key))
+                .await
+                .unwrap();
         }
 
         let still = log.recover_and_reconcile(&MockIdp).await.unwrap();
@@ -611,12 +675,17 @@ mod tests {
         for i in 0..20 {
             let e = EffectRecord::prepared("token_mint", "x", format!("k-{i}"));
             log.append(&e).await.unwrap();
-            log.append(&e.clone().into_state(EffectState::Confirmed)).await.unwrap();
+            log.append(&e.clone().into_state(EffectState::Confirmed))
+                .await
+                .unwrap();
         }
 
         let contents = std::fs::read_to_string(&path).unwrap_or_default();
         let lines = contents.lines().count();
-        assert!(lines < 8, "auto-compaction bounded the WAL (got {lines} lines, not 40)");
+        assert!(
+            lines < 8,
+            "auto-compaction bounded the WAL (got {lines} lines, not 40)"
+        );
 
         let _ = std::fs::remove_file(&path);
     }
@@ -631,12 +700,27 @@ mod tests {
         for i in 0..2 {
             let e = EffectRecord::prepared("token_mint", "x", format!("k-{i}"));
             log.append(&e).await.unwrap();
-            log.append(&e.clone().into_state(EffectState::Confirmed)).await.unwrap();
+            log.append(&e.clone().into_state(EffectState::Confirmed))
+                .await
+                .unwrap();
         }
 
         let contents = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(contents.lines().count(), 4, "no auto-compaction when threshold is 0");
+        assert_eq!(
+            contents.lines().count(),
+            4,
+            "no auto-compaction when threshold is 0"
+        );
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn default_reconciler_leaves_effects_unknown() {
+        let effect = EffectRecord::prepared("token_mint", "no ledger", "k-x");
+        assert_eq!(
+            LogUnknownsReconciler.reconcile(&effect).await,
+            EffectState::Unknown
+        );
     }
 }
