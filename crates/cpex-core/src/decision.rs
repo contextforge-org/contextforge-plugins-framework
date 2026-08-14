@@ -122,6 +122,9 @@ pub struct DecisionLog {
     span: Option<Span>,
     input_labels: Vec<String>,
     input_hash: Option<String>,
+    stream_id: Option<String>,
+    stream_seq: Option<u64>,
+    emission_seq: Option<u64>,
 }
 
 impl DecisionLog {
@@ -185,6 +188,34 @@ impl DecisionLog {
     /// The content hash of the payload at pipeline entry, if captured.
     pub fn input_hash(&self) -> Option<&str> {
         self.input_hash.as_deref()
+    }
+
+    /// Stamp the stream identity and sequence numbers, assigned by the executor
+    /// at emission. `stream_id` scopes `stream_seq` — a gap-free counter within
+    /// the *decision* stream, so a consumer of decisions alone can prove none
+    /// was dropped. `emission_seq` is the *global* counter across decisions and
+    /// effects alike, so a consumer that merges both streams can reconstruct
+    /// their interleaved order.
+    pub fn set_stream(&mut self, stream_id: String, stream_seq: u64, emission_seq: u64) {
+        self.stream_id = Some(stream_id);
+        self.stream_seq = Some(stream_seq);
+        self.emission_seq = Some(emission_seq);
+    }
+
+    /// The decision stream this record belongs to (scopes `stream_seq`).
+    pub fn stream_id(&self) -> Option<&str> {
+        self.stream_id.as_deref()
+    }
+
+    /// Monotonic, gap-free sequence within the decision stream — completeness.
+    pub fn stream_seq(&self) -> Option<u64> {
+        self.stream_seq
+    }
+
+    /// Global monotonic sequence across decisions and effects — interleaved
+    /// order.
+    pub fn emission_seq(&self) -> Option<u64> {
+        self.emission_seq
     }
 
     /// The ordered steps taken this invocation.
@@ -303,5 +334,17 @@ mod tests {
         assert!(log.input_hash().is_none());
         log.set_input_hash(Some("sha256:abc".into()));
         assert_eq!(log.input_hash(), Some("sha256:abc"));
+    }
+
+    #[test]
+    fn stream_and_sequences_stamp_and_read_back() {
+        let mut log = DecisionLog::new();
+        assert!(log.stream_id().is_none());
+        assert!(log.stream_seq().is_none());
+        assert!(log.emission_seq().is_none());
+        log.set_stream("dec-abc".into(), 7, 42);
+        assert_eq!(log.stream_id(), Some("dec-abc"));
+        assert_eq!(log.stream_seq(), Some(7));
+        assert_eq!(log.emission_seq(), Some(42));
     }
 }

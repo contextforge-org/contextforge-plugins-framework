@@ -91,11 +91,22 @@ pub trait PluginPayload: Send + Sync + 'static {
     /// or `None` for payloads that can't or shouldn't be serialized (the
     /// default). The bytes feed a content hash — **only the digest is
     /// retained, never the bytes** — so a node's provenance is recorded
-    /// without re-spilling its (possibly sensitive) content. Must be
-    /// *canonical* (stable across processes) for the hashes to compare;
-    /// `impl_plugin_payload!(_, audit_serialize)` derives that via sorted-key
-    /// JSON. Computed only when content provenance is enabled, so the default
-    /// keeps the hot path free.
+    /// without re-spilling its (possibly sensitive) content. Computed only
+    /// when content provenance is enabled, so the default keeps the hot path
+    /// free.
+    ///
+    /// **Byte-stability (what a consumer may assume).**
+    /// `impl_plugin_payload!(_, audit_serialize)` derives this by round-tripping
+    /// through `serde_json::Value` — whose `Map` is a `BTreeMap`, so object keys
+    /// are sorted. Identical content therefore serializes to identical bytes
+    /// across runs and processes, and **two equal digests mean "same content"
+    /// within a deployment**. It is *sorted-key JSON, not full RFC 8785 (JCS)*:
+    /// number formatting follows `serde_json` and is stable within a
+    /// `serde_json` version but is not guaranteed by a canonicalization spec
+    /// across toolchains. So treat digest equality as same-content within a
+    /// build; do not assume cross-toolchain canonicalization. A hand-written
+    /// `audit_bytes` must preserve this property (a canonical, deterministic
+    /// encoding) or its hashes will not be comparable.
     fn audit_bytes(&self) -> Option<Vec<u8>> {
         None
     }

@@ -2493,6 +2493,194 @@ plugins:
         }
     }
 
+    /// The global `emission_seq` orders effect records against the decision
+    /// record within one invocation — effects emit during `handle`, the
+    /// decision at the verdict — so a consumer that merges the two streams can
+    /// reconstruct their interleave. Per-stream ids keep the two streams
+    /// distinguishable.
+    #[tokio::test]
+    async fn emission_seq_interleaves_effects_and_decision() {
+        use crate::audit::AuditHandler;
+        use crate::decision::DecisionLog;
+        use crate::effect::{EffectRecord, EffectState};
+        use std::sync::Mutex;
+
+        // (label, stream_id, emission_seq) for every record the sink observes.
+        let log: Arc<Mutex<Vec<(String, String, u64)>>> = Arc::new(Mutex::new(Vec::new()));
+
+        struct EffectPlugin {
+            cfg: PluginConfig,
+        }
+        #[async_trait]
+        impl Plugin for EffectPlugin {
+            fn config(&self) -> &PluginConfig {
+                &self.cfg
+            }
+        }
+        impl HookHandler<TestHook> for EffectPlugin {
+            async fn handle(
+                &self,
+                _payload: &TestPayload,
+                ext: &Extensions,
+                _ctx: &mut PluginContext,
+            ) -> PluginResult<TestPayload> {
+                let e = EffectRecord::prepared("token_mint", "exchange", "k-1");
+                ext.begin_effect(&e).await.unwrap();
+                let _ = ext.complete_effect(&e, EffectState::Confirmed).await;
+                PluginResult::allow()
+            }
+        }
+
+        struct RecordingSink {
+            log: Arc<Mutex<Vec<(String, String, u64)>>>,
+        }
+        #[async_trait]
+        impl AuditHandler for RecordingSink {
+            async fn handle(&self, _p: &dyn PluginPayload, _e: &Extensions, d: &DecisionLog) {
+                self.log.lock().unwrap().push((
+                    "decision".into(),
+                    d.stream_id().unwrap_or_default().to_string(),
+                    d.emission_seq().unwrap(),
+                ));
+            }
+            async fn on_effect(&self, effect: &EffectRecord, _e: &Extensions) {
+                self.log.lock().unwrap().push((
+                    format!("effect:{:?}", effect.state),
+                    effect.stream_id.clone().unwrap_or_default(),
+                    effect.emission_seq.unwrap(),
+                ));
+            }
+        }
+
+        let mgr = PluginManager::default();
+        let mut config = make_config("effect-plugin", 10, PluginMode::Sequential);
+        config.capabilities.insert("emit_effect".to_string());
+        mgr.register_handler::<TestHook, _>(
+            Arc::new(EffectPlugin {
+                cfg: config.clone(),
+            }),
+            config,
+        )
+        .unwrap();
+        mgr.register_audit_handler(Arc::new(RecordingSink { log: log.clone() }));
+        mgr.initialize().await.unwrap();
+
+        let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "x".into() });
+        let _ = mgr
+            .invoke_by_name("test_hook", payload, Extensions::default(), None)
+            .await;
+
+        let l = log.lock().unwrap();
+        assert_eq!(
+            l.len(),
+            3,
+            "prepared + confirmed (during handle) + decision; got {l:?}"
+        );
+        // Global emission_seq strictly increasing in emission order — the effects
+        // (emitted during handle) precede the decision (emitted at the verdict).
+        assert!(
+            l[0].2 < l[1].2 && l[1].2 < l[2].2,
+            "emission_seq orders the interleave; got {l:?}"
+        );
+        assert_eq!(l[0].0, "effect:Prepared");
+        assert_eq!(l[2].0, "decision");
+        // Distinct per-type streams.
+        assert!(
+            l[0].1.starts_with("eff-"),
+            "effect stream id; got {}",
+            l[0].1
+        );
+        assert!(
+            l[2].1.starts_with("dec-"),
+            "decision stream id; got {}",
+            l[2].1
+        );
+    }
+
+    /// `on_effect` fires on the `begin_effect` (prepared) leg — a sink observes
+    /// the intent record *before* the effect body runs, not only at completion.
+    /// Regression guard: evidence-of-intent is the write-ahead's whole value, so
+    /// a change that silently reduced sinks to completions-only must fail here.
+    #[tokio::test]
+    async fn on_effect_fires_on_the_prepared_leg_before_the_act() {
+        use crate::audit::AuditHandler;
+        use crate::decision::DecisionLog;
+        use crate::effect::{EffectRecord, EffectState};
+        use std::sync::Mutex;
+
+        // One ordered log that both the plugin and the sink append to.
+        let order: Arc<Mutex<Vec<&'static str>>> = Arc::new(Mutex::new(Vec::new()));
+
+        struct OrderingPlugin {
+            cfg: PluginConfig,
+            order: Arc<Mutex<Vec<&'static str>>>,
+        }
+        #[async_trait]
+        impl Plugin for OrderingPlugin {
+            fn config(&self) -> &PluginConfig {
+                &self.cfg
+            }
+        }
+        impl HookHandler<TestHook> for OrderingPlugin {
+            async fn handle(
+                &self,
+                _payload: &TestPayload,
+                ext: &Extensions,
+                _ctx: &mut PluginContext,
+            ) -> PluginResult<TestPayload> {
+                let effect = EffectRecord::prepared("token_mint", "exchange", "k-1");
+                // `begin_effect` is awaited, so the sink has observed `prepared`
+                // by the time it returns — before we record the act below.
+                ext.begin_effect(&effect).await.unwrap();
+                self.order.lock().unwrap().push("act");
+                let _ = ext.complete_effect(&effect, EffectState::Confirmed).await;
+                PluginResult::allow()
+            }
+        }
+
+        struct OrderingSink {
+            order: Arc<Mutex<Vec<&'static str>>>,
+        }
+        #[async_trait]
+        impl AuditHandler for OrderingSink {
+            async fn handle(&self, _p: &dyn PluginPayload, _e: &Extensions, _d: &DecisionLog) {}
+            async fn on_effect(&self, effect: &EffectRecord, _e: &Extensions) {
+                if effect.state == EffectState::Prepared {
+                    self.order.lock().unwrap().push("on_effect:prepared");
+                }
+            }
+        }
+
+        let mgr = PluginManager::default();
+        let mut config = make_config("ordering-plugin", 10, PluginMode::Sequential);
+        config.capabilities.insert("emit_effect".to_string());
+        mgr.register_handler::<TestHook, _>(
+            Arc::new(OrderingPlugin {
+                cfg: config.clone(),
+                order: order.clone(),
+            }),
+            config,
+        )
+        .unwrap();
+        mgr.register_audit_handler(Arc::new(OrderingSink {
+            order: order.clone(),
+        }));
+        mgr.initialize().await.unwrap();
+
+        let payload: Box<dyn PluginPayload> = Box::new(TestPayload { value: "x".into() });
+        let _ = mgr
+            .invoke_by_name("test_hook", payload, Extensions::default(), None)
+            .await;
+
+        let log = order.lock().unwrap();
+        assert_eq!(
+            *log,
+            ["on_effect:prepared", "act"],
+            "sink must observe the prepared record before the effect body runs; got {:?}",
+            *log
+        );
+    }
+
     /// End-to-end (slice 3b wiring): an `emit_effect` plugin's `begin_effect`
     /// intent is durably written to the configured WAL file and round-trips
     /// as a `prepared` token_mint.

@@ -278,6 +278,16 @@ impl AuditLogger {
                     json!({ "input_hash": input_hash, "output_hash": output_hash }),
                 );
             }
+
+            // Stream identity + sequences. `stream_seq` is gap-free within the
+            // decision stream (a consumer proves none was dropped); the global
+            // `emission_seq` orders this record against the effect records a
+            // consumer merges into the same chain.
+            if let Some(stream_seq) = decisions.stream_seq() {
+                map.insert("stream_id".into(), json!(decisions.stream_id()));
+                map.insert("stream_seq".into(), json!(stream_seq));
+                map.insert("emission_seq".into(), json!(decisions.emission_seq()));
+            }
         }
         record
     }
@@ -299,6 +309,9 @@ impl AuditLogger {
                     "state": format!("{:?}", effect.state),
                     "caused_by": effect.plugin_name,
                     "details": effect.details,
+                    "stream_id": effect.stream_id,
+                    "stream_seq": effect.stream_seq,
+                    "emission_seq": effect.emission_seq,
                 }),
             );
         }
@@ -476,6 +489,19 @@ mod tests {
         let record = plugin.build_decision_record(None, &Extensions::default(), &log);
         assert_eq!(record["content"]["input_hash"], "sha256:deadbeef");
         assert!(record["content"]["output_hash"].is_null());
+    }
+
+    #[test]
+    fn decision_record_includes_stream_and_sequences() {
+        let plugin = AuditLogger::new(cfg()).unwrap();
+        let mut log = DecisionLog::new();
+        log.set_stream("dec-abc".into(), 7, 42);
+        log.finalize(Verdict::Allow);
+
+        let record = plugin.build_decision_record(None, &Extensions::default(), &log);
+        assert_eq!(record["stream_id"], "dec-abc");
+        assert_eq!(record["stream_seq"], 7);
+        assert_eq!(record["emission_seq"], 42);
     }
 
     #[test]

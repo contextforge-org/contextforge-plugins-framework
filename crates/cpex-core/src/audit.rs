@@ -31,6 +31,21 @@ pub trait AuditHandler: Send + Sync {
     /// Observe one finished pipeline invocation. Must not block or mutate
     /// anything the pipeline depends on — its return is `()` by design.
     ///
+    /// **Awaited at the verdict return point — a stable contract, not
+    /// fire-and-forget.** The executor `await`s this call *before* it returns
+    /// the pipeline result. That is deliberate: a crash cannot lose a verdict
+    /// that was emitted, so downstream evidence chains need no drop-detection
+    /// for the steady state. Consumers rely on this — a future change to
+    /// fire-and-forget would be a silent semantics break, so it must not be
+    /// made lightly.
+    ///
+    /// The cost of that guarantee is that **sink latency sits on the request
+    /// path** (bounded per sink by the plugin timeout with panic containment,
+    /// and sinks run sequentially). Keep `handle` cheap — serialize / hash /
+    /// append. A slower sink (a network destination, say) should hand off to
+    /// an internal queue on its own side of this boundary rather than block
+    /// here.
+    ///
     /// * `payload` — the message as it stood at the verdict.
     /// * `extensions` — the final extensions (identity, delegation, labels…).
     /// * `decisions` — what each plugin did and how the pipeline ruled.

@@ -63,6 +63,19 @@ pub struct EffectRecord {
     pub details: HashMap<String, serde_json::Value>,
     /// Which plugin caused the effect. Set by the framework, not self-reported.
     pub plugin_name: Option<String>,
+    /// The effect stream this record belongs to, stamped by the framework at
+    /// emission (scopes `stream_seq`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_id: Option<String>,
+    /// Monotonic, gap-free sequence within the effect stream — a consumer of
+    /// effects alone can prove none was dropped. Stamped at emission.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_seq: Option<u64>,
+    /// Global monotonic sequence across decisions and effects — lets a consumer
+    /// that merges both streams reconstruct their interleaved order. Stamped at
+    /// emission.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emission_seq: Option<u64>,
 }
 
 impl EffectRecord {
@@ -80,6 +93,9 @@ impl EffectRecord {
             state: EffectState::Prepared,
             details: HashMap::new(),
             plugin_name: None,
+            stream_id: None,
+            stream_seq: None,
+            emission_seq: None,
         }
     }
 

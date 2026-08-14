@@ -26,6 +26,7 @@
 
 use std::any::Any;
 use std::fmt;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -309,6 +310,17 @@ pub struct Executor {
     /// `begin_effect` is not crash-safe or fail-closed. Installed from
     /// `plugin_settings.effect_log_path` or programmatically. Opt-in.
     effect_log: Option<Arc<dyn DurableEffectLog>>,
+
+    /// Audit stream identity + counters, fresh per executor lifetime (a new
+    /// identity on config reload). Each emitted record carries its per-stream
+    /// counter (`decision_seq` / `effect_seq`, gap-free → completeness) and the
+    /// shared `emission_seq` (global across both → interleaved order). `Arc`
+    /// so copy-on-write snapshot mutations stay on the same stream.
+    decision_stream_id: Arc<str>,
+    decision_seq: Arc<AtomicU64>,
+    effect_stream_id: Arc<str>,
+    effect_seq: Arc<AtomicU64>,
+    emission_seq: Arc<AtomicU64>,
 }
 
 impl Executor {
@@ -318,6 +330,11 @@ impl Executor {
             config,
             audit_handlers: Vec::new(),
             effect_log: None,
+            decision_stream_id: Arc::from(format!("dec-{}", uuid::Uuid::new_v4().simple())),
+            decision_seq: Arc::new(AtomicU64::new(0)),
+            effect_stream_id: Arc::from(format!("eff-{}", uuid::Uuid::new_v4().simple())),
+            effect_seq: Arc::new(AtomicU64::new(0)),
+            emission_seq: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -356,6 +373,22 @@ impl Executor {
 
     /// Invoke every audit sink with the finalized decision, once per pipeline
     /// run. Observation-only — the executor ignores whatever they return.
+    /// Assign this decision's stream identity + sequence numbers. The executor
+    /// writes its **own** record here — a step distinct from the read-only
+    /// handoff in [`Self::emit_audit`] (which takes `&DecisionLog`), so a sink
+    /// never receives anything mutable. `decision_seq` is gap-free within the
+    /// decision stream (completeness); `emission_seq` is the shared global
+    /// counter across decisions and effects (interleaved order). Stamped even
+    /// with no sinks — it's a property of the stream and rides on
+    /// `PipelineResult.decision_log`.
+    fn stamp_decision_stream(&self, decisions: &mut DecisionLog) {
+        decisions.set_stream(
+            self.decision_stream_id.to_string(),
+            self.decision_seq.fetch_add(1, Ordering::Relaxed),
+            self.emission_seq.fetch_add(1, Ordering::Relaxed),
+        );
+    }
+
     async fn emit_audit(
         &self,
         payload: &dyn PluginPayload,
@@ -494,6 +527,7 @@ impl Executor {
             .await
         {
             decisions.finalize(Verdict::Deny(v.clone()));
+            self.stamp_decision_stream(&mut decisions);
             self.emit_audit(&*current_payload, &current_extensions, &decisions)
                 .await;
             return (
@@ -542,6 +576,7 @@ impl Executor {
             .await
         {
             decisions.finalize(Verdict::Deny(violation.clone()));
+            self.stamp_decision_stream(&mut decisions);
             self.emit_audit(&*current_payload, &current_extensions, &decisions)
                 .await;
             return (
@@ -564,6 +599,7 @@ impl Executor {
         );
 
         decisions.finalize(Verdict::Allow);
+        self.stamp_decision_stream(&mut decisions);
         self.emit_audit(&*current_payload, &current_extensions, &decisions)
             .await;
         (
@@ -656,6 +692,9 @@ impl Executor {
                     // The configured WAL (opt-in). `None` → ordering-only, not
                     // fail-closed; `Some` → durable-before-fanout, fail-closed.
                     durable: self.effect_log.clone(),
+                    stream_id: self.effect_stream_id.clone(),
+                    stream_seq: self.effect_seq.clone(),
+                    emission_seq: self.emission_seq.clone(),
                 }));
             }
 
@@ -1305,6 +1344,12 @@ struct AuditEffectEmitter {
     /// before fanning out and fails closed if that write fails. `None` until
     /// slice 3b wires a real WAL — then emit is ordering-only.
     durable: Option<Arc<dyn DurableEffectLog>>,
+    /// Effect stream identity + counters (shared with the executor). Each
+    /// emitted record is stamped with `stream_seq` (gap-free within the effect
+    /// stream) and the global `emission_seq` (interleaved order vs decisions).
+    stream_id: Arc<str>,
+    stream_seq: Arc<AtomicU64>,
+    emission_seq: Arc<AtomicU64>,
 }
 
 impl std::fmt::Debug for AuditEffectEmitter {
@@ -1322,9 +1367,15 @@ impl EffectEmitter for AuditEffectEmitter {
         use futures::FutureExt;
         use std::panic::AssertUnwindSafe;
 
-        // Stamp the causing plugin — set by the framework, not self-reported.
+        // Stamp the causing plugin + stream identity/sequences — all set by the
+        // framework, not self-reported. `stream_seq` is gap-free within the
+        // effect stream (completeness); `emission_seq` is the shared global
+        // counter across decisions and effects (interleaved order).
         let mut stamped = effect.clone();
         stamped.plugin_name = Some(self.plugin_name.clone());
+        stamped.stream_id = Some(self.stream_id.to_string());
+        stamped.stream_seq = Some(self.stream_seq.fetch_add(1, Ordering::Relaxed));
+        stamped.emission_seq = Some(self.emission_seq.fetch_add(1, Ordering::Relaxed));
 
         // Write-ahead: durably record BEFORE any observer sees it. Fail
         // closed — if the durable write fails, return Err and do NOT fan out;
@@ -1546,6 +1597,9 @@ mod tests {
             plugin_name: "delegator".into(),
             timeout: Duration::from_secs(5),
             durable: Some(Arc::new(FailingLog)),
+            stream_id: Arc::from("eff-test"),
+            stream_seq: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            emission_seq: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         };
         let res = emitter.emit(&effect, &Extensions::default()).await;
         assert!(res.is_err(), "durable write failed → emit fails closed");
@@ -1562,6 +1616,9 @@ mod tests {
             plugin_name: "delegator".into(),
             timeout: Duration::from_secs(5),
             durable: Some(Arc::new(OkLog)),
+            stream_id: Arc::from("eff-test"),
+            stream_seq: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            emission_seq: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         };
         let res2 = emitter2.emit(&effect, &Extensions::default()).await;
         assert!(res2.is_ok());

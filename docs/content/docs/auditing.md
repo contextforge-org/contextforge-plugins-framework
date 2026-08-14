@@ -236,6 +236,23 @@ or change another plugin's state through it), and a sink that panics or exceeds
 its timeout is contained and logged — the request, whose verdict is already
 decided, proceeds regardless.
 
+### Sinks run on the request path — keep them cheap
+
+`handle` and `on_effect` are **awaited** where the verdict (or effect) is
+emitted, *before* the request returns — they are **not** fire-and-forget. That
+is deliberate, and it is the property that makes the record trustworthy: a crash
+cannot lose a verdict that was emitted, so a downstream evidence chain needs no
+drop-detection for the steady state and can rely on this ordering. It is a
+stable contract — changing it to fire-and-forget would silently break consumers
+built on it.
+
+The cost of that guarantee is that **sink latency is on the request path**
+(bounded per sink by the plugin timeout, and sinks run one at a time). So keep
+the work in a sink cheap — serialize, hash, append. A sink that does something
+slow — a network call to a SIEM, a write to a remote ledger — should hand the
+record to an **internal queue and return immediately**, doing the slow work on
+its own side of the boundary rather than blocking the request.
+
 ## Troubleshooting
 
 | Symptom | Cause |
