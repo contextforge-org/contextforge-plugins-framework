@@ -80,6 +80,156 @@ pub async fn mint_token(username: &str, password: &str) -> Result<String, String
         .ok_or_else(|| "token response had no access_token".into())
 }
 
+/// Base URL of the tutorial Keycloak (everything before `/realms/...`),
+/// derived from [`issuer`] so a `CPEX_TUTORIAL_ISSUER` override carries through.
+fn base_url() -> String {
+    issuer()
+        .split_once("/realms/")
+        .map(|(base, _)| base.to_string())
+        .unwrap_or_else(|| "http://localhost:8081".to_string())
+}
+
+/// Mint a user token from an arbitrary realm and client via the password
+/// grant. The multi-issuer module (17) uses this to get a token from a SECOND
+/// trusted issuer — the partner realm — alongside the home realm's, so one
+/// resolver can validate both.
+pub async fn mint_token_in_realm(
+    realm: &str,
+    client_id: &str,
+    username: &str,
+    password: &str,
+) -> Result<String, String> {
+    let endpoint = format!(
+        "{}/realms/{realm}/protocol/openid-connect/token",
+        base_url()
+    );
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("failed to build HTTP client: {e}"))?;
+
+    let resp = client
+        .post(&endpoint)
+        .form(&[
+            ("grant_type", "password"),
+            ("client_id", client_id),
+            ("username", username),
+            ("password", password),
+            ("scope", "openid"),
+        ])
+        .send()
+        .await
+        .map_err(|e| {
+            format!("could not reach the tutorial IdP at {endpoint} ({e}). Is it running?")
+        })?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!(
+            "token request for '{username}' in realm '{realm}' failed ({status}): {body}"
+        ));
+    }
+
+    let json: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("token response was not JSON: {e}"))?;
+    json.get("access_token")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| "token response had no access_token".into())
+}
+
+/// Mint an access token for an OAuth *client* via the `client_credentials`
+/// grant. Unlike [`mint_token`], there is no user: the token speaks for the
+/// client's own service account. This is how an agent that authenticates to
+/// the IdP as a registered client (not on behalf of a signed-in human) gets a
+/// token — the inbound credential a `subject: client` delegation then scopes.
+///
+/// `client_id` / `client_secret` identify the calling agent (e.g. the tutorial
+/// realm's `cpex-agent`). Returns the raw JWT string.
+pub async fn mint_client_token(client_id: &str, client_secret: &str) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("failed to build HTTP client: {e}"))?;
+
+    let resp = client
+        .post(token_endpoint())
+        .form(&[
+            ("grant_type", "client_credentials"),
+            ("client_id", client_id),
+            ("client_secret", client_secret),
+        ])
+        .send()
+        .await
+        .map_err(|e| {
+            format!(
+                "could not reach the tutorial IdP at {} ({e}).\n       \
+                 Is it running? Start it with:\n       \
+                 docker compose -f examples/tutorial/idp/docker-compose.yml up -d",
+                token_endpoint()
+            )
+        })?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!(
+            "client_credentials token request for '{client_id}' failed ({status}): {body}"
+        ));
+    }
+
+    let json: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("token response was not JSON: {e}"))?;
+    json.get("access_token")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| "token response had no access_token".into())
+}
+
+/// Mint a SPIFFE JWT-SVID for `spiffe_id` off the tutorial's SPIRE server
+/// (module 16). Unlike the OAuth token minters, this shells out to the running
+/// `cpex-tutorial-spire-server` container — the SVID is signed by SPIRE, not
+/// the IdP. Its audience is the tutorial realm issuer, as the SPIFFE
+/// client-auth draft requires (leg 1 presents it to that realm). Needs the
+/// SPIRE overlay up — see `idp/docker-compose.spire.yml`.
+pub fn mint_svid(spiffe_id: &str) -> Result<String, String> {
+    let out = std::process::Command::new("docker")
+        .args([
+            "exec",
+            "cpex-tutorial-spire-server",
+            "/opt/spire/bin/spire-server",
+            "jwt",
+            "mint",
+            "-spiffeID",
+            spiffe_id,
+            "-audience",
+            &issuer(),
+        ])
+        .output()
+        .map_err(|e| format!("could not run `docker` to mint an SVID: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "`spire-server jwt mint` failed: {}\n       Is the SPIRE overlay up?\n       \
+             docker compose -f examples/tutorial/idp/docker-compose.yml \
+             -f examples/tutorial/idp/docker-compose.spire.yml up -d",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    // `jwt mint` prints the token; strip any surrounding whitespace/newlines.
+    let svid: String = String::from_utf8_lossy(&out.stdout)
+        .split_whitespace()
+        .collect();
+    if svid.is_empty() {
+        return Err("`spire-server jwt mint` produced no token".into());
+    }
+    Ok(svid)
+}
+
 /// Poll the realm's discovery document until Keycloak answers or the
 /// deadline passes. Modules call this in `--check` mode so CI waits for
 /// the container to finish booting before minting tokens.

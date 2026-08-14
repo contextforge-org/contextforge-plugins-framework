@@ -29,6 +29,11 @@ services:
       # grant. If a later Keycloak drops these from defaults, re-add them here.
     volumes:
       - ./realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+      # A second realm = a second issuer, for the multi-issuer module (17).
+      # --import-realm loads every *.json here; modules 0–16 ignore it.
+      # (Named *-export.json, not *-realm.json, so Keycloak's dir-import
+      # doesn't require the file prefix to equal the realm name.)
+      - ./partner-export.json:/opt/keycloak/data/import/partner-export.json:ro
     healthcheck:
       # Hit the realm's OIDC discovery document. Once the realm is imported and
       # the server is serving, this returns 200.

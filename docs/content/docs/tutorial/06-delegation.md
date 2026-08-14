@@ -6,6 +6,8 @@ weight: 7
 # Module 6: Scoped credentials (Delegation)
 
 > You are in the [CPEX tutorial]({{< relref "_index" >}}). This module needs the IdP.
+>
+> **Cookbook recipe:** [Recipe 1 — User acting through an agent (on-behalf-of)]({{< relref "/docs/identity-delegation#recipe-1--user-acting-through-an-agent-on-behalf-of" >}}).
 
 **Goal:** mint a narrow, downstream-scoped credential for a call with a real OAuth 2.0 token exchange (RFC 8693), instead of forwarding the caller's full token.
 

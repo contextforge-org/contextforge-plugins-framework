@@ -1,0 +1,52 @@
+# Module 14, Passthrough (forward the caller's token, mint nothing).
+#
+# Modules 6, 12 and 13 all MINTED a downstream token — an RFC 8693 exchange
+# that narrows or re-subjects the credential. But sometimes the right move is
+# to mint nothing at all: the caller already holds a token that is correct for
+# the downstream (the "agent-brokered" case — the agent authenticated to the
+# IdP itself and handed CPEX a ready token). Then CPEX just validates it
+# inbound and lets the call through, and the caller's own token is what flows
+# downstream.
+#
+# Passthrough is therefore the ZERO-leg case, defined by what's ABSENT: there
+# is no `delegate(...)` step. Compare:
+#
+#   no delegate            (this module)   forward the caller's token unchanged
+#   delegate(subject: …)   (modules 6/13)  mint a fresh, scoped token
+#
+# The trade-off is scope. A minted token is narrowed to one audience, so a
+# leak is contained. A forwarded token is whatever the caller brought — as
+# broad as it was issued. Choose passthrough only when that token is already
+# scoped for the downstream; reach for delegation when it isn't.
+#
+# See the cookbook, Recipe 4 (Forward a token the caller already has).
+
+plugins:
+  # A plain inbound resolver (as in module 2). Its only job here is to
+  # validate the caller's token; there is no delegator plugin at all.
+  - name: keycloak
+    kind: identity/jwt
+    hooks: [identity.resolve]
+    config:
+      role: user
+      header: Authorization
+      claim_mapper: standard
+      trusted_issuers:
+        - issuer: http://localhost:8081/realms/cpex-tutorial
+          audiences: [cpex-tutorial]
+          algorithms: [RS256]
+          decoding_key:
+            kind: jwks_url
+            url: http://localhost:8081/realms/cpex-tutorial/protocol/openid-connect/certs
+            insecure_http: true
+          leeway_seconds: 60
+
+routes:
+  # Passthrough: validate the caller, authorize, and forward. No delegate
+  # step, so the token the caller presented is the token that flows on.
+  - tool: search_repos
+    authentication:
+      - keycloak
+    authorization:
+      pre_invocation:
+        - "require(authenticated)"

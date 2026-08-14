@@ -39,6 +39,14 @@ Budget about 3 to 4 hours total, 15 to 25 minutes per module.
 | 8 | [Human in the loop]({{< relref "08-elicitation" >}}) | Suspend an operation for human approval, then resume | yes |
 | 9 | [Write your own plugin]({{< relref "09-custom-plugin" >}}) | Build a custom plugin with the SDK; reference it from policy | no |
 | 10 | [Testing your policy]({{< relref "10-testing" >}}) | Table-driven allow/deny tests that run in CI | no |
+| 11 | [Organizing policy (Groups)]({{< relref "11-groups" >}}) | Factor shared identity/authz into reusable bundles routes join | yes |
+| 12 | [Delegation subjects]({{< relref "12-subjects" >}}) | Mint a downstream token as the caller (`user`) or as the gateway itself (`this_workload`) | yes |
+| 13 | [Delegation as a client]({{< relref "13-client" >}}) | Scope an agent's own client token with `subject: client` (cookbook Recipe 5) | yes |
+| 14 | [Passthrough (forward, don't mint)]({{< relref "14-passthrough" >}}) | When to forward the caller's token unchanged instead of exchanging it (cookbook Recipe 4) | yes |
+| 15 | [Dual-principal (subject + actor)]({{< relref "15-dual-principal" >}}) | Mint on behalf of a user while naming the acting agent — `subject: user, actor: client` (cookbook Recipe 6) | yes |
+| 16 | [Workload identity (SVID)]({{< relref "16-workload" >}}) | An agent authenticates by SPIFFE SVID; CPEX brokers a scoped token in two legs — `subject: caller_workload` (cookbook Recipe 2) | yes + SPIRE |
+| 17 | [Multi-issuer (trust federation)]({{< relref "17-federation" >}}) | Accept callers from more than one IdP with one resolver, each validated on its own keys | yes |
+| 18 | [Static attributes (data.*)]({{< relref "18-attributes" >}}) | Feed policy operator-maintained facts from a data file, read per request as `data.*` | yes |
 | C | [Capstone: the three-backend agent]({{< relref "capstone" >}}) | Assemble every control into the full Overview scenario | yes |
 
 Start at [module 0]({{< relref "00-setup" >}}).
