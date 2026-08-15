@@ -2733,12 +2733,44 @@ mod tests {
             .await;
 
         assert!(result.continue_processing);
+        assert!(
+            result.payload_modified,
+            "the transform accepted a new payload, so the result must say so"
+        );
         let final_payload = result.modified_payload.unwrap();
         let typed = final_payload
             .as_any()
             .downcast_ref::<TestPayload>()
             .unwrap();
         assert_eq!(typed.value, "original_transformed");
+    }
+
+    /// `modified_payload` is `Some` on every allowed pipeline, carrying
+    /// the final payload whether or not a plugin touched it. Only
+    /// `payload_modified` distinguishes the two, so callers deciding
+    /// whether to forward a rewritten payload must read that.
+    #[tokio::test]
+    async fn allow_without_mutation_reports_payload_unmodified() {
+        let mgr = PluginManager::default();
+        let config = make_config("allow-plugin", 10, PluginMode::Sequential);
+        let plugin = Arc::new(AllowPlugin {
+            cfg: config.clone(),
+        });
+
+        mgr.register_handler::<TestHook, _>(plugin, config).unwrap();
+        mgr.initialize().await.unwrap();
+
+        let payload = TestPayload {
+            value: "original".into(),
+        };
+
+        let (result, _) = mgr
+            .invoke::<TestHook>(payload, Extensions::default(), None)
+            .await;
+
+        assert!(result.continue_processing);
+        assert!(result.modified_payload.is_some());
+        assert!(!result.payload_modified);
     }
 
     /// Transform phase is documented `can_block: No` (plugin.rs PluginMode
@@ -4270,7 +4302,7 @@ routes:
         assert_eq!(mgr.routing_cache_size(), 1); // cache hit — no new entry
     }
 
-    /// Regression (A1, typed path): `load_config_yaml` used to deserialize
+    /// Regression (typed path): `load_config_yaml` used to deserialize
     /// `CpexConfig` directly and skip `parse_config`'s normalization, so a
     /// top-level `groups:` bundle never folded into `global.policies` and a
     /// route joining it lost the group's plugins. Here the deny plugin lives
@@ -4316,7 +4348,7 @@ routes:
         assert_eq!(result.violation.as_ref().unwrap().code, "denied");
     }
 
-    /// Regression (A1, visitor path): the visitor walk read only
+    /// Regression (visitor path): the visitor walk read only
     /// `global.policies`, so a top-level `groups:` bundle's `authorization:`
     /// was never compiled. This registers a visitor that records which
     /// bundles it was asked to compile and asserts the top-level group is
