@@ -7,7 +7,7 @@ weight: 14
 
 > You are in the [CPEX tutorial]({{< relref "_index" >}}). This module needs the IdP.
 >
-> **Cookbook recipe:** [Recipe 5 — Scope a token the agent already holds]({{< relref "/docs/identity-delegation#recipe-5--scope-a-token-the-agent-already-holds-1-leg" >}}).
+> **Cookbook recipe:** [Recipe 5: Scope a token the agent already holds]({{< relref "/docs/identity-delegation#recipe-5-scope-a-token-the-agent-already-holds-1-leg" >}}).
 
 **Goal:** mint a downstream-scoped token when the caller is not a person but an **agent acting as itself** — an OAuth client that authenticated to the IdP on its own behalf.
 
@@ -87,12 +87,12 @@ The agent's own token was narrowed to the `workday-api` audience and the call we
 {{< /details >}}
 
 {{< details "Is this one leg or two?" >}}
-One. The agent did the authenticate leg upstream (it got its client token from the IdP itself), so CPEX performs only the **scope** leg — a plain RFC 8693 exchange. The two-leg path is [Recipe 2]({{< relref "/docs/identity-delegation#recipe-2--agent-acting-as-itself-by-its-spiffe-svid" >}}), where the agent presents a SPIFFE SVID and CPEX does both legs. Match the subject to what arrived: a JWT minted from an SVID is a `client`; the SVID itself is a `caller_workload`.
+One. The agent did the authenticate leg upstream (it got its client token from the IdP itself), so CPEX performs only the **scope** leg — a plain RFC 8693 exchange. The two-leg path is [Recipe 2]({{< relref "/docs/identity-delegation#recipe-2-agent-acting-as-itself-by-its-spiffe-svid" >}}), where the agent presents a SPIFFE SVID and CPEX does both legs. Match the subject to what arrived: a JWT minted from an SVID is a `client`; the SVID itself is a `caller_workload`.
 {{< /details >}}
 
 ## Go deeper
 
-- [Recipe 5 — Scope a token the agent already holds]({{< relref "/docs/identity-delegation#recipe-5--scope-a-token-the-agent-already-holds-1-leg" >}}) for the reference version and the SVID-vs-token distinction.
+- [Recipe 5: Scope a token the agent already holds]({{< relref "/docs/identity-delegation#recipe-5-scope-a-token-the-agent-already-holds-1-leg" >}}) for the reference version and the SVID-vs-token distinction.
 - [Delegation reference]({{< relref "/docs/apl/delegation" >}}) for the full `subject:` contract.
 
 ## Next

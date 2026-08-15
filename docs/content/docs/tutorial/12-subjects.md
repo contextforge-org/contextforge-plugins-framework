@@ -7,7 +7,7 @@ weight: 13
 
 > You are in the [CPEX tutorial]({{< relref "_index" >}}). This module needs the IdP.
 >
-> **Cookbook recipes:** [Recipe 1 — on-behalf-of a user]({{< relref "/docs/identity-delegation#recipe-1--user-acting-through-an-agent-on-behalf-of" >}}) (`subject: user`) and [Recipe 3 — a service acting as itself]({{< relref "/docs/identity-delegation#recipe-3--a-service-acting-as-itself" >}}) (`subject: this_workload`).
+> **Cookbook recipes:** [Recipe 1: on-behalf-of a user]({{< relref "/docs/identity-delegation#recipe-1-user-acting-through-an-agent-on-behalf-of" >}}) (`subject: user`) and [Recipe 3: a service acting as itself]({{< relref "/docs/identity-delegation#recipe-3-a-service-acting-as-itself" >}}) (`subject: this_workload`).
 
 **Goal:** choose *whose* authority a minted downstream token carries — the caller, or the gateway itself.
 

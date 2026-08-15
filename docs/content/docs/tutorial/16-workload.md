@@ -7,7 +7,7 @@ weight: 17
 
 > You are in the [CPEX tutorial]({{< relref "_index" >}}). This module needs the IdP **and** the SPIRE overlay.
 >
-> **Cookbook recipe:** [Recipe 2 — Agent acting as itself, by its SPIFFE SVID]({{< relref "/docs/identity-delegation#recipe-2--agent-acting-as-itself-by-its-spiffe-svid" >}}).
+> **Cookbook recipe:** [Recipe 2: Agent acting as itself, by its SPIFFE SVID]({{< relref "/docs/identity-delegation#recipe-2-agent-acting-as-itself-by-its-spiffe-svid" >}}).
 
 **Goal:** let a workload authenticate with a **SPIFFE SVID** — no user, no client secret — and have CPEX broker a scoped downstream token from it.
 
@@ -110,7 +110,7 @@ Leg 2 — CPEX's own gateway credential — not the agent. The SVID proves ident
 
 ## Go deeper
 
-- [Recipe 2 — Agent acting as itself, by its SPIFFE SVID]({{< relref "/docs/identity-delegation#recipe-2--agent-acting-as-itself-by-its-spiffe-svid" >}}) for the reference version and the IdP-support notes (tested on Keycloak 26.6, `spiffe:v1`).
+- [Recipe 2: Agent acting as itself, by its SPIFFE SVID]({{< relref "/docs/identity-delegation#recipe-2-agent-acting-as-itself-by-its-spiffe-svid" >}}) for the reference version and the IdP-support notes (tested on Keycloak 26.6, `spiffe:v1`).
 - [Delegation reference]({{< relref "/docs/apl/delegation" >}}) for the full `subject:` contract.
 
 ## Next

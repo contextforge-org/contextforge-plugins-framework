@@ -7,7 +7,7 @@ weight: 15
 
 > You are in the [CPEX tutorial]({{< relref "_index" >}}). This module needs the IdP.
 >
-> **Cookbook recipe:** [Recipe 4 — Forward a token the caller already has]({{< relref "/docs/identity-delegation#recipe-4--forward-a-token-the-caller-already-has-passthrough" >}}).
+> **Cookbook recipe:** [Recipe 4: Forward a token the caller already has]({{< relref "/docs/identity-delegation#recipe-4-forward-a-token-the-caller-already-has-passthrough" >}}).
 
 **Goal:** recognize the case where the right move is to mint *nothing* — validate the caller's token and forward it unchanged.
 
@@ -82,7 +82,7 @@ When the caller's token is broader than the downstream call needs. Forwarding it
 
 ## Go deeper
 
-- [Recipe 4 — Forward a token the caller already has]({{< relref "/docs/identity-delegation#recipe-4--forward-a-token-the-caller-already-has-passthrough" >}}) for the reference version and where it fits among the delegation subjects.
+- [Recipe 4: Forward a token the caller already has]({{< relref "/docs/identity-delegation#recipe-4-forward-a-token-the-caller-already-has-passthrough" >}}) for the reference version and where it fits among the delegation subjects.
 
 ## Next
 

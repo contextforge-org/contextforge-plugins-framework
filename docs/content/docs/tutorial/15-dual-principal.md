@@ -7,7 +7,7 @@ weight: 16
 
 > You are in the [CPEX tutorial]({{< relref "_index" >}}). This module needs the IdP.
 >
-> **Cookbook recipe:** [Recipe 6 — User acting through an agent, with the agent named]({{< relref "/docs/identity-delegation#recipe-6--user-acting-through-an-agent-with-the-agent-named-dual-principal" >}}).
+> **Cookbook recipe:** [Recipe 6: User acting through an agent, with the agent named]({{< relref "/docs/identity-delegation#recipe-6-user-acting-through-an-agent-with-the-agent-named-dual-principal" >}}).
 
 **Goal:** mint a token that speaks *for* the user and also *names the agent* that carried out the call — two principals on one exchange.
 
@@ -97,7 +97,7 @@ The subject. Least-privilege scoping follows whose authority the token carries. 
 
 ## Go deeper
 
-- [Recipe 6 — dual-principal]({{< relref "/docs/identity-delegation#recipe-6--user-acting-through-an-agent-with-the-agent-named-dual-principal" >}}) for the reference version and the full interop note.
+- [Recipe 6: dual-principal]({{< relref "/docs/identity-delegation#recipe-6-user-acting-through-an-agent-with-the-agent-named-dual-principal" >}}) for the reference version and the full interop note.
 - [Delegation reference]({{< relref "/docs/apl/delegation" >}}) for the `subject:` / `actor:` contract and valid combinations.
 
 ## Next
