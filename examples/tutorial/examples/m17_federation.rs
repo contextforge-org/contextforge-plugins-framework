@@ -85,7 +85,7 @@ async fn main() {
     ui::print_outcome(&o);
     all_passed &= ui::expect(&o, true);
 
-    ui::scenario("outsider (master realm — an untrusted issuer) → get_compensation (rejected)");
+    ui::scenario("outsider (master realm, an untrusted issuer) → get_compensation (rejected)");
     let o = mediate(
         &mgr,
         &outsider,

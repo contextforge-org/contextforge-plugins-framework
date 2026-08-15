@@ -12,9 +12,9 @@
 //   cargo run -p cpex-tutorial --example m12_subjects -- --check
 //
 // Two routes mint a downstream token differently:
-//   * get_compensation uses `subject: user` — it exchanges the CALLER's token,
+//   * get_compensation uses `subject: user`: it exchanges the CALLER's token,
 //     so an anonymous request has nothing to exchange and delegation fails.
-//   * search_repos uses `subject: this_workload` — it mints a token as the
+//   * search_repos uses `subject: this_workload`: it mints a token as the
 //     GATEWAY (client_credentials), so it works with no caller at all.
 
 use std::sync::Arc;
@@ -53,8 +53,8 @@ async fn main() {
     let anon = Caller::anonymous();
     let mut all_passed = true;
 
-    // subject: user — on behalf of the caller. Needs a caller token to exchange.
-    ui::scenario("alice → get_compensation (subject: user — exchanges alice's token)");
+    // subject: user, on behalf of the caller. Needs a caller token to exchange.
+    ui::scenario("alice → get_compensation (subject: user, exchanges alice's token)");
     let o = mediate(
         &mgr,
         &alice,
@@ -67,7 +67,7 @@ async fn main() {
     all_passed &= ui::expect(&o, true);
 
     ui::scenario(
-        "anonymous → get_compensation (subject: user — no token to exchange, delegation fails)",
+        "anonymous → get_compensation (subject: user, no token to exchange, delegation fails)",
     );
     let o = mediate(
         &mgr,
@@ -80,9 +80,9 @@ async fn main() {
     ui::print_outcome(&o);
     all_passed &= ui::expect(&o, false);
 
-    // subject: this_workload — as the gateway itself. No caller token needed.
+    // subject: this_workload, as the gateway itself. No caller token needed.
     ui::scenario(
-        "anonymous → search_repos (subject: this_workload — gateway mints via client_credentials)",
+        "anonymous → search_repos (subject: this_workload, gateway mints via client_credentials)",
     );
     let o = mediate(
         &mgr,
@@ -95,7 +95,7 @@ async fn main() {
     ui::print_outcome(&o);
     all_passed &= ui::expect(&o, true);
 
-    ui::scenario("alice → search_repos (subject: this_workload — same result; the caller's identity is not used)");
+    ui::scenario("alice → search_repos (subject: this_workload, same result: the caller's identity is not used)");
     let o = mediate(
         &mgr,
         &alice,

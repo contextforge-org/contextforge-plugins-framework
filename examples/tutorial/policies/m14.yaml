@@ -1,23 +1,15 @@
 # Module 14, Passthrough (forward the caller's token, mint nothing).
 #
-# Modules 6, 12 and 13 all MINTED a downstream token — an RFC 8693 exchange
-# that narrows or re-subjects the credential. But sometimes the right move is
-# to mint nothing at all: the caller already holds a token that is correct for
-# the downstream (the "agent-brokered" case — the agent authenticated to the
-# IdP itself and handed CPEX a ready token). Then CPEX just validates it
-# inbound and lets the call through, and the caller's own token is what flows
-# downstream.
-#
-# Passthrough is therefore the ZERO-leg case, defined by what's ABSENT: there
-# is no `delegate(...)` step. Compare:
+# Passthrough is the zero-leg case, defined by what is ABSENT: there is no
+# `delegate(...)` step. CPEX validates the caller's token inbound, authorizes
+# the call, and that same token is what flows downstream.
 #
 #   no delegate            (this module)   forward the caller's token unchanged
 #   delegate(subject: …)   (modules 6/13)  mint a fresh, scoped token
 #
-# The trade-off is scope. A minted token is narrowed to one audience, so a
-# leak is contained. A forwarded token is whatever the caller brought — as
-# broad as it was issued. Choose passthrough only when that token is already
-# scoped for the downstream; reach for delegation when it isn't.
+# The trade-off is scope: a forwarded token is as broad as it was issued, where
+# a minted one is narrowed to a single audience. Forward only when the caller's
+# token is already scoped for the downstream.
 #
 # See the cookbook, Recipe 4 (Forward a token the caller already has).
 

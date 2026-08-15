@@ -92,7 +92,7 @@ async fn main() {
     ui::print_outcome(&o);
     all_passed &= ui::expect(&o, false);
 
-    // The guardrail: `actor:` with `subject: this_workload` is invalid — that
+    // The guardrail: `actor:` with `subject: this_workload` is invalid, since that
     // grant carries no actor_token. CPEX denies the step rather than silently
     // dropping the actor. No caller is needed; the check precedes the exchange.
     ui::scenario(

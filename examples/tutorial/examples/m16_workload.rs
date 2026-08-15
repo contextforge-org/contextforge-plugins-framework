@@ -15,7 +15,7 @@
 //   cargo run -p cpex-tutorial --example m16_workload -- --check
 //
 // The caller is a workload with a SPIFFE identity. It presents its ES256
-// JWT-SVID (minted by SPIRE) on X-Workload-Token — no user, no client secret.
+// JWT-SVID (minted by SPIRE) on X-Workload-Token: no user, no client secret.
 // CPEX validates it against SPIRE's JWKS -> caller_workload, then runs the
 // two-leg delegation: leg 1 turns the SVID into an IdP token (jwt-spiffe
 // client_assertion), leg 2 exchanges that for a github-api-scoped token.
@@ -44,7 +44,7 @@ async fn main() {
     mgr.initialize().await.expect("initialize");
 
     // Mint the agent's SVID off SPIRE. This is the agent's identity credential
-    // — an ES256 JWT signed by SPIRE, audience = the tutorial realm issuer.
+    // an ES256 JWT signed by SPIRE, audience = the tutorial realm issuer.
     let svid = idp::mint_svid(SPIFFE_ID).unwrap_or_else(|e| {
         eprintln!("\x1b[31m{e}\x1b[0m");
         std::process::exit(1);
@@ -70,7 +70,7 @@ async fn main() {
 
     // No SVID: the route authenticates by the workload token alone, so an
     // anonymous request has no identity to broker from.
-    ui::scenario("anonymous → search_repos (no SVID, the workload route can't authenticate)");
+    ui::scenario("anonymous → search_repos (no SVID, so nothing to broker from)");
     let o = mediate(
         &mgr,
         &Caller::anonymous(),
@@ -83,7 +83,7 @@ async fn main() {
     all_passed &= ui::expect(&o, false);
 
     println!(
-        "The agent proved itself with a SPIFFE SVID and never held the downstream token — CPEX brokered it in two legs."
+        "The agent proved itself with a SPIFFE SVID and never held the downstream token: CPEX brokered it in two legs."
     );
     ui::finish_check(all_passed);
 }

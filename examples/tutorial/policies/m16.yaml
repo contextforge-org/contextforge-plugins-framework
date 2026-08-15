@@ -1,8 +1,8 @@
 # Module 16, Workload identity (the agent proves itself with a SPIFFE SVID).
 #
 # The caller here is neither a human nor an OAuth client with a secret: it is a
-# workload with a SPIFFE identity. It presents its JWT-SVID — an ES256 JWT
-# signed by SPIRE (not the IdP) — on X-Workload-Token. CPEX validates it
+# workload with a SPIFFE identity. It presents its JWT-SVID, an ES256 JWT
+# signed by SPIRE rather than the IdP, on X-Workload-Token. CPEX validates it
 # against SPIRE's JWKS and lands it in the `caller_workload` slot.
 #
 # An SVID is a SPIFFE identity credential, NOT an OAuth token: it can't be
@@ -13,12 +13,12 @@
 #          and receive an ordinary IdP token;
 #   leg 2  exchange that token for the scoped downstream token.
 #
-# The agent holds no standing entitlement to the target — CPEX brokers the
+# The agent holds no standing entitlement to the target: CPEX brokers the
 # scope-up with its OWN gateway credential (leg 2). A compromised agent can
 # prove who it is but cannot mint the downstream token itself.
 #
 # See the cookbook, Recipe 2 (Agent acting as itself, by its SPIFFE SVID).
-# Needs the SPIRE overlay + setup — see idp/docker-compose.spire.yml.
+# Needs the SPIRE overlay and its setup script, see idp/docker-compose.spire.yml.
 
 plugins:
   # The workload SVID, on X-Workload-Token -> caller_workload slot. Validated

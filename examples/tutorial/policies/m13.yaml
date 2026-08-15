@@ -6,13 +6,13 @@
 # normal bearer token that speaks for itself, not for any human.
 #
 #   subject: client   scope the CALLER's own client token. It's a one-leg
-#                     RFC 8693 exchange — the agent already did the
+#                     RFC 8693 exchange. The agent already did the
 #                     authenticate leg upstream, so CPEX only narrows the
 #                     token to the downstream audience.
 #
 # This is different from `subject: this_workload` (module 12): there the
 # GATEWAY mints a fresh token from its own credentials and no caller token is
-# read. Here the AGENT presents a token and CPEX scopes THAT — so, like
+# read. Here the AGENT presents a token and CPEX scopes THAT, so, like
 # `subject: user`, it needs an inbound credential, just a client one instead
 # of a user one.
 #
@@ -53,13 +53,13 @@ plugins:
       insecure_http: true
 
 routes:
-  # The agent scopes its own client token down to the workday-api audience.
-  # `subject: client` exchanges the CALLER's client token — so, like
+  # The agent scopes its own client token down to the github-api audience.
+  # `subject: client` exchanges the CALLER's client token, so, like
   # subject: user, an anonymous request has nothing to exchange and fails.
   - tool: search_repos
     authentication:
       - keycloak-agent
     authorization:
       pre_invocation:
-        - "delegate(workday-oauth, target: workday-api, audience: workday-api, subject: client)"
+        - "delegate(workday-oauth, target: github-api, audience: github-api, subject: client)"
         - "require(delegation.granted)"

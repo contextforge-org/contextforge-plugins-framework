@@ -4,9 +4,9 @@
 # can speak for one of several principals, chosen with `subject:`:
 #
 #   subject: user           on behalf of the caller (the default). Exchanges
-#                           the caller's token — so it needs a caller.
+#                           the caller's token, so it needs a caller.
 #   subject: this_workload  as the gateway itself. Uses the gateway's own
-#                           client credentials (RFC 6749 client_credentials) —
+#                           client credentials (RFC 6749 client_credentials);
 #                           no caller token required.
 #
 # The mode is DERIVED from `subject`, never declared, so a route can't claim
@@ -49,7 +49,7 @@ plugins:
 
 routes:
   # On behalf of the caller. `subject: user` (the default) exchanges the
-  # caller's token — so a request with no token has nothing to exchange and
+  # caller's token, so a request with no token has nothing to exchange and
   # delegation fails at require(delegation.granted).
   - tool: get_compensation
     authentication:
@@ -60,7 +60,7 @@ routes:
         - "require(delegation.granted)"
 
   # As the gateway itself. `subject: this_workload` uses the gateway's own
-  # client credentials, so it needs no caller token at all — the enforcement
+  # client credentials, so it needs no caller token at all: the enforcement
   # point, not the caller, holds the downstream authority.
   - tool: search_repos
     authorization:

@@ -53,8 +53,6 @@ async fn main() {
     let evan = token("evan").await;
     let mut all_passed = true;
 
-    // The hr route: joined `identified` (keycloak resolves the token), then
-    // require(role.hr).
     ui::scenario(
         "alice (hr) → get_compensation (group resolves her token, require(role.hr) passes)",
     );
@@ -106,7 +104,6 @@ async fn main() {
     ui::print_outcome(&o);
     all_passed &= ui::expect(&o, false);
 
-    // The open route: the group still resolves the token; no role required.
     ui::scenario(
         "alice (hr) → send_email (group resolves her token; require(authenticated) passes)",
     );

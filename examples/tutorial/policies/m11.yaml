@@ -1,11 +1,11 @@
 # Module 11, Organizing policy (Groups)
 #
-# By now every route repeats the same `authentication: [keycloak]` line — the
-# identity resolver is the same everywhere, only the per-route authorization
+# By now every route repeats the same `authentication: [keycloak]` line. The
+# identity resolver is the same everywhere; only the per-route authorization
 # differs. A `group` factors that shared setup out once, and routes join it
 # with `groups:`.
 #
-# Here the `identified` group holds the one thing every route needs — resolve
+# Here the `identified` group holds the one thing every route needs: resolve
 # the caller's token with `keycloak`. Each route joins it and adds only its
 # own authorization. Change the resolver once (add a claim mapper, a second
 # issuer) and every route that joins the group inherits it.
@@ -55,8 +55,8 @@ routes:
       pre_invocation:
         - "require(role.engineer)"
 
-  # Open to any authenticated caller. Still joins `identified` — that is what
-  # resolves the token in the first place — but adds no role requirement.
+  # Open to any authenticated caller. Still joins `identified`, which is what
+  # resolves the token in the first place, but adds no role requirement.
   - tool: send_email
     groups: identified
     authorization:

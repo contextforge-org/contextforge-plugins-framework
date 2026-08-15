@@ -13,8 +13,8 @@
 //
 // The caller is not a person: the agent authenticates to the IdP as its own
 // OAuth client (client_credentials) and arrives holding a token that speaks
-// for itself. `subject: client` scopes THAT token down to the workday-api
-// audience — a one-leg RFC 8693 exchange. Like subject: user, it needs an
+// for itself. `subject: client` scopes THAT token down to the github-api
+// audience, a one-leg RFC 8693 exchange. Like subject: user, it needs an
 // inbound credential, so an anonymous request has nothing to exchange.
 
 use std::sync::Arc;
@@ -54,9 +54,9 @@ async fn main() {
     let anon = Caller::anonymous();
     let mut all_passed = true;
 
-    // subject: client — scope the agent's OWN token. Needs an inbound client token.
+    // subject: client scopes the agent's OWN token. Needs an inbound client token.
     ui::scenario(
-        "agent (cpex-agent client) → search_repos (subject: client — scopes the agent's own token)",
+        "agent (cpex-agent client) → search_repos (subject: client, scopes the agent's own token)",
     );
     let o = mediate(
         &mgr,
@@ -69,7 +69,9 @@ async fn main() {
     ui::print_outcome(&o);
     all_passed &= ui::expect(&o, true);
 
-    ui::scenario("anonymous → search_repos (subject: client — no client token to exchange, delegation fails)");
+    ui::scenario(
+        "anonymous → search_repos (subject: client, no client token to exchange, delegation fails)",
+    );
     let o = mediate(
         &mgr,
         &anon,
@@ -81,6 +83,6 @@ async fn main() {
     ui::print_outcome(&o);
     all_passed &= ui::expect(&o, false);
 
-    println!("`subject: client` scopes the CALLER's own client token — an agent acting as itself, not on behalf of a user.");
+    println!("`subject: client` scopes the CALLER's own client token: an agent acting as itself, not on behalf of a user.");
     ui::finish_check(all_passed);
 }

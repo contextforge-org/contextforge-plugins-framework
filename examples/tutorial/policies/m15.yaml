@@ -13,9 +13,9 @@
 #   - the human's token on X-User-Token   (resolved role: user   -> subject)
 #   - the agent's  token on Authorization (resolved role: client -> client)
 #
-# `actor:` only pairs with an on-behalf-of subject (`user` or `client`). It is
-# rejected at load with `subject: this_workload` / `caller_workload`, so a
-# route can't quietly ask for an actor the grant can't carry (see module code).
+# `actor:` only pairs with an on-behalf-of subject (`user` or `client`). With
+# `subject: this_workload` / `caller_workload` the step is denied when it runs,
+# so a route can't quietly ask for an actor the grant can't carry.
 #
 # See the cookbook, Recipe 6 (User acting through an agent, agent named).
 
@@ -72,7 +72,7 @@ routes:
   # The user authorizes (require role.hr on the SUBJECT), the token is minted
   # on behalf of the user, and the agent is named as the actor. CPEX puts the
   # actor on the wire per RFC 8693 delegation; whether `act` lands in the
-  # minted token is the token service's call (Keycloak drops it — see the doc).
+  # minted token is the token service's call (Keycloak drops it, see the doc).
   - tool: get_compensation
     authentication:
       - jwt-user

@@ -13,7 +13,7 @@
 //   cargo run -p cpex-tutorial --example m18_attributes -- --check
 //
 // An operator's per-tool kill switch lives in a data file, loaded into the
-// data.* tree. The same caller reaches one tool and is refused another — the
+// data.* tree. The same caller reaches one tool and is refused another: the
 // difference is a fact in that file, not anything about the request.
 
 use std::sync::Arc;
@@ -52,7 +52,7 @@ async fn main() {
     let mut all_passed = true;
 
     // Same caller, two tools. get_compensation is switched OFF in the data
-    // file, so it's refused — nothing about alice changed.
+    // file, so it's refused. Nothing about alice changed.
     ui::scenario("alice → get_compensation (data.controls says this tool is disabled)");
     let o = mediate(
         &mgr,
@@ -78,6 +78,6 @@ async fn main() {
     ui::print_outcome(&o);
     all_passed &= ui::expect(&o, true);
 
-    println!("Same caller, opposite outcomes — decided by an operator fact in a data file, read as data.*, not by anything in the request.");
+    println!("Same caller, opposite outcomes, decided by an operator fact in a data file, read as data.*, not by anything in the request.");
     ui::finish_check(all_passed);
 }

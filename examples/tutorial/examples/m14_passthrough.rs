@@ -12,7 +12,7 @@
 //   cargo run -p cpex-tutorial --example m14_passthrough -- --check
 //
 // The route has NO delegate step. CPEX validates the caller's token inbound
-// and forwards it as-is — the zero-leg case. Contrast modules 6/13, which
+// and forwards it as-is, the zero-leg case. Contrast modules 6/13, which
 // mint a fresh scoped token. Here the caller's own token flows downstream.
 
 use std::sync::Arc;
@@ -51,9 +51,9 @@ async fn main() {
     let anon = Caller::anonymous();
     let mut all_passed = true;
 
-    // A validated caller: no delegate step runs, so the token alice presented
-    // is what would flow downstream. CPEX validated and forwarded it.
-    ui::scenario("alice → search_repos (validated and forwarded — no token minted)");
+    // No delegate step runs, so the token alice presented is what would flow
+    // downstream.
+    ui::scenario("alice → search_repos (validated and forwarded, no token minted)");
     let o = mediate(
         &mgr,
         &alice,
@@ -65,8 +65,7 @@ async fn main() {
     ui::print_outcome(&o);
     all_passed &= ui::expect(&o, true);
 
-    // Passthrough still needs a valid inbound token: require(authenticated)
-    // gates it. An anonymous caller has nothing to forward.
+    // Passthrough still needs a valid inbound token to forward.
     ui::scenario("anonymous → search_repos (no token to forward, require(authenticated) denies)");
     let o = mediate(
         &mgr,
@@ -80,7 +79,7 @@ async fn main() {
     all_passed &= ui::expect(&o, false);
 
     println!(
-        "No delegate step: CPEX validated the caller's token and forwarded it unchanged — choose this only when that token is already scoped for the downstream."
+        "No delegate step: CPEX validated the caller's token and forwarded it unchanged. Choose this only when that token is already scoped for the downstream."
     );
     ui::finish_check(all_passed);
 }
