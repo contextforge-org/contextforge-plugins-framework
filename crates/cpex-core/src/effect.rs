@@ -63,17 +63,23 @@ pub struct EffectRecord {
     pub details: HashMap<String, serde_json::Value>,
     /// Which plugin caused the effect. Set by the framework, not self-reported.
     pub plugin_name: Option<String>,
-    /// The effect stream this record belongs to, stamped by the framework at
-    /// emission (scopes `stream_seq`).
+    /// The executor's boot time (Unix nanoseconds), scoping the sequences so a
+    /// verifier tells a counter reset (new, larger epoch) from records lost.
+    /// Ordered, so `(epoch, emission_seq)` totally orders records across
+    /// restarts. Stamped at emission.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub epoch: Option<u64>,
+    /// The per-type stream this record belongs to (`"effect"`). Stamped at
+    /// emission.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stream_id: Option<String>,
-    /// Monotonic, gap-free sequence within the effect stream — a consumer of
-    /// effects alone can prove none was dropped. Stamped at emission.
+    /// **Completeness** counter — dense within `(epoch, stream_id)`; a gap means
+    /// an effect record was dropped. Stamped at emission.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stream_seq: Option<u64>,
-    /// Global monotonic sequence across decisions and effects — lets a consumer
-    /// that merges both streams reconstruct their interleaved order. Stamped at
-    /// emission.
+    /// **Ordering** counter — monotonic across decisions and effects within the
+    /// epoch, for interleaved order. Sparse for an effects-only consumer by
+    /// design; not a loss signal. Stamped at emission.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub emission_seq: Option<u64>,
 }
@@ -93,6 +99,7 @@ impl EffectRecord {
             state: EffectState::Prepared,
             details: HashMap::new(),
             plugin_name: None,
+            epoch: None,
             stream_id: None,
             stream_seq: None,
             emission_seq: None,

@@ -2585,16 +2585,8 @@ plugins:
         assert_eq!(l[0].0, "effect:Prepared");
         assert_eq!(l[2].0, "decision");
         // Distinct per-type streams.
-        assert!(
-            l[0].1.starts_with("eff-"),
-            "effect stream id; got {}",
-            l[0].1
-        );
-        assert!(
-            l[2].1.starts_with("dec-"),
-            "decision stream id; got {}",
-            l[2].1
-        );
+        assert_eq!(l[0].1, "effect", "effect stream id");
+        assert_eq!(l[2].1, "decision", "decision stream id");
     }
 
     /// `on_effect` fires on the `begin_effect` (prepared) leg — a sink observes

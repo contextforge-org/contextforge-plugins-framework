@@ -135,7 +135,8 @@ line per effect:
   ],
   "span":    { "trace_id": "…", "span_id": "…", "parent_span_id": "…" },
   "taint":   { "input": ["PII"], "final": ["PII", "secret"] },
-  "content": { "input_hash": "sha256:…", "output_hash": "sha256:…" }
+  "content": { "input_hash": "sha256:…", "output_hash": "sha256:…" },
+  "epoch": 1723680000000000000, "stream_id": "decision", "stream_seq": 413, "emission_seq": 913
 }
 
 // effect
@@ -144,7 +145,8 @@ line per effect:
   "effect": {
     "kind": "token_mint", "state": "confirmed", "key": "…",
     "caused_by": "oauth-delegator",
-    "details": { "audience": "workday-api", "scope": "read_compensation" }
+    "details": { "audience": "workday-api", "scope": "read_compensation" },
+    "epoch": 1723680000000000000, "stream_id": "effect", "stream_seq": 7, "emission_seq": 912
   }
 }
 ```
@@ -152,6 +154,35 @@ line per effect:
 Fields appear only when present: `span` always; `taint` when labels exist;
 `content` only when content provenance is enabled; `subject` when a subject is
 resolved.
+
+### Sequence numbers — completeness vs. order
+
+Four fields — `epoch`, `stream_id`, `stream_seq`, `emission_seq` — let a
+downstream store prove properties about the stream it received. Two are
+**claims** a verifier checks; two **scope** those claims. Don't use one claim
+for the other's job:
+
+- `stream_seq` is a **completeness** claim. It is dense (gap-free) within its
+  `(epoch, stream_id)`. **A gap means a record was dropped** — a consumer of one
+  stream can prove nothing was silently lost.
+- `emission_seq` is an **ordering** claim only. It is monotonic across *both*
+  streams within an epoch, so a consumer that merges decisions and effects can
+  reconstruct their interleave (an effect emits during a request, so it carries
+  a lower `emission_seq` than the decision that closed the request). **A
+  single-stream consumer sees it sparse by design — the gaps are the other
+  stream's records, not a loss.** Do not detect loss from `emission_seq`.
+- `stream_id` scopes `stream_seq` — it names the per-type stream, `"decision"`
+  or `"effect"` (the entry-type a merged consumer keys on). Decisions and
+  effects each get their own dense counter, so a consumer of just one still has
+  gap-free completeness.
+- `epoch` scopes both counters. It is the executor's boot time (Unix
+  nanoseconds), so a *new, larger* value marks a restart: `stream_seq` proves
+  completeness within an epoch, and across a restart the epoch changes, so a
+  verifier tells a **counter reset from records lost** — and `(epoch,
+  emission_seq)` is a total order across restarts. Detecting loss of the *tail*
+  of a previous epoch (a crash between emit and persist) is not possible from
+  the counters alone — that is what a durable sink (an append-only ledger) is
+  for.
 
 ### Destinations
 

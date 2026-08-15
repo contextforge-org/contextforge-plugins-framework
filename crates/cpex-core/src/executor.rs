@@ -311,14 +311,15 @@ pub struct Executor {
     /// `plugin_settings.effect_log_path` or programmatically. Opt-in.
     effect_log: Option<Arc<dyn DurableEffectLog>>,
 
-    /// Audit stream identity + counters, fresh per executor lifetime (a new
-    /// identity on config reload). Each emitted record carries its per-stream
-    /// counter (`decision_seq` / `effect_seq`, gap-free → completeness) and the
-    /// shared `emission_seq` (global across both → interleaved order). `Arc`
-    /// so copy-on-write snapshot mutations stay on the same stream.
-    decision_stream_id: Arc<str>,
+    /// Audit stream identity + counters. `epoch` is the executor's boot time
+    /// (Unix nanos), captured once — it scopes the counters so a restart is
+    /// distinguishable from a loss and orders records across restarts. Each
+    /// record carries its per-type counter (`decision_seq` / `effect_seq`,
+    /// gap-free → completeness) and the shared `emission_seq` (global across
+    /// both → interleaved order). The counters are `Arc` so copy-on-write
+    /// snapshot mutations stay on the same stream.
+    epoch: u64,
     decision_seq: Arc<AtomicU64>,
-    effect_stream_id: Arc<str>,
     effect_seq: Arc<AtomicU64>,
     emission_seq: Arc<AtomicU64>,
 }
@@ -330,9 +331,14 @@ impl Executor {
             config,
             audit_handlers: Vec::new(),
             effect_log: None,
-            decision_stream_id: Arc::from(format!("dec-{}", uuid::Uuid::new_v4().simple())),
+            // Boot time in Unix nanoseconds — an orderable epoch that needs no
+            // persistence. A new executor (restart or config reload) gets a
+            // larger value, so a verifier tells a reset from a loss.
+            epoch: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos() as u64)
+                .unwrap_or(0),
             decision_seq: Arc::new(AtomicU64::new(0)),
-            effect_stream_id: Arc::from(format!("eff-{}", uuid::Uuid::new_v4().simple())),
             effect_seq: Arc::new(AtomicU64::new(0)),
             emission_seq: Arc::new(AtomicU64::new(0)),
         }
@@ -383,7 +389,8 @@ impl Executor {
     /// `PipelineResult.decision_log`.
     fn stamp_decision_stream(&self, decisions: &mut DecisionLog) {
         decisions.set_stream(
-            self.decision_stream_id.to_string(),
+            self.epoch,
+            "decision".to_string(),
             self.decision_seq.fetch_add(1, Ordering::Relaxed),
             self.emission_seq.fetch_add(1, Ordering::Relaxed),
         );
@@ -692,7 +699,7 @@ impl Executor {
                     // The configured WAL (opt-in). `None` → ordering-only, not
                     // fail-closed; `Some` → durable-before-fanout, fail-closed.
                     durable: self.effect_log.clone(),
-                    stream_id: self.effect_stream_id.clone(),
+                    epoch: self.epoch,
                     stream_seq: self.effect_seq.clone(),
                     emission_seq: self.emission_seq.clone(),
                 }));
@@ -1344,10 +1351,10 @@ struct AuditEffectEmitter {
     /// before fanning out and fails closed if that write fails. `None` until
     /// slice 3b wires a real WAL — then emit is ordering-only.
     durable: Option<Arc<dyn DurableEffectLog>>,
-    /// Effect stream identity + counters (shared with the executor). Each
-    /// emitted record is stamped with `stream_seq` (gap-free within the effect
-    /// stream) and the global `emission_seq` (interleaved order vs decisions).
-    stream_id: Arc<str>,
+    /// Boot epoch + counters (shared with the executor). Each emitted record is
+    /// stamped with `epoch`, `stream_seq` (gap-free within the effect stream),
+    /// and the global `emission_seq` (interleaved order vs decisions).
+    epoch: u64,
     stream_seq: Arc<AtomicU64>,
     emission_seq: Arc<AtomicU64>,
 }
@@ -1373,7 +1380,8 @@ impl EffectEmitter for AuditEffectEmitter {
         // counter across decisions and effects (interleaved order).
         let mut stamped = effect.clone();
         stamped.plugin_name = Some(self.plugin_name.clone());
-        stamped.stream_id = Some(self.stream_id.to_string());
+        stamped.epoch = Some(self.epoch);
+        stamped.stream_id = Some("effect".to_string());
         stamped.stream_seq = Some(self.stream_seq.fetch_add(1, Ordering::Relaxed));
         stamped.emission_seq = Some(self.emission_seq.fetch_add(1, Ordering::Relaxed));
 
@@ -1597,7 +1605,7 @@ mod tests {
             plugin_name: "delegator".into(),
             timeout: Duration::from_secs(5),
             durable: Some(Arc::new(FailingLog)),
-            stream_id: Arc::from("eff-test"),
+            epoch: 0,
             stream_seq: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             emission_seq: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         };
@@ -1616,7 +1624,7 @@ mod tests {
             plugin_name: "delegator".into(),
             timeout: Duration::from_secs(5),
             durable: Some(Arc::new(OkLog)),
-            stream_id: Arc::from("eff-test"),
+            epoch: 0,
             stream_seq: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             emission_seq: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         };

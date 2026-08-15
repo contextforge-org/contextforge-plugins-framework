@@ -284,6 +284,7 @@ impl AuditLogger {
             // `emission_seq` orders this record against the effect records a
             // consumer merges into the same chain.
             if let Some(stream_seq) = decisions.stream_seq() {
+                map.insert("epoch".into(), json!(decisions.epoch()));
                 map.insert("stream_id".into(), json!(decisions.stream_id()));
                 map.insert("stream_seq".into(), json!(stream_seq));
                 map.insert("emission_seq".into(), json!(decisions.emission_seq()));
@@ -309,6 +310,7 @@ impl AuditLogger {
                     "state": format!("{:?}", effect.state),
                     "caused_by": effect.plugin_name,
                     "details": effect.details,
+                    "epoch": effect.epoch,
                     "stream_id": effect.stream_id,
                     "stream_seq": effect.stream_seq,
                     "emission_seq": effect.emission_seq,
@@ -495,11 +497,12 @@ mod tests {
     fn decision_record_includes_stream_and_sequences() {
         let plugin = AuditLogger::new(cfg()).unwrap();
         let mut log = DecisionLog::new();
-        log.set_stream("dec-abc".into(), 7, 42);
+        log.set_stream(1_700_000_000, "decision".into(), 7, 42);
         log.finalize(Verdict::Allow);
 
         let record = plugin.build_decision_record(None, &Extensions::default(), &log);
-        assert_eq!(record["stream_id"], "dec-abc");
+        assert_eq!(record["epoch"], 1_700_000_000u64);
+        assert_eq!(record["stream_id"], "decision");
         assert_eq!(record["stream_seq"], 7);
         assert_eq!(record["emission_seq"], 42);
     }

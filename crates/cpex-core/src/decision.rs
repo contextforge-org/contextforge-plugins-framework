@@ -122,6 +122,7 @@ pub struct DecisionLog {
     span: Option<Span>,
     input_labels: Vec<String>,
     input_hash: Option<String>,
+    epoch: Option<u64>,
     stream_id: Option<String>,
     stream_seq: Option<u64>,
     emission_seq: Option<u64>,
@@ -190,30 +191,60 @@ impl DecisionLog {
         self.input_hash.as_deref()
     }
 
-    /// Stamp the stream identity and sequence numbers, assigned by the executor
-    /// at emission. `stream_id` scopes `stream_seq` — a gap-free counter within
-    /// the *decision* stream, so a consumer of decisions alone can prove none
-    /// was dropped. `emission_seq` is the *global* counter across decisions and
-    /// effects alike, so a consumer that merges both streams can reconstruct
-    /// their interleaved order.
-    pub fn set_stream(&mut self, stream_id: String, stream_seq: u64, emission_seq: u64) {
+    /// Stamp the audit-stream identity + sequence numbers, assigned by the
+    /// executor at emission. The two counters are **distinct claims** — don't
+    /// use one for the other's job:
+    ///
+    /// - `epoch` — the executor's boot time (Unix nanoseconds), captured once
+    ///   at startup. It scopes the counters so a verifier tells a *counter
+    ///   reset* (new, larger epoch) from *records lost* (a gap within an
+    ///   epoch); being ordered, `(epoch, emission_seq)` is a total order across
+    ///   restarts, computable from the record alone. Cross-epoch tail-loss is
+    ///   not provable from the counters alone — that is what a durable sink
+    ///   (the ledger) is for.
+    /// - `stream_id` — the per-type stream (`"decision"`), the entry-type a
+    ///   merged consumer keys on.
+    /// - `stream_seq` — a **completeness** claim. Dense (gap-free) within
+    ///   `(epoch, stream_id)`; a gap means a record was dropped.
+    /// - `emission_seq` — an **ordering** claim *only*. Monotonic across all
+    ///   streams within the epoch (decisions and effects share it) for
+    ///   reconstructing interleaved order. A single-stream consumer sees it
+    ///   *sparse* by design — the gaps are the other stream's records, never a
+    ///   loss signal.
+    pub fn set_stream(
+        &mut self,
+        epoch: u64,
+        stream_id: String,
+        stream_seq: u64,
+        emission_seq: u64,
+    ) {
+        self.epoch = Some(epoch);
         self.stream_id = Some(stream_id);
         self.stream_seq = Some(stream_seq);
         self.emission_seq = Some(emission_seq);
     }
 
-    /// The decision stream this record belongs to (scopes `stream_seq`).
+    /// The executor boot epoch (Unix nanoseconds) this record was emitted in.
+    /// Orderable, so a new/larger value marks a restart — a reset is
+    /// distinguishable from a loss, and it extends `emission_seq` to a total
+    /// order across restarts.
+    pub fn epoch(&self) -> Option<u64> {
+        self.epoch
+    }
+
+    /// The per-type stream this record belongs to (scopes `stream_seq`).
     pub fn stream_id(&self) -> Option<&str> {
         self.stream_id.as_deref()
     }
 
-    /// Monotonic, gap-free sequence within the decision stream — completeness.
+    /// **Completeness** counter — dense within `(epoch, stream_id)`; a gap is a
+    /// dropped record.
     pub fn stream_seq(&self) -> Option<u64> {
         self.stream_seq
     }
 
-    /// Global monotonic sequence across decisions and effects — interleaved
-    /// order.
+    /// **Ordering** counter — monotonic across decisions and effects within the
+    /// epoch. Sparse for a single-stream consumer by design; not a loss signal.
     pub fn emission_seq(&self) -> Option<u64> {
         self.emission_seq
     }
@@ -339,11 +370,13 @@ mod tests {
     #[test]
     fn stream_and_sequences_stamp_and_read_back() {
         let mut log = DecisionLog::new();
+        assert!(log.epoch().is_none());
         assert!(log.stream_id().is_none());
         assert!(log.stream_seq().is_none());
         assert!(log.emission_seq().is_none());
-        log.set_stream("dec-abc".into(), 7, 42);
-        assert_eq!(log.stream_id(), Some("dec-abc"));
+        log.set_stream(1_700_000_000, "decision".into(), 7, 42);
+        assert_eq!(log.epoch(), Some(1_700_000_000));
+        assert_eq!(log.stream_id(), Some("decision"));
         assert_eq!(log.stream_seq(), Some(7));
         assert_eq!(log.emission_seq(), Some(42));
     }
