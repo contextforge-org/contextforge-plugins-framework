@@ -6,6 +6,8 @@ weight: 7
 # Module 6: Scoped credentials (Delegation)
 
 > You are in the [CPEX tutorial]({{< relref "_index" >}}). This module needs the IdP.
+>
+> **Cookbook recipe:** [Recipe 1: User acting through an agent (on-behalf-of)]({{< relref "/docs/identity-delegation#recipe-1-user-acting-through-an-agent-on-behalf-of" >}}).
 
 **Goal:** mint a narrow, downstream-scoped credential for a call with a real OAuth 2.0 token exchange (RFC 8693), instead of forwarding the caller's full token.
 
@@ -86,6 +88,7 @@ Keycloak mints the scoped token during the exchange, constrained by the requeste
 ## Go deeper
 
 - [Delegation]({{< relref "/docs/apl/delegation" >}}) for token exchange, capability reduction, and downstream verification.
+- [Module 12: Delegation subjects]({{< relref "12-subjects" >}}) for the other principals a minted token can speak for.
 
 ## Next
 

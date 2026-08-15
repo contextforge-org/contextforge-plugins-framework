@@ -56,7 +56,14 @@ const ELICITATION_ID_HEADER: &str = "X-Policy-Elicitation-Id";
 #[derive(Debug, Clone, Default)]
 pub struct Caller {
     /// Bearer token (a JWT from the tutorial IdP). `None` = anonymous.
+    /// Presented on the `Authorization` header.
     pub token: Option<String>,
+    /// Additional credentials on other headers, as `(header, token)` pairs.
+    /// A dual-principal call (module 15) carries a second credential here,
+    /// say the human on `X-User-Token` while the agent is on `Authorization`,
+    /// so two resolvers each read the header they're configured for and fold
+    /// their own identity slot (subject / client / caller_workload).
+    pub extra_credentials: Vec<(String, String)>,
     /// Session id for cross-request information flow. Session state only
     /// keys off this when the caller is also authenticated (has a subject).
     pub session_id: Option<String>,
@@ -78,9 +85,17 @@ impl Caller {
     pub fn with_token(token: impl Into<String>) -> Self {
         Self {
             token: Some(token.into()),
-            session_id: None,
-            elicitation_id: None,
+            ..Default::default()
         }
+    }
+
+    /// Present an additional credential on a named header (module 15).
+    /// Chain it onto a [`Caller::with_token`] or [`Caller::anonymous`] call to
+    /// carry a second principal, say `.with_credential("X-User-Token", jwt)`
+    /// so a route's user resolver and agent resolver each see their own token.
+    pub fn with_credential(mut self, header: impl Into<String>, token: impl Into<String>) -> Self {
+        self.extra_credentials.push((header.into(), token.into()));
+        self
     }
 
     /// Attach a session id so this call shares information-flow state with
@@ -170,14 +185,28 @@ where
     // --- Step 1: resolve identity (skipped for anonymous callers). The
     //     JWT plugin validates the token and returns a subject; we fold
     //     that subject into the extensions the policy phases will read. ---
-    if let Some(token) = &caller.token {
+    if caller.token.is_some() || !caller.extra_credentials.is_empty() {
+        // One credential (modules 2 to 14) is passed bare, exactly as before.
+        // Multiple credentials (module 15 on) are handed over as a header map
+        // so each resolver reads the header it's configured for. The bare form
+        // has to stay: the JWT resolver falls back to the raw token only when
+        // no map is present, so populating one unconditionally would break the
+        // single-resolver modules whose header is not `Authorization`.
+        let payload = match (&caller.token, caller.extra_credentials.is_empty()) {
+            (Some(token), true) => IdentityPayload::new(token.clone(), TokenSource::Bearer),
+            _ => {
+                let mut headers = std::collections::HashMap::new();
+                if let Some(t) = &caller.token {
+                    headers.insert("authorization".to_string(), t.clone());
+                }
+                for (header, tok) in &caller.extra_credentials {
+                    headers.insert(header.to_ascii_lowercase(), tok.clone());
+                }
+                IdentityPayload::new(String::new(), TokenSource::Bearer).with_headers(headers)
+            },
+        };
         let (id_result, id_bg) = mgr
-            .invoke_named::<IdentityHook>(
-                HOOK_IDENTITY_RESOLVE,
-                IdentityPayload::new(token.clone(), TokenSource::Bearer),
-                ext.clone(),
-                None,
-            )
+            .invoke_named::<IdentityHook>(HOOK_IDENTITY_RESOLVE, payload, ext.clone(), None)
             .await;
         id_bg.wait_for_background_tasks().await;
         if !id_result.continue_processing {

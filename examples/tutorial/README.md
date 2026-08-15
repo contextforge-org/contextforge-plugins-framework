@@ -36,8 +36,8 @@ The realm takes a few seconds to import. Wait for it before running an IdP-backe
 cargo run -p cpex-tutorial --example wait_for_idp   # blocks until the realm is serving
 ```
 
-`make tutorial-check` runs this probe automatically before the IdP modules. See [`idp/README.md`](idp/README.md) for the personas and how to mint a token by hand.
+`make tutorial-check` runs this probe automatically before the IdP modules. Module 16 additionally needs the SPIRE overlay, which `make tutorial-check-spire` brings up. See [`idp/README.md`](idp/README.md) for the personas and how to mint a token by hand.
 
 ## Editing policy
 
-For modules 2–8 you change `policies/*.yaml`, not Rust. Each policy file has a header explaining what to try. The harness reloads the file on each run (`cargo run ...`), so edit, re-run, observe.
+From module 2 on you change `policies/*.yaml`, not Rust. Each policy file has a header explaining what to try. The harness reloads the file on each run (`cargo run ...`), so edit, re-run, observe.

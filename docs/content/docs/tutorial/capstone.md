@@ -1,6 +1,6 @@
 ---
 title: "Capstone"
-weight: 12
+weight: 20
 ---
 
 # Capstone: the three-backend agent
