@@ -7,13 +7,13 @@ weight: 18
 
 > You are in the [CPEX tutorial]({{< relref "_index" >}}). This module needs the IdP.
 
-**Goal:** accept callers from **more than one identity provider** with a single resolver, each token validated against its own issuer's keys.
+**Goal:** accept callers from more than one identity provider with a single resolver, each token validated against its own issuer's keys.
 
 ## The problem
 
-Every module so far trusted exactly one issuer. Real enforcement points rarely have that luxury: your own workforce IdP *and* a partner org's, a legacy realm *and* its replacement during a migration, one IdP per business unit. You want to accept tokens from all of them — but only those — and validate each on the correct keys.
+A single enforcement point often fronts several identity providers: your own workforce IdP and a partner org's, a legacy realm and its replacement during a migration, one IdP per business unit. You want to accept tokens from all of them, only those, and validate each on the correct keys.
 
-A JWT names its issuer in the `iss` claim. CPEX matches that to a **trusted issuer** and validates the token against *that* issuer's JWKS. List several, and one resolver federates them; a token whose `iss` is in none is rejected with `auth.untrusted_issuer`.
+A JWT names its issuer in the `iss` claim. CPEX matches that to a trusted issuer and validates the token against *that* issuer's JWKS. List several, and one resolver federates them; a token whose `iss` is in none is rejected with `auth.untrusted_issuer`.
 
 ## Build it
 
@@ -37,7 +37,7 @@ plugins:
           decoding_key: { kind: jwks_url, url: "…/cpex-partner/…/certs" }   # ITS OWN keys
 ```
 
-Each entry is a full trust anchor: its own issuer string, its own JWKS, its own accepted audiences. Here both issuers are realms in the same Keycloak, but they could be entirely separate products — the resolver doesn't care, it just matches `iss`.
+Each entry is a full trust anchor: its own issuer string, its own JWKS, its own accepted audiences. Here both issuers are realms in the same Keycloak, but they could be entirely separate products. The resolver only matches `iss`.
 
 ## Run it
 
@@ -54,21 +54,21 @@ cargo run -p cpex-tutorial --example m17_federation
 ▸ pat (partner realm cpex-partner) → get_compensation (issuer #2, validated on ITS keys)
   ✓ ALLOWED  { ... }
 
-▸ outsider (master realm — an untrusted issuer) → get_compensation (rejected)
+▸ outsider (master realm, an untrusted issuer) → get_compensation (rejected)
   ✗ DENIED   [auth.untrusted_issuer] issuer 'http://localhost:8081/realms/master' is not in the trusted-issuer list
 ```
 
-Both `alice` and `pat` reach the same route under the same rule (`require(role.hr)`) — the policy never mentions issuers. The third token is a genuine, validly-signed JWT, but from Keycloak's `master` realm, which the resolver doesn't trust — so it's rejected before any authorization runs.
+Both `alice` and `pat` reach the same route under the same rule (`require(role.hr)`), and the policy never mentions issuers. The third token is a genuine, validly-signed JWT from Keycloak's `master` realm, which the resolver doesn't trust, so it is rejected before any authorization runs.
 
 ## Claims still have to line up
 
-Federation validates *signatures*; it does not normalize *claims*. Two IdPs may express roles differently, and the resolver reads a flat `roles` array (module 2). The partner realm here is configured to emit the same `roles` / `permissions` shape as the home realm, which is why `pat` satisfies `require(role.hr)`. When you federate a *real* partner IdP, mapping its claims into the shape your policy expects is the actual work — the trust list is the easy half.
+Federation validates *signatures*; it does not normalize *claims*. Two IdPs may express roles differently, and the resolver reads a flat `roles` array (module 2). The partner realm here is configured to emit the same `roles` and `permissions` shape as the home realm, which is why `pat` satisfies `require(role.hr)`. Against a real partner IdP, mapping its claims into the shape your policy expects is the harder half; the trust list is the easy one.
 
 ## Try it
 
-1. **Drop the partner issuer.** Delete the second `trusted_issuers` entry and re-run. Expect: `pat` now fails with `auth.untrusted_issuer` — same token, no longer trusted.
-2. **Break the partner keys.** Point the partner entry's `decoding_key.url` at the *home* realm's certs. Expect: `pat` fails signature validation — each issuer must be verified on its own keys.
-3. **Diverge the claims.** Give `pat` a role the home realm doesn't use and gate the route on it. That's the per-issuer claim-mapping problem in miniature.
+1. **Drop the partner issuer.** Delete the second `trusted_issuers` entry and re-run. Expect: `pat` now fails with `auth.untrusted_issuer`, the same token, no longer trusted.
+2. **Break the partner keys.** Point the partner entry's `decoding_key.url` at the *home* realm's certs. Expect: `pat` fails signature validation, because each issuer must be verified on its own keys.
+3. **Diverge the claims.** Give `pat` a role the home realm doesn't use and gate the route on it. That is the per-issuer claim-mapping problem, in one realm.
 
 ## Checkpoint
 
@@ -83,7 +83,7 @@ No. Trust means "I accept tokens this issuer signed." What those tokens are *all
 ## Go deeper
 
 - [Identity → Multiple sources]({{< relref "/docs/apl/identity#multiple-sources" >}}) for the full multi-issuer / multi-resolver model.
-- [Configuration]({{< relref "/docs/configuration" >}}) for the `trusted_issuers` schema.
+- [Configuration]({{< relref "/docs/configuration" >}}#plugins) for the `trusted_issuers` schema.
 
 ## Next
 

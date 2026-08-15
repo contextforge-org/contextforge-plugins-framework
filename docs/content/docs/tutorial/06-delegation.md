@@ -88,6 +88,7 @@ Keycloak mints the scoped token during the exchange, constrained by the requeste
 ## Go deeper
 
 - [Delegation]({{< relref "/docs/apl/delegation" >}}) for token exchange, capability reduction, and downstream verification.
+- [Module 12: Delegation subjects]({{< relref "12-subjects" >}}) for the other principals a minted token can speak for.
 
 ## Next
 

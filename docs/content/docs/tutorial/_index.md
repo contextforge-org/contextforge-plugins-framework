@@ -19,10 +19,10 @@ One idea repeats in every module: the application never changes. Only the policy
 ## Before you start
 
 - Rust 1.96 or newer, and Cargo.
-- A container runtime with compose (Rancher Desktop, Podman, or Docker Desktop). You need it from module 2 on, where a real Keycloak resolves tokens. Modules 0 and 1 need only Rust.
+- A container runtime with compose (Rancher Desktop, Podman, or Docker Desktop). You need it from module 2 on, where a real Keycloak resolves tokens. Modules 0 and 1 need only Rust, and module 16 additionally needs the SPIRE overlay it describes.
 - The code lives in [`examples/tutorial`](https://github.com/contextforge-org/cpex/tree/main/examples/tutorial). Run a module with `cargo run -p cpex-tutorial --example m01_hello`.
 
-Budget about 3 to 4 hours total, 15 to 25 minutes per module.
+Budget 15 to 25 minutes per module: about 3 to 4 hours for modules 0 to 10 and the capstone, which are the core path. Modules 11 to 18 are deep dives on organizing policy and on identity and delegation; take them in any order, or skip to the capstone and come back.
 
 ## Modules
 
@@ -43,8 +43,8 @@ Budget about 3 to 4 hours total, 15 to 25 minutes per module.
 | 12 | [Delegation subjects]({{< relref "12-subjects" >}}) | Mint a downstream token as the caller (`user`) or as the gateway itself (`this_workload`) | yes |
 | 13 | [Delegation as a client]({{< relref "13-client" >}}) | Scope an agent's own client token with `subject: client` (cookbook Recipe 5) | yes |
 | 14 | [Passthrough (forward, don't mint)]({{< relref "14-passthrough" >}}) | When to forward the caller's token unchanged instead of exchanging it (cookbook Recipe 4) | yes |
-| 15 | [Dual-principal (subject + actor)]({{< relref "15-dual-principal" >}}) | Mint on behalf of a user while naming the acting agent — `subject: user, actor: client` (cookbook Recipe 6) | yes |
-| 16 | [Workload identity (SVID)]({{< relref "16-workload" >}}) | An agent authenticates by SPIFFE SVID; CPEX brokers a scoped token in two legs — `subject: caller_workload` (cookbook Recipe 2) | yes + SPIRE |
+| 15 | [Dual-principal (subject + actor)]({{< relref "15-dual-principal" >}}) | Mint on behalf of a user while naming the acting agent, `subject: user, actor: client` (cookbook Recipe 6) | yes |
+| 16 | [Workload identity (SVID)]({{< relref "16-workload" >}}) | An agent authenticates by SPIFFE SVID; CPEX brokers a scoped token in two legs, `subject: caller_workload` (cookbook Recipe 2) | yes + SPIRE |
 | 17 | [Multi-issuer (trust federation)]({{< relref "17-federation" >}}) | Accept callers from more than one IdP with one resolver, each validated on its own keys | yes |
 | 18 | [Static attributes (data.*)]({{< relref "18-attributes" >}}) | Feed policy operator-maintained facts from a data file, read per request as `data.*` | yes |
 | C | [Capstone: the three-backend agent]({{< relref "capstone" >}}) | Assemble every control into the full Overview scenario | yes |
