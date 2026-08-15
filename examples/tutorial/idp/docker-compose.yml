@@ -30,7 +30,7 @@ services:
     volumes:
       - ./realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
       # A second realm = a second issuer, for the multi-issuer module (17).
-      # --import-realm loads every *.json here; modules 0–16 ignore it.
+      # --import-realm loads every *.json here; every other module ignores it.
       # (Named *-export.json, not *-realm.json, so Keycloak's dir-import
       # doesn't require the file prefix to equal the realm name.)
       - ./partner-export.json:/opt/keycloak/data/import/partner-export.json:ro

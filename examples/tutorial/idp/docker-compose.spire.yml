@@ -1,19 +1,19 @@
 # =============================================================================
-# CPEX Tutorial — SPIRE overlay for Module 16 (Workload identity / SVID).
+# CPEX Tutorial: SPIRE overlay for Module 16 (Workload identity / SVID).
 # =============================================================================
-# OPT-IN. Modules 0–15 do not need this file — bring it up only for module 16.
+# OPT-IN. Modules 0 to 15 do not need this file; bring it up only for module 16.
 # It is ADDITIVE over idp/docker-compose.yml:
 #
 #   * bumps Keycloak to 26.6.1 and turns on `spiffe:v1` (the native SPIFFE
-#     identity provider — lets a client present its JWT-SVID as an RFC 7523
+#     identity provider, which lets a client present its JWT-SVID as an RFC 7523
 #     client_assertion of type ...:jwt-spiffe, which is how an SVID enters
 #     OAuth per draft-ietf-oauth-spiffe-client-auth). Also keeps
 #     `token-exchange-standard` on for leg 2 (the scope-down exchange).
 #   * adds spire-server (the SPIFFE authority) + spire-oidc (its JWKS/OIDC
 #     discovery provider on :8443) so Keycloak can validate the SVID.
 #
-# We mint SVIDs directly off the server (no agent, no attestation) — a genuine
-# SPIRE-signed SVID against SPIRE's real JWKS, two containers.
+# We mint SVIDs directly off the server (no agent, no attestation): a genuine
+# SPIRE-signed SVID against SPIRE's real JWKS, in two containers.
 #
 #   # Bring up the tutorial IdP + SPIRE:
 #   docker compose -f idp/docker-compose.yml -f idp/docker-compose.spire.yml up -d
@@ -48,7 +48,7 @@ services:
     volumes:
       - ./spire/server/server.conf:/opt/spire/conf/server/server.conf:ro
       - spire-server-data:/opt/spire/data/server
-      # Shared admin socket dir — spire-oidc reads the bundle through it.
+      # Shared admin socket dir; spire-oidc reads the bundle through it.
       - spire-server-socket:/tmp/spire-server/private
     healthcheck:
       test: ["CMD", "/opt/spire/bin/spire-server", "healthcheck"]

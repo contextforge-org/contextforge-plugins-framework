@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # Configure the tutorial Keycloak to trust SPIRE and bind the agent's SPIFFE
-# ID — the one-time setup for module 16 (Workload identity / SVID).
+# ID: the one-time setup for module 16 (Workload identity / SVID).
 #
 # Run it AFTER bringing up the SPIRE overlay:
 #   docker compose -f idp/docker-compose.yml -f idp/docker-compose.spire.yml up -d
 #   ./idp/spire/setup-spiffe.sh
 #
-# It is idempotent — safe to re-run. It applies two things via the admin API
-# (kept OUT of realm-export.json so modules 0–15, on the base Keycloak, never
-# see SPIFFE config):
+# Needs curl and jq. `make tutorial-check-spire` runs it for you.
+#
+# Safe to re-run: the identity provider is updated in place and the client is
+# recreated. It applies two things through the admin API, kept OUT of
+# realm-export.json so modules 0 to 15, on the base Keycloak, never see SPIFFE
+# config:
 #
 #   1. a SPIFFE identity provider (providerId: spiffe) that validates JWT-SVIDs
 #      from trust domain spiffe://cpex.tutorial against SPIRE's JWKS.
@@ -33,7 +36,7 @@ echo "-> obtaining admin token"
 TOKEN=$(curl -sf -X POST "$KC/realms/master/protocol/openid-connect/token" \
   -d grant_type=password -d client_id=admin-cli \
   -d username="$ADMIN" -d password="$ADMIN_PW" \
-  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+  | jq -r .access_token)
 
 # --- 1. SPIFFE identity provider -------------------------------------------
 read -r -d '' IDP_JSON <<JSON || true
@@ -95,7 +98,7 @@ JSON
 
 CID=$(curl -sf -H "Authorization: Bearer $TOKEN" \
   "$KC/admin/realms/$REALM/clients?clientId=$CLIENT_ID" \
-  | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d[0]["id"] if d else "")')
+  | jq -r 'if length > 0 then .[0].id else "" end')
 if [ -n "$CID" ]; then
   echo "-> removing existing client '$CLIENT_ID' before recreate"
   curl -sf -X DELETE -H "Authorization: Bearer $TOKEN" "$KC/admin/realms/$REALM/clients/$CID"
