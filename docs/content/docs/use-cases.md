@@ -5,7 +5,7 @@ weight: 18
 
 # Use Cases
 
-> Each use case below runs end-to-end in the [Praxis demo](https://github.com/praxis-proxy/demos/tree/main/demos/cpex): CPEX as the policy engine inside a real AI gateway, backed by a real IdP and a mock MCP backend. Every snippet is quoted from the demo's live config, and every scenario is a script you can run.
+> Each use case below runs end-to-end in the [Praxis demo](https://github.com/praxis-proxy/demos/tree/main/demos/policy-engine): CPEX as the policy engine inside a real AI gateway, backed by a real IdP and a mock MCP backend. Every snippet is quoted from the demo's live config, and every scenario is a script you can run.
 
 The demo realizes the [running scenario]({{< relref "/docs/overview" >}}): one agent, three callers, three kinds of backend reached over MCP. Identity decides the outcome.
 
@@ -17,9 +17,9 @@ The demo realizes the [running scenario]({{< relref "/docs/overview" >}}): one a
 
 [Praxis](https://github.com/praxis-proxy/praxis) is an AI-native proxy built around a filter chain. CPEX ships as its `policy` filter (the `cpex-policy-engine` feature), so the gateway parses MCP JSON-RPC, runs the full policy pass, and only then forwards a scoped request upstream:
 
-![The Praxis demo topology: a chat agent calls the Praxis gateway over MCP, where the mcp, policy (CPEX), and router filters run in sequence before forwarding to the hr-mcp server; the policy filter is configured by cpex.yaml and talks to Keycloak for identity, token exchange, and CIBA, and to Valkey for session taint, while Keycloak pushes CIBA approvals to the auth-channel UI](images/use_cases_topology.png)
+![The Praxis demo topology: a chat agent calls the Praxis gateway over MCP, where the mcp, policy (CPEX), and router filters run in sequence before forwarding to the hr-mcp server; the policy filter is configured by policy.yaml and talks to Keycloak for identity, token exchange, and CIBA, and to Valkey for session taint, while Keycloak pushes CIBA approvals to the auth-channel UI](images/use_cases_topology.png)
 
-The wiring is two files: [`praxis.yaml`](https://github.com/praxis-proxy/demos/blob/main/demos/cpex/praxis.yaml) declares the listener and filter chain, and [`cpex.yaml`](https://github.com/praxis-proxy/demos/blob/main/demos/cpex/cpex.yaml) holds everything CPEX: identity plugins, delegators, validators, routes, and the PDP policy. The use cases below are that one config, taken apart.
+The wiring is two files: [`praxis.yaml`](https://github.com/praxis-proxy/demos/blob/main/demos/policy-engine/praxis.yaml) declares the listener and filter chain, and [`policy.yaml`](https://github.com/praxis-proxy/demos/blob/main/demos/policy-engine/policy.yaml) holds everything CPEX: identity plugins, delegators, validators, routes, and the PDP policy. The use cases below are that one config, taken apart.
 
 ## Watch it run
 
@@ -40,7 +40,7 @@ routes:
 
 Bob and Eve pass (HR role in their tokens). Alice is denied with a JSON-RPC error envelope before the request ever leaves the gateway; the backend never sees it. The demo resolves two identities per request, the human (`X-User-Token`) and the client (`Authorization`), each validated by its own `identity/jwt` plugin against Keycloak.
 
-Run it: [`scenarios/01-bob-allow.sh`](https://github.com/praxis-proxy/demos/blob/main/demos/cpex/scenarios/01-bob-allow.sh), [`scenarios/02-alice-deny.sh`](https://github.com/praxis-proxy/demos/tree/main/demos/cpex/scenarios). More: [Identity]({{< relref "/docs/apl/identity" >}}).
+Run it: [`scenarios/01-bob-allow.sh`](https://github.com/praxis-proxy/demos/blob/main/demos/policy-engine/scenarios/01-bob-allow.sh), [`scenarios/02-alice-deny.sh`](https://github.com/praxis-proxy/demos/blob/main/demos/policy-engine/scenarios/02-alice-deny.sh). More: [Identity]({{< relref "/docs/apl/identity" >}}).
 
 ## 2. On-the-wire redaction
 
@@ -53,7 +53,7 @@ This is the [same-request-different-data]({{< relref "/docs/overview#same-reques
 
 The tool does not implement this, cannot get it wrong, and cannot be talked out of it. The novelty here over the Overview is where it happens: in the proxy's response path, so an unmodified MCP backend gets per-caller redaction for free.
 
-Run it: [`scenarios/03-eve-redact.sh`](https://github.com/praxis-proxy/demos/tree/main/demos/cpex/scenarios). More: field pipelines in [Effects]({{< relref "/docs/apl/effects" >}}).
+Run it: [`scenarios/03-eve-redact.sh`](https://github.com/praxis-proxy/demos/blob/main/demos/policy-engine/scenarios/03-eve-redact.sh). More: field pipelines in [Effects]({{< relref "/docs/apl/effects" >}}).
 
 ## 3. Credential custody and token exchange
 
@@ -69,7 +69,7 @@ What reaches `workday-api` is a short-lived token with `audience: workday-api` a
       - "!(delegation.granted.permissions contains 'repo:read:internal'): deny"
 ```
 
-Run it: [`scenarios/01-bob-allow.sh`](https://github.com/praxis-proxy/demos/blob/main/demos/cpex/scenarios/01-bob-allow.sh) plus [`verify-token-exchange.sh`](https://github.com/praxis-proxy/demos/blob/main/demos/cpex/verify-token-exchange.sh). More: [Delegation]({{< relref "/docs/apl/delegation" >}}).
+Run it: [`scenarios/01-bob-allow.sh`](https://github.com/praxis-proxy/demos/blob/main/demos/policy-engine/scenarios/01-bob-allow.sh) plus [`verify-token-exchange.sh`](https://github.com/praxis-proxy/demos/blob/main/demos/policy-engine/verify-token-exchange.sh). More: [Delegation]({{< relref "/docs/apl/delegation" >}}).
 
 ## 4. Cross-tool data-flow control
 
@@ -85,7 +85,7 @@ The classic exfiltration path: read something sensitive, then send it somewhere.
 
 Once a session touches compensation data, its emails are blocked, even with a spotless body. The label lives in CPEX's session store (Valkey in the demo), keyed by a hash of subject and session id, so it survives gateway restarts and cannot cross principals: Eve tainting a session id does not poison Bob's use of the same id.
 
-Run it: [`scenarios/08-bob-taint-deny.sh`](https://github.com/praxis-proxy/demos/tree/main/demos/cpex/scenarios), [`scenarios/09-cross-principal-taint-isolation.sh`](https://github.com/praxis-proxy/demos/tree/main/demos/cpex/scenarios). More: [Session Tainting]({{< relref "/docs/apl/tainting" >}}).
+Run it: [`scenarios/08-bob-taint-deny.sh`](https://github.com/praxis-proxy/demos/blob/main/demos/policy-engine/scenarios/08-bob-taint-deny.sh), [`scenarios/09-cross-principal-taint-isolation.sh`](https://github.com/praxis-proxy/demos/blob/main/demos/policy-engine/scenarios/09-cross-principal-taint-isolation.sh). More: [Session Tainting]({{< relref "/docs/apl/tainting" >}}).
 
 ## 5. PII guardrails on arguments
 
@@ -104,7 +104,7 @@ Session taint is state-based; this control is content-based, and they complement
 
 Bob pasting an SSN into an email body gets a deny, and the audit record of the attempt is still written: the route runs `run(audit-log)` before `run(pii-scan)`, so observation happens before the gate blocks. Flip `mode: deny` to `audit` to shadow-test the scanner against real traffic first (see [Patterns]({{< relref "/docs/patterns#shadow-rollout-with-audit-mode" >}})).
 
-Run it: [`scenarios/07-bob-pii-deny.sh`](https://github.com/praxis-proxy/demos/tree/main/demos/cpex/scenarios). More: [Builtins]({{< relref "/docs/builtins" >}}).
+Run it: [`scenarios/07-bob-pii-deny.sh`](https://github.com/praxis-proxy/demos/blob/main/demos/policy-engine/scenarios/07-bob-pii-deny.sh). More: [Builtins]({{< relref "/docs/builtins" >}}).
 
 ## 6. Human-in-the-loop approval
 
@@ -126,7 +126,7 @@ The gateway never blocks. It suspends the call, answers the agent with JSON-RPC 
 
 The agent needs no approval protocol; it sees "retry later" and, later, a result. In the demo's chat client the conversation simply continues until the approval lands and the result cuts back in.
 
-Run it: [`scenarios/10-bob-adjust-under-threshold.sh`](https://github.com/praxis-proxy/demos/tree/main/demos/cpex/scenarios), [`scenarios/11-bob-adjust-approval.sh`](https://github.com/praxis-proxy/demos/tree/main/demos/cpex/scenarios). More: [Elicitation]({{< relref "/docs/apl/elicitation" >}}).
+Run it: [`scenarios/10-bob-adjust-under-threshold.sh`](https://github.com/praxis-proxy/demos/blob/main/demos/policy-engine/scenarios/10-bob-adjust-under-threshold.sh), [`scenarios/11-bob-adjust-approval.sh`](https://github.com/praxis-proxy/demos/blob/main/demos/policy-engine/scenarios/11-bob-adjust-approval.sh). More: [Elicitation]({{< relref "/docs/apl/elicitation" >}}).
 
 ## 7. Pluggable policy decisions
 
@@ -167,11 +167,11 @@ CEL, as an inline predicate on the route:
 
 Same route, same outcome, different authoring model: Cedar suits versioned or signed policy sets with an entity model; CEL suits a self-contained predicate with no external policy store. Both backends compile into one binary; the config selects which runs.
 
-Run it: [`scenarios/04-alice-internal-allow.sh`](https://github.com/praxis-proxy/demos/tree/main/demos/cpex/scenarios), [`scenarios/05-alice-external-cedar-deny.sh`](https://github.com/praxis-proxy/demos/tree/main/demos/cpex/scenarios), then again with `GATEWAY_CONFIG=praxis-cel.yaml`. More: [PDP Integration]({{< relref "/docs/apl/pdp" >}}).
+Run it: [`scenarios/04-alice-internal-allow.sh`](https://github.com/praxis-proxy/demos/blob/main/demos/policy-engine/scenarios/04-alice-internal-allow.sh), [`scenarios/05-alice-external-cedar-deny.sh`](https://github.com/praxis-proxy/demos/blob/main/demos/policy-engine/scenarios/05-alice-external-cedar-deny.sh), then again with `GATEWAY_CONFIG=praxis-cel.yaml`. More: [PDP Integration]({{< relref "/docs/apl/pdp" >}}).
 
 ## Run it yourself
 
-The whole demo is one command from [`demos/cpex`](https://github.com/praxis-proxy/demos/tree/main/demos/cpex) (Docker plus a Rust toolchain):
+The whole demo is one command from [`demos/policy-engine`](https://github.com/praxis-proxy/demos/tree/main/demos/policy-engine) (Docker plus a Rust toolchain):
 
 ```bash
 ./restart.sh       # build the gateway, bring up Keycloak + backend + valkey
