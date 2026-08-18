@@ -56,6 +56,10 @@ pub struct EffectRecord {
     pub description: String,
     /// Idempotency / reconciliation key threaded into the external call, so
     /// an `unknown` outcome can be resolved against the participant later.
+    /// Must be **unique per attempt** — recovery resolves keys across the
+    /// whole WAL, so a key reused across retries would let an earlier
+    /// attempt's terminal record mask a later attempt's orphan (see
+    /// [`FileEffectLog::recover`]).
     pub key: String,
     /// Where in its lifecycle this record is.
     pub state: EffectState,
@@ -410,6 +414,15 @@ impl FileEffectLog {
 
             // A key is resolved iff some record for it reached a terminal
             // state. Everything else (prepared-only, unknown) is unresolved.
+            //
+            // INVARIANT: a `key` is a unique per-attempt id, not a reused
+            // idempotency key. Resolution matches across the whole file, so a
+            // plugin that reused one stable key across retries would let a
+            // terminal record from an earlier attempt mask a later attempt's
+            // orphaned `prepared` as resolved. The OAuth delegator satisfies
+            // this with a fresh UUID per mint; a future plugin that wants
+            // stable idempotency keys must add per-attempt scoping here (e.g.
+            // an attempt counter alongside the key) before relying on recovery.
             let resolved: std::collections::HashSet<&str> = records
                 .iter()
                 .filter(|r| matches!(r.state, EffectState::Confirmed | EffectState::Rejected))

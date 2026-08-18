@@ -738,6 +738,22 @@ pub(crate) fn validate_config(config: &CpexConfig) -> Result<(), Box<PluginError
                 message: format!("duplicate plugin name: '{}'", plugin.name),
             }));
         }
+
+        // `emit_effect` is only honored in modes whose phase wires a live
+        // effect emitter (Sequential / Transform). In any other mode the
+        // capability would silently no-op at runtime — the mint runs with no
+        // write-ahead record and no fail-closed guarantee — so reject the
+        // combination here rather than let it fail open.
+        if plugin.capabilities.contains("emit_effect") && !plugin.mode.grants_effect_emitter() {
+            return Err(Box::new(PluginError::Config {
+                message: format!(
+                    "plugin '{}' declares the 'emit_effect' capability with mode '{}', \
+                     which cannot emit effects (only sequential/transform can); \
+                     effect calls would silently no-op",
+                    plugin.name, plugin.mode
+                ),
+            }));
+        }
     }
 
     if config.routing_enabled() {
@@ -1187,6 +1203,39 @@ plugins:
             .unwrap_err()
             .to_string()
             .contains("duplicate plugin name"));
+    }
+
+    #[test]
+    fn emit_effect_rejected_in_non_emitting_modes() {
+        // Concurrent / audit / fire_and_forget don't wire an effect emitter,
+        // so `emit_effect` there would silently no-op — reject at config.
+        for mode in ["concurrent", "audit", "fire_and_forget"] {
+            let yaml = format!(
+                "plugins:\n  - name: minter\n    kind: builtin\n    mode: {mode}\n    \
+                 hooks: [tool_pre_invoke]\n    capabilities: [emit_effect]\n"
+            );
+            let err = parse_config(&yaml).unwrap_err().to_string().to_lowercase();
+            assert!(
+                err.contains("emit_effect") && err.contains(mode),
+                "mode {mode} should be rejected; got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn emit_effect_allowed_in_emitting_modes() {
+        // Sequential / transform run through the serial phase, which grants
+        // the emitter — so `emit_effect` is honored and must pass validation.
+        for mode in ["sequential", "transform"] {
+            let yaml = format!(
+                "plugins:\n  - name: minter\n    kind: builtin\n    mode: {mode}\n    \
+                 hooks: [tool_pre_invoke]\n    capabilities: [emit_effect]\n"
+            );
+            assert!(
+                parse_config(&yaml).is_ok(),
+                "mode {mode} should be allowed to emit effects"
+            );
+        }
     }
 
     #[test]

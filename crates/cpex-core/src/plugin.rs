@@ -496,6 +496,21 @@ impl PluginMode {
     pub fn is_awaited(&self) -> bool {
         !matches!(self, Self::FireAndForget | Self::Disabled)
     }
+
+    /// Whether the executor grants an `emit_effect`-capable plugin a live
+    /// effect emitter in this mode.
+    ///
+    /// Only the serial phase (`run_serial_phase`, which drives `Sequential`
+    /// and `Transform`) wires the emitter onto the filtered extensions. In
+    /// every other mode `begin_effect`/`complete_effect` would silently
+    /// no-op — a mint would run with no write-ahead record and no fail-closed
+    /// guarantee. This is the single source of truth `validate_config` uses to
+    /// reject that combination up front rather than let it fail open at
+    /// runtime. Effects are also unsound under `Concurrent` (branches are
+    /// abortable and never merge back, so the effect would be speculative).
+    pub fn grants_effect_emitter(&self) -> bool {
+        matches!(self, Self::Sequential | Self::Transform)
+    }
 }
 
 impl fmt::Display for PluginMode {

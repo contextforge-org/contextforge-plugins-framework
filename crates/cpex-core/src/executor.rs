@@ -396,6 +396,45 @@ impl Executor {
         );
     }
 
+    /// Emit a single allow decision record for an invocation that resolved to
+    /// zero plugins, keeping the audit stream dense at one record per
+    /// invocation. **Cheap no-op when no audit sink is attached** — an
+    /// unaudited host pays only a length check, building no record and
+    /// consuming no sequence number. The manager calls this at its zero-plugin
+    /// short-circuits (which return before reaching `execute`), and `execute`
+    /// calls it for a direct empty invocation. Captures the same span /
+    /// input-label / input-hash provenance a normal run records at entry, then
+    /// stamps and emits.
+    pub(crate) async fn emit_empty_allow(
+        &self,
+        payload: &dyn PluginPayload,
+        extensions: &Extensions,
+    ) {
+        if self.audit_handlers.is_empty() {
+            return;
+        }
+        let mut decisions = DecisionLog::new();
+        let request = extensions.request.as_ref();
+        decisions.set_span(crate::decision::Span::for_request(
+            request.and_then(|r| r.trace_id.as_deref()),
+            request.and_then(|r| r.span_id.as_deref()),
+        ));
+        if let Some(sec) = extensions.security.as_ref() {
+            let mut labels: Vec<String> = sec.labels.iter().cloned().collect();
+            labels.sort_unstable();
+            decisions.set_input_labels(labels);
+        }
+        if self.config.capture_content_provenance {
+            let hash = payload
+                .audit_bytes()
+                .map(|b| crate::hooks::payload::content_hash(&b));
+            decisions.set_input_hash(hash);
+        }
+        decisions.finalize(Verdict::Allow);
+        self.stamp_decision_stream(&mut decisions);
+        self.emit_audit(payload, extensions, &decisions).await;
+    }
+
     async fn emit_audit(
         &self,
         payload: &dyn PluginPayload,
@@ -465,7 +504,15 @@ impl Executor {
     ) -> (PipelineResult, BackgroundTasks) {
         let mut ctx_table = context_table.unwrap_or_default();
 
+        // A hook that resolves to zero plugins is a normal case (nothing is
+        // configured for this entity). It still emits exactly one allow record
+        // so the audit stream stays dense at one record per invocation — but
+        // `emit_empty_allow` is a no-op when no sink is attached, so an
+        // unaudited host pays nothing. (The manager short-circuits most
+        // zero-plugin invocations before reaching here and calls
+        // `emit_empty_allow` itself; this covers a direct `execute(&[], …)`.)
         if entries.is_empty() {
+            self.emit_empty_allow(&*payload, &extensions).await;
             return (
                 PipelineResult::allowed_with(payload, extensions, ctx_table),
                 BackgroundTasks::empty(),
@@ -705,13 +752,40 @@ impl Executor {
                 }));
             }
 
-            // Execute with timeout — handler borrows payload, gets filtered extensions
+            // Execute with timeout — handler borrows payload, gets filtered
+            // extensions. Contain a panic the same way the concurrent phase
+            // does (`catch_unwind`): a panic between `begin_effect` and
+            // `complete_effect` would otherwise unwind the whole request
+            // future. Collapsing it into a `PluginError` lets `on_error`
+            // decide and keeps the pipeline's bookkeeping intact; the orphaned
+            // WAL entry is left for recovery to reconcile as `unknown` rather
+            // than crashing the request.
+            use futures::FutureExt;
             let timeout_dur = Duration::from_secs(self.config.timeout_seconds);
             let result = timeout(
                 timeout_dur,
-                entry.handler.invoke(&**payload, &filtered, &mut ctx),
+                std::panic::AssertUnwindSafe(entry.handler.invoke(&**payload, &filtered, &mut ctx))
+                    .catch_unwind(),
             )
-            .await;
+            .await
+            .map(|caught| {
+                caught.unwrap_or_else(|panic| {
+                    let msg = panic
+                        .downcast_ref::<&'static str>()
+                        .map(|s| s.to_string())
+                        .or_else(|| panic.downcast_ref::<String>().cloned())
+                        .unwrap_or_else(|| "unknown panic".to_string());
+                    error!("{} plugin '{}' panicked: {}", phase_label, plugin_name, msg);
+                    Err(Box::new(crate::error::PluginError::Execution {
+                        plugin_name: plugin_name.to_string(),
+                        message: format!("task panicked: {msg}"),
+                        source: None,
+                        code: Some("panic".into()),
+                        details: std::collections::HashMap::new(),
+                        proto_error_code: None,
+                    }))
+                })
+            });
 
             match result {
                 Ok(Ok(result_box)) => {
@@ -724,8 +798,21 @@ impl Executor {
                             }
                         }
 
+                        // A block signalled from a non-blocking phase
+                        // (Transform): suppressed by the phase contract
+                        // (can_modify, not can_block), but recorded as the
+                        // plugin's actual intent — never a plain allow.
+                        // Enforcement is unchanged (the pipeline proceeds);
+                        // this plugin's modifications are skipped, since it
+                        // asked to stop rather than shape.
+                        let deny_ignored =
+                            !erased.continue_processing && !can_block && erased.violation.is_some();
+                        if deny_ignored {
+                            action = PluginAction::DenyIgnored;
+                        }
+
                         // Accept modifications
-                        if can_modify {
+                        if can_modify && !deny_ignored {
                             if let Some(mp) = erased.modified_payload {
                                 *payload = mp;
                                 action = PluginAction::ModifiedPayload;
@@ -832,12 +919,26 @@ impl Executor {
                     // If extract failed or no modifications — payload unchanged
                 },
                 Ok(Err(e)) => {
+                    // A contained panic (from the `catch_unwind` above) carries
+                    // code "panic". Surface it with the same "plugin_panic"
+                    // violation code the concurrent phase uses, so a host or
+                    // sink can distinguish a panic from an ordinary plugin error
+                    // by code, regardless of which phase it happened in.
+                    let is_panic = matches!(
+                        e.as_ref(),
+                        crate::error::PluginError::Execution { code: Some(c), .. }
+                            if c.as_str() == "panic"
+                    );
                     error!("{} plugin '{}' failed: {}", phase_label, plugin_name, e);
                     action = PluginAction::Error(e.to_string());
                     match on_error {
                         OnError::Fail if can_block => {
                             let mut v = crate::error::PluginViolation::new(
-                                "plugin_error",
+                                if is_panic {
+                                    "plugin_panic"
+                                } else {
+                                    "plugin_error"
+                                },
                                 format!("Plugin '{}' failed: {}", plugin_name, e),
                             );
                             v.plugin_name = Some(plugin_name.to_string());
@@ -1141,8 +1242,9 @@ impl Executor {
                 },
                 BranchOutcome::TimedOut => PluginAction::Error("timed out".to_string()),
                 BranchOutcome::Panicked(s) => PluginAction::Error(format!("panicked: {s}")),
-                // Cancelled because another branch short-circuited the phase.
-                BranchOutcome::Aborted => PluginAction::Error("aborted".to_string()),
+                // Cancelled because another branch short-circuited the phase —
+                // an intentional abort, recorded as such rather than an error.
+                BranchOutcome::Aborted => PluginAction::Aborted,
             };
             decisions.record(plugin_name, entry.plugin_ref.trusted_config().mode, action);
 

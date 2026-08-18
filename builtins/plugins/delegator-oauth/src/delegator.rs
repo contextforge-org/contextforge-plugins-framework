@@ -333,8 +333,17 @@ impl OAuthDelegator {
             },
         };
         // Best-effort completion: the act already happened, so a completion
-        // write failure is not fatal (recovery reconciles by the intent's key).
-        let _ = ext.complete_effect(&intent, state).await;
+        // write failure is not fatal (recovery reconciles by the intent's
+        // key). It must not be silent, though — mirror the core primitive and
+        // log, so a persistently failing WAL is visible rather than hidden.
+        if let Err(e) = ext.complete_effect(&intent, state).await {
+            tracing::warn!(
+                effect_key = %intent.key,
+                error = %e,
+                "failed to write token-mint effect completion; \
+                 recovery will reconcile by key"
+            );
+        }
 
         outcome
     }

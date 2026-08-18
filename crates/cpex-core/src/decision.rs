@@ -34,6 +34,16 @@ pub enum PluginAction {
     ModifiedPayload,
     /// Wrote to an extension slot it was capable of writing.
     ModifiedExtensions,
+    /// Signalled a block from a non-blocking phase (Transform), so the deny
+    /// was suppressed. Recorded as its own action — never as `Allowed` — so
+    /// the record reflects the plugin's actual decision, not the discarded
+    /// intent. A downstream mapping (e.g. an OCSF `ai_operation` disposition)
+    /// must not read this as an allow.
+    DenyIgnored,
+    /// Cancelled mid-flight because another concurrent branch short-circuited
+    /// the phase. An intentional abort, not a failure — distinct from
+    /// [`PluginAction::Error`] so it doesn't read as a crash.
+    Aborted,
     /// Failed. The string is the error rendered by the executor; whether
     /// this halts the pipeline is decided by the plugin's `on_error`.
     Error(String),
