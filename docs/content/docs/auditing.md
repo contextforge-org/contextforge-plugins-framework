@@ -182,7 +182,11 @@ for the other's job:
   emission_seq)` is a total order across restarts. Detecting loss of the *tail*
   of a previous epoch (a crash between emit and persist) is not possible from
   the counters alone — that is what a durable sink (an append-only ledger) is
-  for.
+  for. **Assumption:** the host clock does not step backward across a restart
+  (an NTP correction or VM snapshot restore). Because `epoch` is boot-time,
+  a non-increasing value would make two boots share one chain scope; if you
+  need strict monotonicity regardless of the clock, back it with a persisted
+  counter or a ULID instead.
 
 ### Destinations
 
