@@ -769,6 +769,7 @@ dependencies = [
  "apl-cpex",
  "cpex-builtins",
  "cpex-core",
+ "cpex-hosts-python",
 ]
 
 [[package]]

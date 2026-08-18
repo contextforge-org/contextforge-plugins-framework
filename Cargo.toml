@@ -142,6 +142,7 @@ cpex-pdp-cedar-direct         = { path = "builtins/pdps/cedar-direct",         v
 cpex-pdp-cel                  = { path = "builtins/pdps/cel",                   version = "0.2.2" }
 cpex-pdp-opa                  = { path = "builtins/pdps/opa",                   version = "0.2.2" }
 cpex-session-valkey           = { path = "builtins/session/valkey",            version = "0.2.2" }
+cpex-hosts-python             = { path = "crates/cpex-hosts-python",           version = "0.2.2", default-features = false }
 
 # Size-first release profile. The FFI artifact (libcpex_ffi.a) is linked
 # statically into host binaries, so its compiled size flows straight into

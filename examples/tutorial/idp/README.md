@@ -1,7 +1,8 @@
 # CPEX Tutorial: Keycloak IdP
 
 A throwaway [Keycloak](https://www.keycloak.org/) realm that provides users,
-roles, and clients for the CPEX tutorial. It mints the JWTs the CPEX gateway
+roles, and clients for the CPEX tutorial, plus a second realm that stands in
+for a partner organization. It mints the JWTs the CPEX gateway
 validates, and it backs the token-exchange and CIBA exercises.
 
 > **⚠️ Tutorial-only credentials.** The admin login, every client secret, and
@@ -36,6 +37,7 @@ All users have `emailVerified: true` and are enabled for the password
 | `workday-api`   | confidential | Token-exchange **target** audience (resource server).          | `workday-dev-secret` |
 | `github-api`    | confidential | Token-exchange **target** audience (resource server).          | `github-dev-secret`  |
 | `cpex-gateway`  | confidential | Token-exchange **requester** + CIBA client. Service account on.| `gateway-dev-secret` |
+| `cpex-agent`    | confidential | An agent calling in as an OAuth client (tutorial module 13). Service account on, audience `cpex-gateway`. | `agent-dev-secret` |
 
 `cpex-gateway` has CIBA (`oidc.ciba.grant.enabled=true`) and standard OAuth2
 token exchange (`standard.token.exchange.enabled=true`) enabled.
@@ -54,6 +56,31 @@ carries protocol mappers that emit these claims into the **access token**:
 | `manager`     | user attribute `manager`, single-valued   | string         |
 | `aud`         | audience mapper                           | includes `cpex-tutorial` |
 
+### Second realm: `cpex-partner`
+
+`partner-export.json` imports a second realm alongside the first, so the
+multi-issuer module (17) has a genuinely different issuer to trust. It carries
+one user and one public client, with the same flat-claim mappers as the home
+realm:
+
+| User | Password | Realm role | `permissions` | `team`       |
+|------|----------|------------|---------------|--------------|
+| pat  | `pat`    | `hr`       | `view_ssn`    | `partner-hr` |
+
+| Client             | Type   | Purpose                                          |
+|--------------------|--------|--------------------------------------------------|
+| `cpex-partner-app` | public | Mints `pat`'s tokens, aud'd to `cpex-tutorial`.  |
+
+Its issuer is `http://localhost:8081/realms/cpex-partner`, with the JWKS and
+token endpoints under the same path. Modules other than 17 ignore it.
+
+### SPIFFE overlay (module 16 only)
+
+`docker-compose.spire.yml` adds a SPIRE server and its OIDC discovery provider,
+and bumps Keycloak to 26.6.1 with the `spiffe:v1` feature. It is opt-in and
+additive; nothing else in the tutorial uses it. Tutorial module 16 has the two
+commands, and `make tutorial-check-spire` runs them for you.
+
 ---
 
 ## Start it
@@ -62,8 +89,8 @@ carries protocol mappers that emit these claims into the **access token**:
 docker compose up -d
 ```
 
-First boot pulls the `quay.io/keycloak/keycloak:26.1` image and imports the
-realm, roughly **30 seconds**. Watch readiness with:
+First boot pulls the `quay.io/keycloak/keycloak:26.1` image and imports both
+realms, roughly **30 seconds**. Watch readiness with:
 
 ```bash
 docker compose ps          # STATUS becomes "healthy" once the realm is up

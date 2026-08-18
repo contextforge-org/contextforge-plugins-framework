@@ -331,10 +331,16 @@ examples-run: examples-build tutorial-check-local
 # modules that need no infrastructure; `tutorial-check` additionally brings
 # up the tutorial Keycloak (docker compose) and runs the IdP-backed modules,
 # tearing the stack down afterward. CI runs `tutorial-check`.
+#
+# Module 16 needs the SPIRE overlay and a one-time Keycloak setup on top of
+# the base stack, so it has its own opt-in target (`tutorial-check-spire`).
 
 TUTORIAL_IDP_COMPOSE = examples/tutorial/idp/docker-compose.yml
+TUTORIAL_SPIRE_COMPOSE = examples/tutorial/idp/docker-compose.spire.yml
 TUTORIAL_NOIDP_MODULES = m01_hello m03_shaping m04_effects m09_custom_plugin m10_testing
-TUTORIAL_IDP_MODULES = m02_identity m05_pdp m06_delegation m07_tainting m08_elicitation capstone
+TUTORIAL_IDP_MODULES = m02_identity m05_pdp m06_delegation m07_tainting m08_elicitation \
+                       m11_groups m12_subjects m13_client m14_passthrough m15_dual_principal \
+                       m17_federation m18_attributes capstone
 
 .PHONY: tutorial-check-local
 tutorial-check-local:
@@ -358,6 +364,24 @@ tutorial-check: tutorial-check-local
 	done
 	@docker compose -f $(TUTORIAL_IDP_COMPOSE) down
 	@echo "✅  Tutorial checks passed (incl. IdP-backed modules)"
+
+# Module 16 only. Brings up the SPIRE overlay, trusts SPIRE in Keycloak, and
+# runs the workload-identity module. Not part of the CI gate: it needs two
+# extra containers and a Keycloak that speaks SPIFFE.
+.PHONY: tutorial-check-spire
+tutorial-check-spire:
+	@echo "→ starting tutorial IdP + SPIRE"
+	@docker compose -f $(TUTORIAL_IDP_COMPOSE) -f $(TUTORIAL_SPIRE_COMPOSE) up -d
+	@echo "→ waiting for Keycloak realm to be ready"
+	@$(CARGO) run -q -p cpex-tutorial --example wait_for_idp || { \
+		docker compose -f $(TUTORIAL_IDP_COMPOSE) -f $(TUTORIAL_SPIRE_COMPOSE) down; exit 1; }
+	@examples/tutorial/idp/spire/setup-spiffe.sh || { \
+		docker compose -f $(TUTORIAL_IDP_COMPOSE) -f $(TUTORIAL_SPIRE_COMPOSE) down; exit 1; }
+	@echo "→ tutorial m16_workload --check"
+	@$(CARGO) run -q -p cpex-tutorial --example m16_workload -- --check || { \
+		docker compose -f $(TUTORIAL_IDP_COMPOSE) -f $(TUTORIAL_SPIRE_COMPOSE) down; exit 1; }
+	@docker compose -f $(TUTORIAL_IDP_COMPOSE) -f $(TUTORIAL_SPIRE_COMPOSE) down
+	@echo "✅  Tutorial SPIRE check passed (module 16)"
 
 .PHONY: tutorial-recordings
 tutorial-recordings:

@@ -82,4 +82,4 @@ The `Outcome` from `mediate()`: allowed or denied, and for denials the reason co
 
 ## Next
 
-[Capstone: the three-backend agent]({{< relref "capstone" >}}): assemble every control you have built into the full Overview scenario.
+[Module 11: Organizing policy]({{< relref "11-groups" >}}): factor the setup your routes share into reusable groups.
