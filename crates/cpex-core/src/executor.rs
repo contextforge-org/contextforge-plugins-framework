@@ -805,6 +805,25 @@ impl Executor {
                         // Enforcement is unchanged (the pipeline proceeds);
                         // this plugin's modifications are skipped, since it
                         // asked to stop rather than shape.
+                        //
+                        // Keys on `violation.is_some()`, mirroring the blocking
+                        // branch above: a stop signal is only recorded as a
+                        // deny / DenyIgnored when it carries a violation. The
+                        // `PluginResult` contract documents that a violation is
+                        // present whenever `continue_processing` is false, and
+                        // `PluginResult::deny()` always sets one — so this holds
+                        // for any plugin built through the constructors. A
+                        // hand-built stop with no violation would fall through
+                        // to allow/modify in either phase; the assert pins that
+                        // contract so such a result surfaces in tests rather
+                        // than silently reading as an allow.
+                        debug_assert!(
+                            erased.continue_processing || erased.violation.is_some(),
+                            "{} plugin '{}' set continue_processing=false without a violation; \
+                             use PluginResult::deny() so the stop is recorded, not read as allow",
+                            phase_label,
+                            plugin_name,
+                        );
                         let deny_ignored =
                             !erased.continue_processing && !can_block && erased.violation.is_some();
                         if deny_ignored {
