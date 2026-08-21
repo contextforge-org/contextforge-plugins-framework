@@ -326,7 +326,7 @@ class ExternalPlugin(Plugin):
                 auth: Optional authentication handler for HTTP requests.
 
             Returns:
-                Configured httpx AsyncClient with TLS settings applied.
+                Configured httpx2 AsyncClient with TLS settings applied.
 
             Raises:
                 PluginError: If TLS configuration fails.

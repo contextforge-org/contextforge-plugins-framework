@@ -7,6 +7,7 @@ from contextlib import AsyncExitStack
 from unittest.mock import AsyncMock, MagicMock, patch
 
 # Third-Party
+import httpx2
 import orjson
 import pytest
 from mcp_types import TextContent
@@ -238,7 +239,7 @@ class TestConnectHTTP:
 
     @pytest.mark.asyncio
     async def test_streamable_client_called_with_prebuilt_client_and_terminate_on_close(self):
-        """v2 SDK contract: streamable_http_client receives a pre-built httpx client and
+        """v2 SDK contract: streamable_http_client receives a pre-built httpx2 client and
         terminate_on_close=True (replacing the removed manual __terminate_http_session)."""
         plugin = _make_plugin()
 
@@ -255,12 +256,12 @@ class TestConnectHTTP:
         list_tools_result.tools = []
         mock_session.list_tools = AsyncMock(return_value=list_tools_result)
 
-        prebuilt_client = AsyncMock(spec=httpx.AsyncClient)
+        prebuilt_client = AsyncMock(spec=httpx2.AsyncClient)
 
         with (
             patch("cpex.framework.external.mcp.client.streamable_http_client", return_value=OkCtx()) as mock_streamable,
             patch("cpex.framework.external.mcp.client.ClientSession", return_value=mock_session),
-            patch("cpex.framework.external.mcp.client.httpx.AsyncClient", return_value=prebuilt_client),
+            patch("cpex.framework.external.mcp.client.httpx2.AsyncClient", return_value=prebuilt_client),
         ):
             plugin._exit_stack = AsyncExitStack()
             await plugin._ExternalPlugin__connect_to_http_server("http://localhost:9999/mcp")
