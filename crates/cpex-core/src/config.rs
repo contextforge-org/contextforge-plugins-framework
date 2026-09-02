@@ -146,6 +146,12 @@ pub struct PluginSettings {
     /// two streams become `"gw-1:decision"` / `"gw-1:effect"` — the type suffix
     /// stays, so each remains independently gap-free (its completeness proof is
     /// intact). Unset (default) keeps the bare `"decision"` / `"effect"` labels.
+    /// Empty/whitespace is rejected at config validation.
+    ///
+    /// The `:` separator is not forbidden inside the namespace, so a consumer
+    /// recovering the type or the namespace from a stream id must split on the
+    /// **last** colon (`rsplit_once(':')`) — `"a:b:decision"` is namespace
+    /// `"a:b"`, type `"decision"`.
     #[serde(default)]
     pub audit_stream_namespace: Option<String>,
 
@@ -781,6 +787,20 @@ pub(crate) fn validate_config(config: &CpexConfig) -> Result<(), Box<PluginError
         }
     }
 
+    // An empty or whitespace-only audit stream namespace would prefix the
+    // stream ids as `":decision"` / `":effect"` — a silent misconfiguration, not
+    // a useful identity. Reject it so the operator's mistake surfaces at load
+    // rather than in the audit stream. (Absent → bare labels, which is fine.)
+    if let Some(ns) = &config.plugin_settings.audit_stream_namespace {
+        if ns.trim().is_empty() {
+            return Err(Box::new(PluginError::Config {
+                message: "plugin_settings.audit_stream_namespace is empty or whitespace-only; \
+                          omit it for the default stream labels, or set a non-empty identity"
+                    .to_string(),
+            }));
+        }
+    }
+
     if config.routing_enabled() {
         let plugin_names: HashSet<&str> = config.plugins.iter().map(|p| p.name.as_str()).collect();
 
@@ -1325,6 +1345,27 @@ plugins: []
         let cfg = parse_config("plugins: []\n").unwrap();
         assert!(cfg.plugin_settings.audit_stream_namespace.is_none());
         assert!(cfg.plugin_settings.audit_epoch.is_none());
+    }
+
+    #[test]
+    fn empty_audit_stream_namespace_is_rejected() {
+        // An empty/whitespace namespace would prefix as ":decision"; reject it
+        // at validation instead of emitting a silently malformed stream id.
+        for ns in ["\"\"", "\"   \""] {
+            let yaml = format!("plugin_settings:\n  audit_stream_namespace: {ns}\nplugins: []\n");
+            let err = parse_config(&yaml).expect_err("empty/whitespace namespace must be rejected");
+            assert!(
+                err.to_string().contains("audit_stream_namespace"),
+                "error names the offending setting, got: {err}"
+            );
+        }
+        // A real namespace still loads.
+        let ok = parse_config("plugin_settings:\n  audit_stream_namespace: gw-1\nplugins: []\n")
+            .expect("non-empty namespace loads");
+        assert_eq!(
+            ok.plugin_settings.audit_stream_namespace.as_deref(),
+            Some("gw-1")
+        );
     }
 
     #[test]

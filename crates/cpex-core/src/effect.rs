@@ -167,7 +167,23 @@ pub trait EffectEmitter: Send + Sync + std::fmt::Debug {
 /// handcrafted one. This gives the emitter the same *isolation by construction*
 /// the `DecisionLog` gets by type, rather than the weaker isolation-by-capability
 /// a retainable handle would give.
-#[derive(Debug, Default, Clone)]
+///
+/// The slot is deliberately **not** `Clone`: with the field `pub`, a `Clone`
+/// slot could be cloned out of the `&Extensions` a plugin receives in `handle`,
+/// stashed, and replayed later on a handcrafted `Extensions` — the private inner
+/// `Arc` rides along in the clone, so hiding it behind the newtype is not enough
+/// on its own. That is exactly the forgery this type exists to prevent, so the
+/// clone path must not exist. `handle` only ever holds `&Extensions`, and
+/// `Extensions::clone` resets the slot to empty, so nothing legitimate needs to
+/// clone it. The `compile_fail` test below pins the property against regression.
+///
+/// ```compile_fail
+/// use cpex_core::effect::EffectEmitterSlot;
+/// use cpex_core::extensions::Extensions;
+/// let ext = Extensions::default();
+/// let _stashed: EffectEmitterSlot = ext.effect_emitter.clone();
+/// ```
+#[derive(Debug, Default)]
 pub struct EffectEmitterSlot(Option<Arc<dyn EffectEmitter>>);
 
 impl EffectEmitterSlot {

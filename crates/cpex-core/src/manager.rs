@@ -338,6 +338,36 @@ fn instantiate_plugins_into(
 /// settings on `cpex_config`. Pulls executor timeout / short-circuit and
 /// the route-cache cap from `plugin_settings` so both registration paths
 /// agree on field-by-field translation.
+/// Warn for any plugin that declares it performs irreversible effects
+/// (`Plugin::emits_effects`) but was not granted the `emit_effect` capability.
+/// Its write-ahead calls no-op, so the mint runs with no audit record and no
+/// error — a forgotten grant looks identical to a working deployment. Not fatal:
+/// running an emitter unaudited is a legitimate operator choice, so this only
+/// makes the mismatch visible to an operator who *intended* the trail. Called at
+/// startup (`initialize`) and on every config reload (`snapshot_from_config`),
+/// so a reload that drops the grant is surfaced too, not only the initial load.
+fn warn_ungranted_effect_emitters(registry: &PluginRegistry) {
+    for name in registry.plugin_names() {
+        if let Some(plugin_ref) = registry.get(&name) {
+            if plugin_ref.plugin().emits_effects()
+                && !plugin_ref
+                    .trusted_config()
+                    .capabilities
+                    .contains("emit_effect")
+            {
+                warn!(
+                    "plugin '{}' performs irreversible effects but was not granted the \
+                     'emit_effect' capability — its effects will NOT be audited (no \
+                     write-ahead record). Add 'emit_effect' to the plugin's capabilities \
+                     to enable effect auditing, or ignore this if leaving them unaudited \
+                     is intentional.",
+                    name
+                );
+            }
+        }
+    }
+}
+
 fn snapshot_from_config(
     registry: PluginRegistry,
     cpex_config: CpexConfig,
@@ -407,6 +437,13 @@ fn snapshot_from_config(
                  on every load_config."
             );
         }
+    }
+    // On a genuine reload (the previous snapshot had a loaded config), re-run
+    // the ungranted-emitter check so dropping an `emit_effect` grant across a
+    // reload is surfaced. The initial load has `prev.cpex_config == None` and is
+    // covered by `initialize`, so this doesn't double-warn at startup.
+    if prev.and_then(|p| p.cpex_config.as_ref()).is_some() {
+        warn_ungranted_effect_emitters(&registry);
     }
     let route_cache_max_entries = cpex_config.plugin_settings.route_cache_max_entries;
     RuntimeSnapshot {
@@ -950,32 +987,10 @@ impl PluginManager {
             snapshot.registry.plugin_count()
         );
 
-        // Warn on a silent audit gap: a plugin that performs irreversible
-        // effects but was not granted `emit_effect`. Its write-ahead calls
-        // (`begin_effect`/`complete_effect`) no-op, so the mint runs with no
-        // audit record and no error — a forgotten YAML grant looks identical to
-        // a working deployment. Not fatal: running an emitter unaudited is a
-        // legitimate operator choice, so this only makes the mismatch visible to
-        // an operator who *intended* the trail; it never blocks startup.
-        for name in snapshot.registry.plugin_names() {
-            if let Some(plugin_ref) = snapshot.registry.get(&name) {
-                if plugin_ref.plugin().emits_effects()
-                    && !plugin_ref
-                        .trusted_config()
-                        .capabilities
-                        .contains("emit_effect")
-                {
-                    warn!(
-                        "plugin '{}' performs irreversible effects but was not granted the \
-                         'emit_effect' capability — its effects will NOT be audited (no \
-                         write-ahead record). Add 'emit_effect' to the plugin's capabilities \
-                         to enable effect auditing, or ignore this if leaving them unaudited \
-                         is intentional.",
-                        name
-                    );
-                }
-            }
-        }
+        // Warn on a silent audit gap at startup — see
+        // `warn_ungranted_effect_emitters`. A reload that later drops the grant
+        // is caught in `snapshot_from_config`.
+        warn_ungranted_effect_emitters(&snapshot.registry);
 
         let mut initialized_plugins: Vec<String> = Vec::new();
 
