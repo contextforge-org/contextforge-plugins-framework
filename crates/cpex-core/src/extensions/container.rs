@@ -129,7 +129,7 @@ pub struct Extensions {
     /// plugins, right before `handle`. Used by `begin_effect` /
     /// `complete_effect` to emit irreversible-effect records to audit sinks.
     #[serde(skip)]
-    pub effect_emitter: Option<Arc<dyn crate::effect::EffectEmitter>>,
+    pub effect_emitter: crate::effect::EffectEmitterSlot,
 }
 
 impl Clone for Extensions {
@@ -155,7 +155,7 @@ impl Clone for Extensions {
             delegation_write_token: None,
             // Capability handle — set fresh per-invoke by the executor, never
             // cloned (same policy as the write tokens above).
-            effect_emitter: None,
+            effect_emitter: crate::effect::EffectEmitterSlot::empty(),
         }
     }
 }
@@ -169,7 +169,7 @@ impl Extensions {
         &self,
         effect: &crate::effect::EffectRecord,
     ) -> Result<(), Box<crate::error::PluginError>> {
-        match &self.effect_emitter {
+        match self.effect_emitter.emitter() {
             Some(emitter) => {
                 let prepared = effect
                     .clone()
@@ -191,7 +191,7 @@ impl Extensions {
         effect: &crate::effect::EffectRecord,
         state: crate::effect::EffectState,
     ) -> Result<(), Box<crate::error::PluginError>> {
-        match &self.effect_emitter {
+        match self.effect_emitter.emitter() {
             Some(emitter) => {
                 let done = effect.clone().into_state(state);
                 emitter.emit(&done, self).await
@@ -637,10 +637,11 @@ mod tests {
 
         fn ext_with(states: &Arc<Mutex<Vec<EffectState>>>, fail_begin: bool) -> Extensions {
             let mut ext = Extensions::default();
-            ext.effect_emitter = Some(Arc::new(RecordingEmitter {
-                states: states.clone(),
-                fail_begin,
-            }));
+            ext.effect_emitter =
+                crate::effect::EffectEmitterSlot::installed(Arc::new(RecordingEmitter {
+                    states: states.clone(),
+                    fail_begin,
+                }));
             ext
         }
 

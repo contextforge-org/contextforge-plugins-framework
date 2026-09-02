@@ -57,6 +57,19 @@ pub struct ExecutorConfig {
     /// (`DecisionLog::input_hash`). Off by default — hashing is on the request
     /// path, so it is opt-in.
     pub capture_content_provenance: bool,
+
+    /// Optional host namespace prefixing the audit stream ids
+    /// (`"<ns>:decision"` / `"<ns>:effect"`). `None` → the bare per-type
+    /// labels. Not YAML-deserialized here (this struct is code-only); the
+    /// manager copies it from `plugin_settings.audit_stream_namespace`.
+    pub audit_stream_namespace: Option<String>,
+
+    /// Optional host-supplied audit epoch (executor generation id). `Some`
+    /// overrides the wall-clock boot epoch; `None` keeps wall-clock. The caller
+    /// owns monotonicity across generations — see
+    /// [`crate::config::PluginSettings::audit_epoch`]. Code-only (this struct is
+    /// not YAML-deserialized), so it never becomes a static file value.
+    pub audit_epoch: Option<u64>,
 }
 
 impl Default for ExecutorConfig {
@@ -65,6 +78,8 @@ impl Default for ExecutorConfig {
             timeout_seconds: 30,
             short_circuit_on_deny: true,
             capture_content_provenance: false,
+            audit_stream_namespace: None,
+            audit_epoch: None,
         }
     }
 }
@@ -322,25 +337,57 @@ pub struct Executor {
     decision_seq: Arc<AtomicU64>,
     effect_seq: Arc<AtomicU64>,
     emission_seq: Arc<AtomicU64>,
+
+    /// Optional host namespace prefixing the per-type stream ids
+    /// (`"<ns>:decision"` / `"<ns>:effect"`). `None` → the bare labels, so the
+    /// default is unchanged. Set by the manager from
+    /// `plugin_settings.audit_stream_namespace`.
+    stream_namespace: Option<String>,
+}
+
+/// Compose a stream id from an optional host namespace and the per-type label.
+/// Namespace present → `"<ns>:<kind>"`; absent → the bare label, keeping the
+/// default behavior. `:` cannot appear in a Kubernetes resource name, so it
+/// never collides with a pod-name namespace.
+fn compose_stream_id(namespace: Option<&str>, kind: &str) -> String {
+    match namespace {
+        Some(ns) => format!("{ns}:{kind}"),
+        None => kind.to_string(),
+    }
 }
 
 impl Executor {
     /// Create a new executor with the given configuration.
+    ///
+    /// The audit stream identity is read from the config here, at construction:
+    /// `audit_epoch` overrides the epoch (else wall-clock), and
+    /// `audit_stream_namespace` prefixes both per-type stream ids. Setting it at
+    /// `new` — rather than a post-construction setter — means the direct path
+    /// (`Executor::new(cfg)`) and the manager's YAML path (which copies the
+    /// values into this config in `snapshot_from_config`) behave identically,
+    /// and the identity can never change mid-process.
     pub fn new(config: ExecutorConfig) -> Self {
+        // Host override, else boot time in Unix nanoseconds — an orderable epoch
+        // that needs no persistence. A new executor (restart or config reload)
+        // gets a larger value, so a verifier tells a reset from a loss. When a
+        // host overrides it, the host owns that monotonicity (see
+        // `ExecutorConfig::audit_epoch`).
+        let epoch = config.audit_epoch.unwrap_or_else(|| {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos() as u64)
+                .unwrap_or(0)
+        });
+        let stream_namespace = config.audit_stream_namespace.clone();
         Self {
             config,
             audit_handlers: Vec::new(),
             effect_log: None,
-            // Boot time in Unix nanoseconds — an orderable epoch that needs no
-            // persistence. A new executor (restart or config reload) gets a
-            // larger value, so a verifier tells a reset from a loss.
-            epoch: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos() as u64)
-                .unwrap_or(0),
+            epoch,
             decision_seq: Arc::new(AtomicU64::new(0)),
             effect_seq: Arc::new(AtomicU64::new(0)),
             emission_seq: Arc::new(AtomicU64::new(0)),
+            stream_namespace,
         }
     }
 
@@ -362,6 +409,12 @@ impl Executor {
     /// crash recovery at startup (see `PluginManager::recover_effects`).
     pub fn effect_log(&self) -> Option<Arc<dyn DurableEffectLog>> {
         self.effect_log.clone()
+    }
+
+    /// This generation's audit epoch. The manager reads it across a reload to
+    /// check the epoch strictly increased (see `snapshot_from_config`).
+    pub fn epoch(&self) -> u64 {
+        self.epoch
     }
 
     /// Attach observation-only audit sinks, invoked at the verdict of every
@@ -390,7 +443,7 @@ impl Executor {
     fn stamp_decision_stream(&self, decisions: &mut DecisionLog) {
         decisions.set_stream(
             self.epoch,
-            "decision".to_string(),
+            compose_stream_id(self.stream_namespace.as_deref(), "decision"),
             self.decision_seq.fetch_add(1, Ordering::Relaxed),
             self.emission_seq.fetch_add(1, Ordering::Relaxed),
         );
@@ -739,17 +792,19 @@ impl Executor {
             // Grant the effect-emit capability the same way — a per-invoke
             // handle on the filtered extensions, only for capable plugins.
             if capabilities.contains("emit_effect") {
-                filtered.effect_emitter = Some(Arc::new(AuditEffectEmitter {
-                    handlers: self.audit_handlers.clone(),
-                    plugin_name: plugin_name.to_string(),
-                    timeout: Duration::from_secs(self.config.timeout_seconds),
-                    // The configured WAL (opt-in). `None` → ordering-only, not
-                    // fail-closed; `Some` → durable-before-fanout, fail-closed.
-                    durable: self.effect_log.clone(),
-                    epoch: self.epoch,
-                    stream_seq: self.effect_seq.clone(),
-                    emission_seq: self.emission_seq.clone(),
-                }));
+                filtered.effect_emitter =
+                    crate::effect::EffectEmitterSlot::installed(Arc::new(AuditEffectEmitter {
+                        handlers: self.audit_handlers.clone(),
+                        plugin_name: plugin_name.to_string(),
+                        timeout: Duration::from_secs(self.config.timeout_seconds),
+                        // The configured WAL (opt-in). `None` → ordering-only, not
+                        // fail-closed; `Some` → durable-before-fanout, fail-closed.
+                        durable: self.effect_log.clone(),
+                        epoch: self.epoch,
+                        stream_seq: self.effect_seq.clone(),
+                        emission_seq: self.emission_seq.clone(),
+                        stream_namespace: self.stream_namespace.clone(),
+                    }));
             }
 
             // Execute with timeout — handler borrows payload, gets filtered
@@ -1478,6 +1533,8 @@ struct AuditEffectEmitter {
     epoch: u64,
     stream_seq: Arc<AtomicU64>,
     emission_seq: Arc<AtomicU64>,
+    /// Host namespace prefixing the effect stream id (shared with the executor).
+    stream_namespace: Option<String>,
 }
 
 impl std::fmt::Debug for AuditEffectEmitter {
@@ -1502,7 +1559,10 @@ impl EffectEmitter for AuditEffectEmitter {
         let mut stamped = effect.clone();
         stamped.plugin_name = Some(self.plugin_name.clone());
         stamped.epoch = Some(self.epoch);
-        stamped.stream_id = Some("effect".to_string());
+        stamped.stream_id = Some(compose_stream_id(
+            self.stream_namespace.as_deref(),
+            "effect",
+        ));
         stamped.stream_seq = Some(self.stream_seq.fetch_add(1, Ordering::Relaxed));
         stamped.emission_seq = Some(self.emission_seq.fetch_add(1, Ordering::Relaxed));
 
@@ -1729,6 +1789,7 @@ mod tests {
             epoch: 0,
             stream_seq: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             emission_seq: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            stream_namespace: None,
         };
         let res = emitter.emit(&effect, &Extensions::default()).await;
         assert!(res.is_err(), "durable write failed → emit fails closed");
@@ -1748,9 +1809,85 @@ mod tests {
             epoch: 0,
             stream_seq: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             emission_seq: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            stream_namespace: None,
         };
         let res2 = emitter2.emit(&effect, &Extensions::default()).await;
         assert!(res2.is_ok());
         assert_eq!(*calls2.lock().unwrap(), 1, "durable OK → fan-out proceeds");
+    }
+
+    #[test]
+    fn compose_stream_id_prefixes_only_when_namespaced() {
+        assert_eq!(compose_stream_id(None, "decision"), "decision");
+        assert_eq!(compose_stream_id(Some("gw-1"), "decision"), "gw-1:decision");
+        assert_eq!(compose_stream_id(Some("gw-1"), "effect"), "gw-1:effect");
+    }
+
+    #[test]
+    fn stream_identity_from_config_stamps_namespace_and_epoch_on_decisions() {
+        use crate::decision::DecisionLog;
+
+        // Host identity set on the ExecutorConfig → namespaced stream id +
+        // host-supplied epoch, read at construction.
+        let exec = Executor::new(ExecutorConfig {
+            audit_stream_namespace: Some("gw-1".to_string()),
+            audit_epoch: Some(7),
+            ..Default::default()
+        });
+        let mut log = DecisionLog::new();
+        exec.stamp_decision_stream(&mut log);
+        assert_eq!(log.stream_id(), Some("gw-1:decision"));
+        assert_eq!(log.epoch(), Some(7), "host epoch overrides wall-clock");
+
+        // Default → bare label + CPEX's wall-clock epoch (nonzero, and the
+        // two-stream density is unaffected since the type suffix is unchanged).
+        let plain = Executor::default();
+        let mut log2 = DecisionLog::new();
+        plain.stamp_decision_stream(&mut log2);
+        assert_eq!(log2.stream_id(), Some("decision"));
+        assert!(log2.epoch().unwrap() > 0, "wall-clock epoch by default");
+    }
+
+    #[tokio::test]
+    async fn with_stream_identity_prefixes_the_effect_stream() {
+        use crate::effect::EffectRecord;
+        use std::sync::Mutex;
+
+        // A sink that records the stream id stamped onto each effect it sees.
+        struct StreamIdSink(Arc<Mutex<Vec<String>>>);
+        #[async_trait]
+        impl AuditHandler for StreamIdSink {
+            async fn handle(&self, _p: &dyn PluginPayload, _e: &Extensions, _d: &DecisionLog) {}
+            async fn on_effect(&self, effect: &EffectRecord, _x: &Extensions) {
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push(effect.stream_id.clone().unwrap_or_default());
+            }
+        }
+
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let emitter = AuditEffectEmitter {
+            handlers: vec![Arc::new(StreamIdSink(seen.clone()))],
+            plugin_name: "delegator".into(),
+            timeout: Duration::from_secs(5),
+            durable: None,
+            epoch: 7,
+            stream_seq: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            emission_seq: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            stream_namespace: Some("gw-1".to_string()),
+        };
+        emitter
+            .emit(
+                &EffectRecord::prepared("token_mint", "exchange", "k-1"),
+                &Extensions::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            seen.lock().unwrap().as_slice(),
+            ["gw-1:effect"],
+            "effect stream id carries the same namespace, distinct type suffix"
+        );
     }
 }

@@ -107,6 +107,25 @@ pub trait Plugin: Send + Sync {
     ) -> Option<std::sync::Arc<dyn crate::audit::AuditHandler>> {
         None
     }
+
+    /// Whether this plugin performs irreversible external effects (token
+    /// mints, approval grants) through the effect emitter — i.e. its code
+    /// calls `Extensions::begin_effect` / `complete_effect` / `perform_effect`.
+    ///
+    /// This is a *fact* the author states, not a requirement it imposes. The
+    /// manager uses it for exactly one thing: to warn at startup when such a
+    /// plugin was **not** granted the `emit_effect` capability. Without the
+    /// grant the effect calls silently no-op, so the plugin's mint runs with no
+    /// write-ahead record and no error — a forgotten YAML line, not an obvious
+    /// failure. The warning makes that gap visible to an operator who *intended*
+    /// the trail.
+    ///
+    /// It does **not** force auditing: running an emitter without the grant
+    /// stays a legitimate operator choice (dev, low-stakes, opting out), so the
+    /// warning never blocks startup. Default: false.
+    fn emits_effects(&self) -> bool {
+        false
+    }
 }
 
 /// Declared plugin configuration from the unified YAML config.

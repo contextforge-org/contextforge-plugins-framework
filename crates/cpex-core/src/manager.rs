@@ -347,6 +347,12 @@ fn snapshot_from_config(
         timeout_seconds: cpex_config.plugin_settings.plugin_timeout,
         short_circuit_on_deny: cpex_config.plugin_settings.short_circuit_on_deny,
         capture_content_provenance: cpex_config.plugin_settings.capture_content_provenance,
+        // Audit stream identity, bridged field-by-field from plugin_settings the
+        // same way as the settings above. The namespace is a YAML knob; the
+        // epoch is programmatic-only (`serde(skip)` on PluginSettings), so it is
+        // `None` here unless a host set it in code before this load.
+        audit_stream_namespace: cpex_config.plugin_settings.audit_stream_namespace.clone(),
+        audit_epoch: cpex_config.plugin_settings.audit_epoch,
     })
     .with_audit_handlers(registry.audit_handlers());
     // Opt-in durable effect WAL — installed only when a path is configured.
@@ -380,6 +386,27 @@ fn snapshot_from_config(
             },
         };
         executor = executor.with_effect_log(log);
+    }
+    // (Stream identity — namespace + epoch — is set at construction via the
+    // ExecutorConfig above, so both the YAML and direct paths behave the same.)
+    // A reload builds this fresh executor with the stream counters reset to 0,
+    // so its epoch must be strictly greater than the previous generation's —
+    // otherwise the new `(epoch, stream_id, seq=0..)` collides with the prior
+    // generation's records and breaks the completeness (density) claim. The
+    // wall-clock default always advances; only a pinned/mismanaged `audit_epoch`
+    // override can regress. Warn rather than fail: the records still emit, but a
+    // consumer asserting density would see the collision, so make it visible.
+    if let Some(prev) = prev {
+        let (prev_epoch, new_epoch) = (prev.executor.epoch(), executor.epoch());
+        if new_epoch <= prev_epoch {
+            warn!(
+                "audit epoch did not increase across reload ({prev_epoch} → {new_epoch}); \
+                 the stream counters reset each reload, so a non-increasing epoch collides \
+                 with the previous generation's records and breaks the completeness claim. \
+                 A programmatic `audit_epoch` override must supply a strictly larger value \
+                 on every load_config."
+            );
+        }
     }
     let route_cache_max_entries = cpex_config.plugin_settings.route_cache_max_entries;
     RuntimeSnapshot {
@@ -922,6 +949,33 @@ impl PluginManager {
             "Initializing PluginManager with {} plugins",
             snapshot.registry.plugin_count()
         );
+
+        // Warn on a silent audit gap: a plugin that performs irreversible
+        // effects but was not granted `emit_effect`. Its write-ahead calls
+        // (`begin_effect`/`complete_effect`) no-op, so the mint runs with no
+        // audit record and no error — a forgotten YAML grant looks identical to
+        // a working deployment. Not fatal: running an emitter unaudited is a
+        // legitimate operator choice, so this only makes the mismatch visible to
+        // an operator who *intended* the trail; it never blocks startup.
+        for name in snapshot.registry.plugin_names() {
+            if let Some(plugin_ref) = snapshot.registry.get(&name) {
+                if plugin_ref.plugin().emits_effects()
+                    && !plugin_ref
+                        .trusted_config()
+                        .capabilities
+                        .contains("emit_effect")
+                {
+                    warn!(
+                        "plugin '{}' performs irreversible effects but was not granted the \
+                         'emit_effect' capability — its effects will NOT be audited (no \
+                         write-ahead record). Add 'emit_effect' to the plugin's capabilities \
+                         to enable effect auditing, or ignore this if leaving them unaudited \
+                         is intentional.",
+                        name
+                    );
+                }
+            }
+        }
 
         let mut initialized_plugins: Vec<String> = Vec::new();
 
@@ -2744,6 +2798,82 @@ plugins:
         }
     }
 
+    #[tokio::test]
+    async fn emits_effects_without_grant_warns_but_does_not_block_startup() {
+        // A plugin that declares it performs effects (the `emits_effects` fact),
+        // deployed WITHOUT the `emit_effect` grant. It must still start: leaving
+        // an emitter unaudited is a legitimate operator choice, so `initialize`
+        // only logs a warning to surface the gap — it never fails closed. This
+        // is the whole distinction from the rejected "required capabilities"
+        // design, which would abort startup on the same config.
+        struct EffectfulPlugin {
+            cfg: PluginConfig,
+        }
+        #[async_trait]
+        impl Plugin for EffectfulPlugin {
+            fn config(&self) -> &PluginConfig {
+                &self.cfg
+            }
+            fn emits_effects(&self) -> bool {
+                true
+            }
+        }
+        impl HookHandler<TestHook> for EffectfulPlugin {
+            async fn handle(
+                &self,
+                _payload: &TestPayload,
+                _ext: &Extensions,
+                _ctx: &mut PluginContext,
+            ) -> PluginResult<TestPayload> {
+                PluginResult::allow()
+            }
+        }
+
+        let mgr = PluginManager::default();
+        let config = make_config("effectful", 10, PluginMode::Sequential);
+        assert!(
+            !config.capabilities.contains("emit_effect"),
+            "no grant in this config"
+        );
+        let plugin = Arc::new(EffectfulPlugin {
+            cfg: config.clone(),
+        });
+        assert!(plugin.emits_effects(), "plugin declares the effect fact");
+        mgr.register_handler::<TestHook, _>(plugin, config).unwrap();
+
+        // Non-fatal: the missing grant warns, but startup completes.
+        mgr.initialize()
+            .await
+            .expect("missing grant must warn, never block startup");
+    }
+
+    #[test]
+    fn pinned_audit_epoch_does_not_advance_across_reloads() {
+        // The programmatic epoch override is honored verbatim, and re-supplying
+        // the same value across a reload keeps it fixed. Because each reload
+        // builds a fresh executor with the stream counters reset to 0, that
+        // fixed epoch is exactly the non-increasing case `snapshot_from_config`
+        // warns about: the new generation's `(epoch, seq=0..)` collides with the
+        // prior one's records. (The wall-clock default sidesteps this by
+        // advancing on its own; it isn't asserted here, to avoid depending on
+        // wall-clock resolution/monotonicity.)
+        let pinned = |e: u64| {
+            let mut c = CpexConfig::default();
+            c.plugin_settings.audit_epoch = Some(e);
+            c
+        };
+        let p1 = snapshot_from_config(PluginRegistry::new(), pinned(7), None);
+        assert_eq!(p1.executor.epoch(), 7, "override honored verbatim");
+        // Second generation (a reload) re-pins the same value — exercises the
+        // guard, which warns because the epoch did not advance.
+        let p2 = snapshot_from_config(PluginRegistry::new(), pinned(7), Some(&p1));
+        assert_eq!(p2.executor.epoch(), 7, "re-pinned same value across reload");
+        assert!(
+            p2.executor.epoch() <= p1.executor.epoch(),
+            "non-increasing across the reload — the collision the guard flags"
+        );
+    }
+
     /// The global `emission_seq` orders effect records against the decision
     /// record within one invocation — effects emit during `handle`, the
     /// decision at the verdict — so a consumer that merges the two streams can
@@ -4149,6 +4279,8 @@ plugins:
                 timeout_seconds: 30,
                 short_circuit_on_deny: false,
                 capture_content_provenance: false,
+                audit_stream_namespace: None,
+                audit_epoch: None,
             },
             route_cache_max_entries: DEFAULT_ROUTE_CACHE_MAX_ENTRIES,
         };
@@ -4321,6 +4453,8 @@ plugins:
                 timeout_seconds: 1,
                 short_circuit_on_deny: true,
                 capture_content_provenance: false,
+                audit_stream_namespace: None,
+                audit_epoch: None,
             },
             route_cache_max_entries: DEFAULT_ROUTE_CACHE_MAX_ENTRIES,
         };

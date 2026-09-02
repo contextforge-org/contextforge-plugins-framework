@@ -139,6 +139,29 @@ pub struct PluginSettings {
     /// bytes.
     #[serde(default)]
     pub capture_content_provenance: bool,
+
+    /// Optional namespace prefixing the audit stream ids, so a host's decision
+    /// and effect records are attributable to *its* stream (a pod name, gateway
+    /// id, etc.) instead of the bare per-type labels. When set to `"gw-1"`, the
+    /// two streams become `"gw-1:decision"` / `"gw-1:effect"` — the type suffix
+    /// stays, so each remains independently gap-free (its completeness proof is
+    /// intact). Unset (default) keeps the bare `"decision"` / `"effect"` labels.
+    #[serde(default)]
+    pub audit_stream_namespace: Option<String>,
+
+    /// Programmatic-only override for the audit epoch (the executor's generation
+    /// identifier). **Deliberately not part of the YAML surface** (`serde(skip)`):
+    /// the epoch must strictly increase per executor generation so a new
+    /// generation is distinguishable from record loss, and a static file value
+    /// cannot do that — it would pin the epoch and silently break the guarantee.
+    /// Note a reload (`load_config`) is itself a new generation (fresh executor,
+    /// stream counters reset to 0), so an override must yield a strictly larger
+    /// value on *every* load, not just once per process boot — supply it from a
+    /// source that guarantees that (a persisted / StatefulSet generation counter),
+    /// owning the invariant. Unset (default) keeps CPEX's wall-clock epoch, which
+    /// advances on its own and is correct with no configuration.
+    #[serde(skip)]
+    pub audit_epoch: Option<u64>,
 }
 
 impl Default for PluginSettings {
@@ -153,6 +176,8 @@ impl Default for PluginSettings {
             effect_log_path: None,
             effect_log_compaction_threshold: None,
             capture_content_provenance: false,
+            audit_stream_namespace: None,
+            audit_epoch: None,
         }
     }
 }
@@ -1265,6 +1290,41 @@ plugins: []
             .plugin_settings
             .effect_log_compaction_threshold
             .is_none());
+    }
+
+    #[test]
+    fn parses_audit_stream_namespace_but_not_epoch() {
+        // The namespace is a normal YAML knob. The epoch is `serde(skip)`
+        // on purpose — a static file value can't stay monotonic across boots,
+        // so even if someone writes it in YAML it must NOT be honored; it's a
+        // programmatic-only override.
+        let yaml = r#"
+plugin_settings:
+  audit_stream_namespace: gw-1
+  audit_epoch: 7
+plugins: []
+"#;
+        let cfg = parse_config(yaml).unwrap();
+        assert_eq!(
+            cfg.plugin_settings.audit_stream_namespace.as_deref(),
+            Some("gw-1")
+        );
+        assert!(
+            cfg.plugin_settings.audit_epoch.is_none(),
+            "audit_epoch is not part of the YAML surface (serde skip)"
+        );
+
+        // It is still settable in code — the programmatic override path.
+        let mut cfg = cfg;
+        cfg.plugin_settings.audit_epoch = Some(7);
+        assert_eq!(cfg.plugin_settings.audit_epoch, Some(7));
+    }
+
+    #[test]
+    fn audit_stream_identity_defaults_to_none() {
+        let cfg = parse_config("plugins: []\n").unwrap();
+        assert!(cfg.plugin_settings.audit_stream_namespace.is_none());
+        assert!(cfg.plugin_settings.audit_epoch.is_none());
     }
 
     #[test]

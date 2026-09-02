@@ -391,6 +391,14 @@ impl Plugin for OAuthDelegator {
     fn config(&self) -> &PluginConfig {
         &self.cfg
     }
+
+    /// This plugin mints tokens through the effect emitter (see `audit_mint`),
+    /// so it declares that fact — the manager warns at startup if `emit_effect`
+    /// was not granted, rather than letting the write-ahead audit silently
+    /// no-op.
+    fn emits_effects(&self) -> bool {
+        true
+    }
 }
 
 impl HookHandler<TokenDelegateHook> for OAuthDelegator {

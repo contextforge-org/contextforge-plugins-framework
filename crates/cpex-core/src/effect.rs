@@ -147,6 +147,53 @@ pub trait EffectEmitter: Send + Sync + std::fmt::Debug {
     async fn emit(&self, effect: &EffectRecord, ext: &Extensions) -> Result<(), Box<PluginError>>;
 }
 
+/// The slot on `Extensions` that holds the per-invocation effect-emitter
+/// capability handle.
+///
+/// This is a newtype around `Option<Arc<dyn EffectEmitter>>` for one reason:
+/// the inner `Arc` must be *unextractable* by plugins. A bare public field would
+/// let a capable plugin (a delegator, say) stash the `Arc` and later call
+/// `emit` **outside any invocation, with a fabricated `Extensions`** — forging
+/// the identity/correlation the emitter trusts for provenance. For a log whose
+/// purpose is reconstructing a causal graph, a forged record is worse than a
+/// missing one: a gap is visible, a forgery is not.
+///
+/// So the field stays `pub` (functional-update `..` construction at the many
+/// `Extensions` build sites still compiles), but the payload is private. The
+/// only ways to *reach* the emitter are the crate-internal [`Self::emitter`]
+/// accessor — used exclusively by `Extensions::begin_effect` /
+/// `complete_effect`, which always pass the real `self` — so a plugin can
+/// trigger `emit` only against the genuine, current `Extensions`, never a
+/// handcrafted one. This gives the emitter the same *isolation by construction*
+/// the `DecisionLog` gets by type, rather than the weaker isolation-by-capability
+/// a retainable handle would give.
+#[derive(Debug, Default, Clone)]
+pub struct EffectEmitterSlot(Option<Arc<dyn EffectEmitter>>);
+
+impl EffectEmitterSlot {
+    /// An empty slot — the plugin was not granted the `emit_effect` capability.
+    pub fn empty() -> Self {
+        Self(None)
+    }
+
+    /// A slot holding a live emitter, installed by the executor for a capable
+    /// plugin right before `handle`.
+    pub fn installed(emitter: Arc<dyn EffectEmitter>) -> Self {
+        Self(Some(emitter))
+    }
+
+    /// Whether a capability handle is present (i.e. the plugin may emit).
+    pub fn is_available(&self) -> bool {
+        self.0.is_some()
+    }
+
+    /// Crate-internal access to the emitter. Deliberately not `pub`: the whole
+    /// point of the newtype is that no plugin can extract the `Arc`.
+    pub(crate) fn emitter(&self) -> Option<&Arc<dyn EffectEmitter>> {
+        self.0.as_ref()
+    }
+}
+
 /// Resolves an effect left `unknown` after a crash by asking an authoritative
 /// issuance ledger whether the act identified by `EffectRecord::key` actually
 /// happened. The `EffectRecord` is self-describing (kind, key, details), so a
@@ -487,6 +534,36 @@ impl FileEffectLog {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[derive(Debug)]
+    struct NoopEmitter;
+
+    #[async_trait]
+    impl EffectEmitter for NoopEmitter {
+        async fn emit(
+            &self,
+            _effect: &EffectRecord,
+            _ext: &Extensions,
+        ) -> Result<(), Box<PluginError>> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn effect_emitter_slot_defaults_to_empty_and_unavailable() {
+        // The empty slot (default, and what `filter_extensions`/Clone leave
+        // behind) reports no capability. `installed` flips that. The point of
+        // the newtype is that no `emitter()` — hence no `Arc` — is reachable
+        // outside this crate, which is a compile-time property, not a runtime
+        // one; here we only pin the observable availability contract.
+        let empty = EffectEmitterSlot::default();
+        assert!(!empty.is_available());
+        assert!(empty.emitter().is_none());
+
+        let filled = EffectEmitterSlot::installed(Arc::new(NoopEmitter));
+        assert!(filled.is_available());
+        assert!(filled.emitter().is_some());
+    }
 
     #[test]
     fn prepared_starts_in_prepared_with_details() {
